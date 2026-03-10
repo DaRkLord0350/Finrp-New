@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import type { Decimal } from "@prisma/client/runtime/library";
 
 export interface CreateItemData {
   name: string;
   description?: string;
+  price?: number | Decimal;
   stock: number;
   lowStockAt: number;
   organizationId: string;
@@ -11,6 +13,7 @@ export interface CreateItemData {
 export interface UpdateItemData {
   name?: string;
   description?: string;
+  price?: number | Decimal;
   stock?: number;
   lowStockAt?: number;
 }
@@ -37,9 +40,14 @@ export async function updateItem(
   organizationId: string,
   data: UpdateItemData
 ) {
+  // Remove undefined keys so Prisma doesn't overwrite with null
+  const cleanData = Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  ) as UpdateItemData;
+
   return prisma.item.update({
     where: { id },
-    data,
+    data: cleanData,
   });
 }
 
@@ -48,3 +56,4 @@ export async function deleteItem(id: string, organizationId: string) {
     where: { id },
   });
 }
+

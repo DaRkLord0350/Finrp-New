@@ -7,8 +7,11 @@ interface Item {
   id: string;
   name: string;
   description?: string | null;
+  price: number;
   stock: number;
   lowStockAt: number;
+  organizationId: string;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -36,13 +39,7 @@ export default function ItemTable({ items, onEdit, onDelete }: ItemTableProps) {
         >
           <Package size={24} color="var(--brand-400)" />
         </div>
-        <p
-          style={{
-            fontSize: 15,
-            fontWeight: 600,
-            color: "var(--text-primary)",
-          }}
-        >
+        <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>
           No items yet
         </p>
         <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
@@ -59,6 +56,7 @@ export default function ItemTable({ items, onEdit, onDelete }: ItemTableProps) {
           <tr>
             <th>Item Name</th>
             <th>Description</th>
+            <th>Price</th>
             <th>Stock</th>
             <th>Alert Threshold</th>
             <th>Status</th>
@@ -70,13 +68,7 @@ export default function ItemTable({ items, onEdit, onDelete }: ItemTableProps) {
           {items.map((item) => (
             <tr key={item.id}>
               <td>
-                <span
-                  style={{
-                    fontWeight: 600,
-                    color: "var(--text-primary)",
-                    fontSize: 14,
-                  }}
-                >
+                <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>
                   {item.name}
                 </span>
               </td>
@@ -85,7 +77,7 @@ export default function ItemTable({ items, onEdit, onDelete }: ItemTableProps) {
                   style={{
                     color: "var(--text-muted)",
                     fontSize: 13,
-                    maxWidth: 240,
+                    maxWidth: 200,
                     display: "block",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -93,6 +85,11 @@ export default function ItemTable({ items, onEdit, onDelete }: ItemTableProps) {
                   }}
                 >
                   {item.description || "—"}
+                </span>
+              </td>
+              <td>
+                <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>
+                  ${Number(item.price).toFixed(2)}
                 </span>
               </td>
               <td>

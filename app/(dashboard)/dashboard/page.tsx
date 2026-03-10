@@ -6,73 +6,20 @@ import {
   Users,
   FileText,
   AlertTriangle,
-  TrendingUp,
   ShieldCheck,
   Plus,
   ArrowRight,
   Clock,
-  CheckCircle,
   Package,
+  RefreshCw,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import Link from "next/link";
 import StatCard from "@/components/StatCard";
 import RevenueChart from "@/components/RevenueChart";
-
-const stats = [
-  {
-    title: "Total Revenue",
-    value: "$51,200",
-    change: 13.2,
-    changeLabel: "vs last month",
-    icon: DollarSign,
-    iconColor: "#6366f1",
-  },
-  {
-    title: "Active Customers",
-    value: "124",
-    change: 8.1,
-    changeLabel: "vs last month",
-    icon: Users,
-    iconColor: "#10b981",
-  },
-  {
-    title: "Invoices Sent",
-    value: "39",
-    change: 14.7,
-    changeLabel: "this month",
-    icon: FileText,
-    iconColor: "#3b82f6",
-  },
-  {
-    title: "Overdue",
-    value: "5",
-    change: -2,
-    changeLabel: "vs last month",
-    icon: AlertTriangle,
-    iconColor: "#f59e0b",
-  },
-];
-
-const recentInvoices = [
-  { id: "INV-00039", customer: "Acme Corp", amount: "$8,400", status: "PAID", date: "Mar 8" },
-  { id: "INV-00038", customer: "TechFlow Ltd", amount: "$3,200", status: "SENT", date: "Mar 7" },
-  { id: "INV-00037", customer: "BrightStar Inc", amount: "$5,800", status: "OVERDUE", date: "Mar 1" },
-  { id: "INV-00036", customer: "Quantum Media", amount: "$1,900", status: "PAID", date: "Feb 28" },
-  { id: "INV-00035", customer: "NovaBuild Co", amount: "$12,100", status: "SENT", date: "Feb 26" },
-];
-
-const quickActions = [
-  { label: "New Invoice", href: "/billing/new", icon: FileText, color: "#6366f1" },
-  { label: "Add Customer", href: "/crm", icon: Users, color: "#10b981" },
-  { label: "Manage Items", href: "/items", icon: Package, color: "#3b82f6" },
-  { label: "Compliance", href: "/compliance", icon: ShieldCheck, color: "#f59e0b" },
-];
-
-const complianceTasks = [
-  { title: "Q1 GST Filing", due: "Mar 31", status: "PENDING" },
-  { title: "Annual Tax Return", due: "Apr 15", status: "IN_PROGRESS" },
-  { title: "Business License Renewal", due: "May 1", status: "PENDING" },
-];
+import { useDashboard } from "@/hooks/useDashboard";
+import { format } from "date-fns";
 
 const statusColors: Record<string, string> = {
   PAID: "bg-emerald-500/20 text-emerald-400",
@@ -84,25 +31,129 @@ const statusColors: Record<string, string> = {
   COMPLETED: "bg-emerald-500/20 text-emerald-400",
 };
 
+const quickActions = [
+  { label: "New Invoice", href: "/billing/new", icon: FileText, color: "#6366f1" },
+  { label: "Add Customer", href: "/crm", icon: Users, color: "#10b981" },
+  { label: "Manage Items", href: "/items", icon: Package, color: "#3b82f6" },
+  { label: "Compliance", href: "/compliance", icon: ShieldCheck, color: "#f59e0b" },
+];
+
+// ─── Loading skeleton ─────────────────────────────────────────
+function Skeleton({ width = "100%", height = 20 }: { width?: string | number; height?: number }) {
+  return (
+    <div
+      style={{
+        width,
+        height,
+        borderRadius: 6,
+        background: "var(--bg-elevated)",
+        animation: "pulse 1.5s ease-in-out infinite",
+      }}
+    />
+  );
+}
+
 export default function DashboardPage() {
+  const {
+    stats,
+    recentInvoices,
+    complianceTasks,
+    lowStockItems,
+    monthlyRevenue,
+    loading,
+    error,
+    refetch,
+  } = useDashboard();
+
+  // Build stat cards from live data
+  const statCards = [
+    {
+      title: "Total Revenue",
+      value: loading ? "—" : `$${stats.totalRevenue.toLocaleString()}`,
+      change: stats.revenueGrowth,
+      changeLabel: "vs last month",
+      icon: DollarSign,
+      iconColor: "#6366f1",
+    },
+    {
+      title: "Active Customers",
+      value: loading ? "—" : String(stats.activeCustomers),
+      change: 0,
+      changeLabel: "in your org",
+      icon: Users,
+      iconColor: "#10b981",
+    },
+    {
+      title: "Invoices Sent",
+      value: loading ? "—" : String(stats.invoicesSentThisMonth),
+      change: 0,
+      changeLabel: "this month",
+      icon: FileText,
+      iconColor: "#3b82f6",
+    },
+    {
+      title: "Overdue",
+      value: loading ? "—" : String(stats.overdueInvoices),
+      change: 0,
+      changeLabel: "unpaid invoices",
+      icon: AlertTriangle,
+      iconColor: "#f59e0b",
+    },
+  ];
+
   return (
     <div>
       {/* Page header */}
-      <div style={{ marginBottom: 32 }}>
-        <h1
+      <div style={{ marginBottom: 32, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <h1
+            style={{
+              fontSize: 24,
+              fontWeight: 700,
+              color: "var(--text-primary)",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Good morning 👋
+          </h1>
+          <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>
+            Here&apos;s what&apos;s happening with your business today.
+          </p>
+        </div>
+        <button
+          onClick={refetch}
+          className="btn-ghost"
+          style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
+          title="Refresh dashboard"
+        >
+          <RefreshCw size={14} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Error state */}
+      {error && (
+        <div
           style={{
-            fontSize: 24,
-            fontWeight: 700,
-            color: "var(--text-primary)",
-            letterSpacing: "-0.02em",
+            background: "rgba(239,68,68,0.1)",
+            border: "1px solid rgba(239,68,68,0.3)",
+            borderRadius: 10,
+            padding: "12px 16px",
+            color: "#ef4444",
+            fontSize: 13,
+            marginBottom: 20,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
           }}
         >
-          Good morning 👋
-        </h1>
-        <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>
-          Here's what's happening with your business today.
-        </p>
-      </div>
+          <AlertTriangle size={14} />
+          {error} —{" "}
+          <button onClick={refetch} style={{ color: "#ef4444", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div
@@ -114,7 +165,7 @@ export default function DashboardPage() {
           marginBottom: 24,
         }}
       >
-        {stats.map((stat, i) => (
+        {statCards.map((stat, i) => (
           <StatCard key={stat.title} {...stat} index={i} />
         ))}
       </div>
@@ -128,8 +179,8 @@ export default function DashboardPage() {
           marginBottom: 24,
         }}
       >
-        {/* Revenue Chart */}
-        <RevenueChart />
+        {/* Revenue Chart — pass live monthlyRevenue data */}
+        <RevenueChart data={monthlyRevenue} loading={loading} />
 
         {/* Quick Actions */}
         <motion.div
@@ -162,16 +213,12 @@ export default function DashboardPage() {
                     transition: "all 0.15s ease",
                   }}
                   onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLAnchorElement).style.borderColor =
-                      "var(--border-strong)";
-                    (e.currentTarget as HTMLAnchorElement).style.color =
-                      "var(--text-primary)";
+                    (e.currentTarget as HTMLAnchorElement).style.borderColor = "var(--border-strong)";
+                    (e.currentTarget as HTMLAnchorElement).style.color = "var(--text-primary)";
                   }}
                   onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLAnchorElement).style.borderColor =
-                      "var(--border)";
-                    (e.currentTarget as HTMLAnchorElement).style.color =
-                      "var(--text-secondary)";
+                    (e.currentTarget as HTMLAnchorElement).style.borderColor = "var(--border)";
+                    (e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)";
                   }}
                 >
                   <div
@@ -188,17 +235,37 @@ export default function DashboardPage() {
                   >
                     <Icon size={15} color={action.color} />
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>
-                    {action.label}
-                  </span>
-                  <ArrowRight
-                    size={14}
-                    style={{ marginLeft: "auto", opacity: 0.5 }}
-                  />
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{action.label}</span>
+                  <ArrowRight size={14} style={{ marginLeft: "auto", opacity: 0.5 }} />
                 </Link>
               );
             })}
           </div>
+
+          {/* Low stock alert */}
+          {!loading && lowStockItems.length > 0 && (
+            <div
+              style={{
+                marginTop: 16,
+                padding: "10px 12px",
+                background: "rgba(239,68,68,0.08)",
+                border: "1px solid rgba(239,68,68,0.2)",
+                borderRadius: 10,
+              }}
+            >
+              <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 600, marginBottom: 4 }}>
+                ⚠ {lowStockItems.length} item{lowStockItems.length > 1 ? "s" : ""} low on stock
+              </p>
+              {lowStockItems.slice(0, 3).map((item) => (
+                <p key={item.id} style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {item.name} — {item.stock}/{item.lowStockAt} left
+                </p>
+              ))}
+              <Link href="/items" style={{ fontSize: 11, color: "#818cf8", textDecoration: "none" }}>
+                View all →
+              </Link>
+            </div>
+          )}
         </motion.div>
       </div>
 
@@ -241,41 +308,55 @@ export default function DashboardPage() {
               View all <ArrowRight size={12} />
             </Link>
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Invoice</th>
-                <th>Customer</th>
-                <th>Amount</th>
-                <th>Status</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentInvoices.map((inv) => (
-                <tr key={inv.id} style={{ cursor: "pointer" }}>
-                  <td style={{ fontFamily: "monospace", color: "var(--text-primary)", fontSize: 13 }}>
-                    {inv.id}
-                  </td>
-                  <td style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {inv.customer}
-                  </td>
-                  <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
-                    {inv.amount}
-                  </td>
-                  <td>
-                    <span
-                      className={`badge ${statusColors[inv.status] || ""}`}
-                      style={{ border: "none", fontSize: 10 }}
-                    >
-                      {inv.status}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: 12 }}>{inv.date}</td>
+
+          {loading ? (
+            <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
+              {[...Array(4)].map((_, i) => <Skeleton key={i} height={32} />)}
+            </div>
+          ) : recentInvoices.length === 0 ? (
+            <div style={{ padding: "40px 24px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+              No invoices yet.{" "}
+              <Link href="/billing/new" style={{ color: "#818cf8" }}>Create one →</Link>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Invoice</th>
+                  <th>Customer</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Date</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {recentInvoices.map((inv) => (
+                  <tr key={inv.id} style={{ cursor: "pointer" }}>
+                    <td style={{ fontFamily: "monospace", color: "var(--text-primary)", fontSize: 13 }}>
+                      {inv.invoiceNumber}
+                    </td>
+                    <td style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                      {inv.customer?.name ?? "—"}
+                    </td>
+                    <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                      ${Number(inv.total).toLocaleString()}
+                    </td>
+                    <td>
+                      <span
+                        className={`badge ${statusColors[inv.status] || ""}`}
+                        style={{ border: "none", fontSize: 10 }}
+                      >
+                        {inv.status}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      {format(new Date(inv.issueDate), "MMM d")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </motion.div>
 
         {/* Compliance Tasks */}
@@ -311,62 +392,64 @@ export default function DashboardPage() {
             </Link>
           </div>
           <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-            {complianceTasks.map((task) => (
-              <div
-                key={task.title}
-                style={{
-                  padding: "12px 14px",
-                  background: "var(--bg-elevated)",
-                  borderRadius: 10,
-                  border: "1px solid var(--border)",
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 12,
-                }}
-              >
+            {loading ? (
+              [...Array(3)].map((_, i) => <Skeleton key={i} height={56} />)
+            ) : complianceTasks.length === 0 ? (
+              <p style={{ fontSize: 13, color: "var(--text-muted)", padding: "12px 0" }}>
+                No upcoming tasks.
+              </p>
+            ) : (
+              complianceTasks.map((task) => (
                 <div
+                  key={task.id}
                   style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 7,
-                    background:
-                      task.status === "IN_PROGRESS"
-                        ? "rgba(59,130,246,0.15)"
-                        : "rgba(245,158,11,0.15)",
+                    padding: "12px 14px",
+                    background: "var(--bg-elevated)",
+                    borderRadius: 10,
+                    border: "1px solid var(--border)",
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
+                    alignItems: "flex-start",
+                    gap: 12,
                   }}
                 >
-                  {task.status === "IN_PROGRESS" ? (
-                    <Clock size={13} color="#3b82f6" />
-                  ) : (
-                    <ShieldCheck size={13} color="#f59e0b" />
-                  )}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p
+                  <div
                     style={{
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: "var(--text-primary)",
+                      width: 28,
+                      height: 28,
+                      borderRadius: 7,
+                      background:
+                        task.status === "IN_PROGRESS"
+                          ? "rgba(59,130,246,0.15)"
+                          : "rgba(245,158,11,0.15)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
                     }}
                   >
-                    {task.title}
-                  </p>
-                  <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                    Due {task.due}
-                  </p>
+                    {task.status === "IN_PROGRESS" ? (
+                      <Clock size={13} color="#3b82f6" />
+                    ) : (
+                      <ShieldCheck size={13} color="#f59e0b" />
+                    )}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
+                      {task.title}
+                    </p>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                      Due {format(new Date(task.dueDate), "MMM d")}
+                    </p>
+                  </div>
+                  <span
+                    className={`badge ${statusColors[task.status] || ""}`}
+                    style={{ border: "none", fontSize: 10 }}
+                  >
+                    {task.status.replace("_", " ")}
+                  </span>
                 </div>
-                <span
-                  className={`badge ${statusColors[task.status] || ""}`}
-                  style={{ border: "none", fontSize: 10 }}
-                >
-                  {task.status.replace("_", " ")}
-                </span>
-              </div>
-            ))}
+              ))
+            )}
 
             <Link
               href="/compliance"
@@ -390,6 +473,13 @@ export default function DashboardPage() {
           </div>
         </motion.div>
       </div>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
     </div>
   );
 }

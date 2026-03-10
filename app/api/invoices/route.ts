@@ -4,20 +4,21 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(req: Request) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { userId, orgId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const tenantId = orgId ?? userId;
 
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
     const customerId = searchParams.get("customerId");
 
-    const where: Record<string, unknown> = { organizationId: orgId };
+    const where: Record<string, unknown> = { organizationId: tenantId };
     if (status) where.status = status;
     if (customerId) where.customerId = customerId;
 
     const invoices = await prisma.invoice.findMany({
       where,
-      include: { customer: true, items: true },
+      include: { customer: { select: { name: true, email: true } }, items: true },
       orderBy: { createdAt: "desc" },
     });
 
@@ -30,8 +31,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { userId, orgId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const tenantId = orgId ?? userId;
 
     const body = await req.json();
     const { customerId, dueDate, taxRate = 0, notes, items } = body;
@@ -48,14 +50,14 @@ export async function POST(req: Request) {
     const taxAmount = subtotal * (taxRate / 100);
     const total = subtotal + taxAmount;
 
-    const invoiceCount = await prisma.invoice.count({ where: { organizationId: orgId } });
+    const invoiceCount = await prisma.invoice.count({ where: { organizationId: tenantId } });
     const invoiceNumber = `INV-${String(invoiceCount + 1).padStart(5, "0")}`;
 
     const invoice = await prisma.invoice.create({
       data: {
         invoiceNumber,
         customerId,
-        organizationId: orgId,
+        organizationId: tenantId,
         dueDate: new Date(dueDate),
         taxRate,
         taxAmount,

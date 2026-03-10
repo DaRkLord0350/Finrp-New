@@ -2,51 +2,33 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const { id } = await params;
-    const task = await prisma.complianceTask.findFirst({
-      where: { id, organizationId: orgId },
-    });
-
-    if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json(task);
-  } catch (error) {
-    console.error("[COMPLIANCE_GET]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
-}
-
-export async function PUT(
+export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+    const { userId, orgId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const tenantId = orgId ?? userId;
     const { id } = await params;
     const body = await req.json();
+    const { status, title, description, dueDate, category } = body;
 
-    // If marking complete, set completedAt
-    if (body.status === "COMPLETED" && !body.completedAt) {
-      body.completedAt = new Date().toISOString();
-    }
-
-    const task = await prisma.complianceTask.updateMany({
-      where: { id, organizationId: orgId },
-      data: body,
+    const task = await prisma.complianceTask.update({
+      where: { id, organizationId: tenantId },
+      data: {
+        ...(status && { status }),
+        ...(title && { title }),
+        ...(description !== undefined && { description }),
+        ...(dueDate && { dueDate: new Date(dueDate) }),
+        ...(category && { category }),
+        ...(status === "COMPLETED" && { completedAt: new Date() }),
+      },
     });
 
     return NextResponse.json(task);
   } catch (error) {
-    console.error("[COMPLIANCE_PUT]", error);
+    console.error("[COMPLIANCE_PATCH]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -56,15 +38,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+    const { userId, orgId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const tenantId = orgId ?? userId;
     const { id } = await params;
-    await prisma.complianceTask.deleteMany({
-      where: { id, organizationId: orgId },
-    });
 
-    return NextResponse.json({ message: "Deleted" });
+    await prisma.complianceTask.delete({ where: { id, organizationId: tenantId } });
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[COMPLIANCE_DELETE]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

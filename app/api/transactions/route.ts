@@ -1,12 +1,12 @@
 // ============================================================
-// GET  /api/items  — list all items for the org
-// POST /api/items  — create a new item
+// GET  /api/transactions — list all transactions for the org
+// POST /api/transactions — create a sale or restock record
 // ============================================================
 
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { createItem, getItems } from "@/services/itemService";
-import { itemSchema } from "@/lib/validations";
+import { getTransactions, createTransaction } from "@/services/transactionService";
+import { transactionSchema } from "@/lib/validations";
 
 export async function GET() {
   try {
@@ -14,12 +14,11 @@ export async function GET() {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    // Fallback: use userId as tenant when no org is active
     const tenantId = orgId ?? userId;
-    const items = await getItems(tenantId);
-    return NextResponse.json({ items });
+    const transactions = await getTransactions(tenantId);
+    return NextResponse.json({ transactions });
   } catch (error) {
-    console.error("[GET /api/items]", error);
+    console.error("[GET /api/transactions]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -33,7 +32,7 @@ export async function POST(req: Request) {
     const tenantId = orgId ?? userId;
 
     const body = await req.json();
-    const parsed = itemSchema.safeParse(body);
+    const parsed = transactionSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         { error: parsed.error.issues[0].message },
@@ -41,20 +40,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const { name, description, price, stock, lowStockAt } = parsed.data;
-
-    const item = await createItem({
-      name,
-      description: description ?? undefined,
-      price,
-      stock,
-      lowStockAt,
+    const transaction = await createTransaction({
+      ...parsed.data,
       organizationId: tenantId,
     });
 
-    return NextResponse.json({ item }, { status: 201 });
+    return NextResponse.json({ transaction }, { status: 201 });
   } catch (error) {
-    console.error("[POST /api/items]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    console.error("[POST /api/transactions]", error);
+    const msg = error instanceof Error ? error.message : "Internal server error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

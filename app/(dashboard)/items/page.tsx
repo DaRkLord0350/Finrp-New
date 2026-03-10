@@ -1,51 +1,33 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Plus, Package, RefreshCw } from "lucide-react";
 import ItemTable from "@/components/ItemTable";
 import ItemForm from "@/components/ItemForm";
-
-interface Item {
-  id: string;
-  name: string;
-  description?: string | null;
-  stock: number;
-  lowStockAt: number;
-  updatedAt: string;
-}
+import { useItems } from "@/hooks/useItems";
+import type { Item } from "@/hooks/useItems";
 
 export default function ItemsPage() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    items,
+    loading,
+    error,
+    refetch,
+    deleteItem,
+    lowStockCount,
+    runningLowCount,
+    healthyCount,
+  } = useItems();
+
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
 
-  const fetchItems = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/items");
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setItems(data.items ?? []);
-    } catch {
-      console.error("Failed to load items");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchItems();
-  }, [fetchItems]);
-
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete");
-      setItems((prev) => prev.filter((i) => i.id !== id));
-    } catch {
-      alert("Failed to delete item. Please try again.");
+      await deleteItem(id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete item.");
     }
   };
 
@@ -65,15 +47,8 @@ export default function ItemsPage() {
   };
 
   const handleFormSuccess = () => {
-    fetchItems();
+    refetch();
   };
-
-  // Stats
-  const lowStockCount = items.filter((i) => i.stock < i.lowStockAt).length;
-  const runningLowCount = items.filter(
-    (i) => i.stock >= i.lowStockAt && i.stock < i.lowStockAt * 2
-  ).length;
-  const healthyCount = items.filter((i) => i.stock >= i.lowStockAt * 2).length;
 
   return (
     <div>
@@ -105,12 +80,12 @@ export default function ItemsPage() {
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button
-            onClick={fetchItems}
+            onClick={refetch}
             className="btn-ghost"
             style={{ padding: "8px 12px" }}
             title="Refresh"
           >
-            <RefreshCw size={15} />
+            <RefreshCw size={15} style={loading ? { animation: "spin 1s linear infinite" } : {}} />
           </button>
           <button onClick={handleAddNew} className="btn-brand">
             <Plus size={15} />
@@ -118,6 +93,29 @@ export default function ItemsPage() {
           </button>
         </div>
       </div>
+
+      {/* Error state */}
+      {error && (
+        <div
+          style={{
+            background: "rgba(239,68,68,0.1)",
+            border: "1px solid rgba(239,68,68,0.3)",
+            borderRadius: 10,
+            padding: "12px 16px",
+            color: "#ef4444",
+            fontSize: 13,
+            marginBottom: 20,
+          }}
+        >
+          {error} —{" "}
+          <button
+            onClick={refetch}
+            style={{ color: "#ef4444", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Summary Stats */}
       <div
@@ -134,25 +132,21 @@ export default function ItemsPage() {
             label: "Total Items",
             value: loading ? "—" : items.length,
             color: "#818cf8",
-            bg: "rgba(99,102,241,0.08)",
           },
           {
             label: "In Stock",
             value: loading ? "—" : healthyCount,
             color: "#10b981",
-            bg: "rgba(16,185,129,0.08)",
           },
           {
             label: "Running Low",
             value: loading ? "—" : runningLowCount,
             color: "#f59e0b",
-            bg: "rgba(245,158,11,0.08)",
           },
           {
             label: "Low Stock",
             value: loading ? "—" : lowStockCount,
             color: "#ef4444",
-            bg: "rgba(239,68,68,0.08)",
           },
         ].map((stat) => (
           <motion.div
@@ -226,10 +220,7 @@ export default function ItemsPage() {
               fontSize: 14,
             }}
           >
-            <RefreshCw
-              size={16}
-              style={{ animation: "spin 1s linear infinite" }}
-            />
+            <RefreshCw size={16} style={{ animation: "spin 1s linear infinite" }} />
             Loading inventory...
           </div>
         ) : (

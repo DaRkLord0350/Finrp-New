@@ -1,73 +1,89 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { ComplianceTask } from "@/types";
+// ============================================================
+// useCompliance — Full CRUD hook for compliance tasks
+// ============================================================
+
+import { useState, useEffect, useCallback } from "react";
+
+export interface ComplianceTask {
+  id: string;
+  title: string;
+  description?: string | null;
+  category: string;
+  status: string;
+  dueDate: string;
+  completedAt?: string | null;
+  organizationId: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export function useCompliance() {
   const [tasks, setTasks] = useState<ComplianceTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await fetch("/api/compliance");
-      if (!res.ok) throw new Error("Failed to fetch tasks");
+      if (!res.ok) throw new Error("Failed to fetch compliance tasks");
       const data = await res.json();
-      setTasks(data);
+      setTasks(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchTasks();
   }, []);
 
-  const createTask = async (data: {
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+
+  const createTask = async (input: {
     title: string;
     description?: string;
     category: string;
     dueDate: string;
-  }) => {
+  }): Promise<ComplianceTask> => {
     const res = await fetch("/api/compliance", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify(input),
     });
-    if (!res.ok) throw new Error("Failed to create task");
-    const task = await res.json();
-    setTasks((prev) => [...prev, task]);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error ?? "Failed to create task");
+    }
+    const task = await res.json() as ComplianceTask;
+    setTasks((prev) => [task, ...prev]);
     return task;
   };
 
-  const updateStatus = async (id: string, status: string) => {
+  const updateTaskStatus = async (id: string, status: string): Promise<ComplianceTask> => {
     const res = await fetch(`/api/compliance/${id}`, {
-      method: "PUT",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    if (!res.ok) throw new Error("Failed to update task");
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id ? { ...t, status: status as ComplianceTask["status"] } : t
-      )
-    );
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error ?? "Failed to update task");
+    }
+    const updated = await res.json() as ComplianceTask;
+    setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    return updated;
   };
 
-  const deleteTask = async (id: string) => {
-    await fetch(`/api/compliance/${id}`, { method: "DELETE" });
+  const deleteTask = async (id: string): Promise<void> => {
+    const res = await fetch(`/api/compliance/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error ?? "Failed to delete task");
+    }
     setTasks((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const counts = {
-    pending: tasks.filter((t) => t.status === "PENDING").length,
-    inProgress: tasks.filter((t) => t.status === "IN_PROGRESS").length,
-    completed: tasks.filter((t) => t.status === "COMPLETED").length,
-    overdue: tasks.filter((t) => t.status === "OVERDUE").length,
-  };
-
-  return { tasks, loading, error, counts, createTask, updateStatus, deleteTask, refetch: fetchTasks };
+  return { tasks, loading, error, refetch: fetchTasks, createTask, updateTaskStatus, deleteTask };
 }

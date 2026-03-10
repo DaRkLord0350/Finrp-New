@@ -13,18 +13,15 @@ import {
 } from "recharts";
 import { motion } from "framer-motion";
 
-const monthlyData = [
-  { month: "Sep", revenue: 28400, invoices: 18 },
-  { month: "Oct", revenue: 31200, invoices: 22 },
-  { month: "Nov", revenue: 29800, invoices: 19 },
-  { month: "Dec", revenue: 38500, invoices: 28 },
-  { month: "Jan", revenue: 42100, invoices: 31 },
-  { month: "Feb", revenue: 45300, invoices: 34 },
-  { month: "Mar", revenue: 51200, invoices: 39 },
-];
+interface MonthlyRevenue {
+  month: string;
+  revenue: number;
+  invoices: number;
+}
 
 interface RevenueChartProps {
-  data?: typeof monthlyData;
+  data?: MonthlyRevenue[];
+  loading?: boolean;
   type?: "area" | "bar";
 }
 
@@ -80,7 +77,8 @@ const CustomTooltip = ({
 };
 
 export default function RevenueChart({
-  data = monthlyData,
+  data = [],
+  loading = false,
   type = "area",
 }: RevenueChartProps) {
   return (

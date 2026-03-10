@@ -1,8 +1,13 @@
+// ============================================================
+// GET   /api/business — get current user's business
+// POST  /api/business — create business (onboarding)
+// PATCH /api/business — update business details
+// ============================================================
+
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { createBusiness, getBusinessByUser } from "@/services/businessService";
+import { createBusiness, getBusinessByUser, updateBusiness } from "@/services/businessService";
 
-// GET /api/business — check if current user has a business
 export async function GET() {
   try {
     const { userId } = await auth();
@@ -17,7 +22,6 @@ export async function GET() {
   }
 }
 
-// POST /api/business — create business onboarding record
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();
@@ -25,7 +29,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if already exists
+    // Return existing business if already onboarded
     const existing = await getBusinessByUser(userId);
     if (existing) {
       return NextResponse.json({ business: existing });
@@ -55,6 +59,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ business }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/business]", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const body = await req.json();
+    const business = await updateBusiness(userId, body);
+    return NextResponse.json({ business });
+  } catch (error) {
+    console.error("[PATCH /api/business]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

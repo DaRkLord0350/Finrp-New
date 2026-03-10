@@ -4,11 +4,12 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { userId, orgId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const tenantId = orgId ?? userId;
 
     const tasks = await prisma.complianceTask.findMany({
-      where: { organizationId: orgId },
+      where: { organizationId: tenantId },
       orderBy: { dueDate: "asc" },
     });
 
@@ -21,8 +22,9 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { userId, orgId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const tenantId = orgId ?? userId;
 
     const body = await req.json();
     const { title, description, category = "OTHER", dueDate } = body;
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
         description,
         category,
         dueDate: new Date(dueDate),
-        organizationId: orgId,
+        organizationId: tenantId,
       },
     });
 

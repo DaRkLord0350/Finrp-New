@@ -9,8 +9,9 @@ import { X } from "lucide-react";
 const itemSchema = z.object({
   name: z.string().min(1, "Item name is required"),
   description: z.string().optional(),
+  price: z.number().min(0, "Price must be 0 or more"),
   stock: z.number().int().min(0, "Stock must be 0 or more"),
-  lowStockAt: z.number().int().min(1, "Low stock threshold must be at least 1"),
+  lowStockAt: z.number().int().min(1, "Threshold must be at least 1"),
 });
 
 type ItemFormData = z.infer<typeof itemSchema>;
@@ -19,6 +20,7 @@ interface Item {
   id: string;
   name: string;
   description?: string | null;
+  price: number;
   stock: number;
   lowStockAt: number;
 }
@@ -37,11 +39,13 @@ export default function ItemForm({ item, onSuccess, onClose }: ItemFormProps) {
     handleSubmit,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<ItemFormData>({
-    resolver: zodResolver(itemSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } = useForm<ItemFormData, any, ItemFormData>({
+    resolver: zodResolver(itemSchema) as any, // zod v4 + hookform v7 resolver compat
     defaultValues: {
       name: item?.name ?? "",
       description: item?.description ?? "",
+      price: item?.price ?? 0,
       stock: item?.stock ?? 0,
       lowStockAt: item?.lowStockAt ?? 10,
     },
@@ -51,6 +55,7 @@ export default function ItemForm({ item, onSuccess, onClose }: ItemFormProps) {
     reset({
       name: item?.name ?? "",
       description: item?.description ?? "",
+      price: item?.price ?? 0,
       stock: item?.stock ?? 0,
       lowStockAt: item?.lowStockAt ?? 10,
     });
@@ -67,11 +72,14 @@ export default function ItemForm({ item, onSuccess, onClose }: ItemFormProps) {
         body: JSON.stringify(data),
       });
 
-      if (!res.ok) throw new Error("Request failed");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? "Request failed");
+      }
       onSuccess();
       onClose();
-    } catch {
-      alert("Something went wrong. Please try again.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     }
   };
 
@@ -137,9 +145,7 @@ export default function ItemForm({ item, onSuccess, onClose }: ItemFormProps) {
           }}
         >
           <div>
-            <h2
-              style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}
-            >
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
               {isEdit ? "Edit Item" : "Add New Item"}
             </h2>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
@@ -181,13 +187,27 @@ export default function ItemForm({ item, onSuccess, onClose }: ItemFormProps) {
             <textarea
               {...register("description")}
               placeholder="Optional item description..."
-              rows={3}
+              rows={2}
               style={{
                 ...inputStyle,
                 resize: "vertical" as const,
                 fontFamily: "inherit",
               }}
             />
+          </div>
+
+          {/* Price */}
+          <div>
+            <label style={labelStyle}>Price (USD) *</label>
+            <input
+              {...register("price", { valueAsNumber: true })}
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="0.00"
+              style={inputStyle}
+            />
+            {errors.price && <span style={errorStyle}>{errors.price.message}</span>}
           </div>
 
           {/* Stock + Low Stock At */}

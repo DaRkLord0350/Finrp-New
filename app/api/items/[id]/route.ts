@@ -1,25 +1,41 @@
+// ============================================================
+// PATCH  /api/items/[id]  — update an item
+// DELETE /api/items/[id]  — remove an item
+// ============================================================
+
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { updateItem, deleteItem } from "@/services/itemService";
+import { itemSchema } from "@/lib/validations";
 
-// PATCH /api/items/[id]
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) {
+    const { userId, orgId } = await auth();
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const tenantId = orgId ?? userId;
     const { id } = await params;
     const body = await req.json();
 
-    const item = await updateItem(id, orgId, {
-      name: body.name,
-      description: body.description ?? undefined,
-      stock: body.stock !== undefined ? Number(body.stock) : undefined,
-      lowStockAt: body.lowStockAt !== undefined ? Number(body.lowStockAt) : undefined,
+    // Partial validation — allow partial updates
+    const parsed = itemSchema.partial().safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0].message },
+        { status: 400 }
+      );
+    }
+
+    const item = await updateItem(id, tenantId, {
+      name: parsed.data.name,
+      description: parsed.data.description,
+      price: parsed.data.price,
+      stock: parsed.data.stock,
+      lowStockAt: parsed.data.lowStockAt,
     });
 
     return NextResponse.json({ item });
@@ -29,18 +45,21 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/items/[id]
+// Also support PUT for form compatibility
+export { PATCH as PUT };
+
 export async function DELETE(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) {
+    const { userId, orgId } = await auth();
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const tenantId = orgId ?? userId;
     const { id } = await params;
-    await deleteItem(id, orgId);
+    await deleteItem(id, tenantId);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[DELETE /api/items/[id]]", error);

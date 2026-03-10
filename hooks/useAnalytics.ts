@@ -1,16 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { AnalyticsSummary } from "@/types";
+// ============================================================
+// useAnalytics — Fetch aggregated analytics from /api/analytics
+// ============================================================
+
+import { useState, useEffect, useCallback } from "react";
+
+export interface AnalyticsData {
+  totalRevenue: number;
+  revenueGrowth: number;
+  totalInvoices: number;
+  paidInvoices: number;
+  overdueInvoices: number;
+  totalCustomers: number;
+  avgDealSize: number;
+  monthlyRevenue: { month: string; revenue: number; invoices: number }[];
+}
+
+const DEFAULT_ANALYTICS: AnalyticsData = {
+  totalRevenue: 0,
+  revenueGrowth: 0,
+  totalInvoices: 0,
+  paidInvoices: 0,
+  overdueInvoices: 0,
+  totalCustomers: 0,
+  avgDealSize: 0,
+  monthlyRevenue: [],
+};
 
 export function useAnalytics() {
-  const [data, setData] = useState<AnalyticsSummary | null>(null);
+  const [data, setData] = useState<AnalyticsData>(DEFAULT_ANALYTICS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await fetch("/api/analytics");
       if (!res.ok) throw new Error("Failed to fetch analytics");
       const json = await res.json();
@@ -20,11 +46,9 @@ export function useAnalytics() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchAnalytics();
   }, []);
 
-  return { data, loading, error, refetch: fetchAnalytics };
+  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
+
+  return { ...data, loading, error, refetch: fetchAnalytics };
 }

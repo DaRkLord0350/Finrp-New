@@ -254,6 +254,7 @@ model Item {
   id             String   @id @default(cuid())
   name           String
   description    String?
+  price          Decimal  @default(0) @db.Decimal(12, 2)
   stock          Int      @default(0)
   lowStockAt     Int      @default(10)
   organizationId String
@@ -261,6 +262,7 @@ model Item {
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
 
   @@index([organizationId])
   @@map("items")
@@ -282,4 +284,28 @@ model Business {
   createdAt DateTime @default(now())
 
   @@map("businesses")
+}
+
+// ============================================================
+// TRANSACTION (Inventory movement — sale or restock)
+// ============================================================
+model Transaction {
+  id             String          @id @default(cuid())
+  itemId         String
+  organizationId String
+  type           TransactionType
+  quantity       Int
+  note           String?
+  createdAt      DateTime        @default(now())
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([organizationId])
+  @@map("transactions")
+}
+
+enum TransactionType {
+  SALE
+  RESTOCK
 }

@@ -5,52 +5,22 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import { TrendingUp, DollarSign, Users, FileText, BarChart3 } from "lucide-react";
+import { TrendingUp, DollarSign, Users, FileText, RefreshCw } from "lucide-react";
 import StatCard from "@/components/StatCard";
+import { useAnalytics } from "@/hooks/useAnalytics";
 
-const revenueData = [
-  { month: "Sep", revenue: 28400, expenses: 18200 },
-  { month: "Oct", revenue: 31200, expenses: 19800 },
-  { month: "Nov", revenue: 29800, expenses: 17500 },
-  { month: "Dec", revenue: 38500, expenses: 22100 },
-  { month: "Jan", revenue: 42100, expenses: 24300 },
-  { month: "Feb", revenue: 45300, expenses: 25800 },
-  { month: "Mar", revenue: 51200, expenses: 28400 },
-];
-
-const topCustomers = [
-  { name: "NovaBuild Co", revenue: 67400 },
-  { name: "Acme Corp", revenue: 42500 },
-  { name: "BrightStar Inc", revenue: 31200 },
-  { name: "TechFlow Ltd", revenue: 18300 },
-  { name: "Apex Digital", revenue: 14200 },
-];
-
-const paymentMixData = [
-  { name: "Paid", value: 68, color: "#10b981" },
-  { name: "Outstanding", value: 20, color: "#3b82f6" },
-  { name: "Overdue", value: 8, color: "#ef4444" },
-  { name: "Draft", value: 4, color: "#52525b" },
-];
-
-const stats = [
-  { title: "Total Revenue", value: "$265,100", change: 13.2, changeLabel: "YTD vs last year", icon: DollarSign, iconColor: "#6366f1" },
-  { title: "Gross Profit", value: "$152,800", change: 9.4, changeLabel: "YTD vs last year", icon: TrendingUp, iconColor: "#10b981" },
-  { title: "Avg Deal Size", value: "$6,800", change: 5.1, changeLabel: "vs last quarter", icon: FileText, iconColor: "#3b82f6" },
-  { title: "Active Customers", value: "124", change: 8.1, changeLabel: "vs last month", icon: Users, iconColor: "#f59e0b" },
-];
-
-const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { name: string; value: number; color: string; }[]; label?: string }) => {
+const CustomTooltip = ({ active, payload, label }: {
+  active?: boolean;
+  payload?: { name: string; value: number; color: string }[];
+  label?: string;
+}) => {
   if (active && payload && payload.length) {
     return (
-      <div style={{
-        background: "var(--bg-elevated)", border: "1px solid var(--border-strong)",
-        borderRadius: 10, padding: "10px 14px", boxShadow: "var(--shadow-md)",
-      }}>
+      <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-strong)", borderRadius: 10, padding: "10px 14px", boxShadow: "var(--shadow-md)" }}>
         <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</p>
         {payload.map((p, i) => (
           <p key={i} style={{ fontSize: 13, fontWeight: 600, color: p.color || "var(--text-primary)", marginBottom: 2 }}>
-            {p.name}: ${p.value.toLocaleString()}
+            {p.name}: ${Number(p.value).toLocaleString()}
           </p>
         ))}
       </div>
@@ -60,102 +30,109 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
 };
 
 export default function FinancePage() {
-  const netProfit = revenueData.map(d => ({
+  const {
+    totalRevenue, revenueGrowth, totalInvoices, paidInvoices, overdueInvoices,
+    totalCustomers, avgDealSize, monthlyRevenue, paymentMix, topCustomers,
+    loading, error, refetch,
+  } = useAnalytics() as ReturnType<typeof useAnalytics> & {
+    paymentMix?: { name: string; value: number; color: string }[];
+    topCustomers?: { name: string; revenue: number }[];
+  };
+
+  const netProfit = (monthlyRevenue ?? []).map(d => ({
     ...d,
-    profit: d.revenue - d.expenses,
+    profit: d.revenue,
   }));
+
+  const displayPaymentMix = paymentMix ?? [
+    { name: "Paid", value: 0, color: "#10b981" },
+    { name: "Outstanding", value: 0, color: "#3b82f6" },
+    { name: "Overdue", value: 0, color: "#ef4444" },
+    { name: "Draft", value: 0, color: "#52525b" },
+  ];
+
+  const displayTopCustomers = topCustomers ?? [];
+  const maxRevenue = displayTopCustomers[0]?.revenue || 1;
+
+  const stats = [
+    { title: "Total Revenue", value: loading ? "—" : `$${totalRevenue.toLocaleString()}`, change: revenueGrowth, changeLabel: "vs last month", icon: DollarSign, iconColor: "#6366f1" },
+    { title: "Avg Deal Size", value: loading ? "—" : `$${avgDealSize.toLocaleString()}`, change: 0, changeLabel: "per paid invoice", icon: TrendingUp, iconColor: "#10b981" },
+    { title: "Total Invoices", value: loading ? "—" : String(totalInvoices), change: 0, changeLabel: `${paidInvoices} paid`, icon: FileText, iconColor: "#3b82f6" },
+    { title: "Customers", value: loading ? "—" : String(totalCustomers), change: 0, changeLabel: "active in org", icon: Users, iconColor: "#f59e0b" },
+  ];
 
   return (
     <div>
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
-          Finance Analytics
-        </h1>
-        <p style={{ color: "var(--text-secondary)", fontSize: 14, marginTop: 4 }}>
-          Revenue performance, profitability metrics, and customer insights.
-        </p>
+      <div style={{ marginBottom: 28, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Finance Analytics</h1>
+          <p style={{ color: "var(--text-secondary)", fontSize: 14, marginTop: 4 }}>Revenue performance, profitability metrics, and customer insights.</p>
+        </div>
+        <button className="btn-ghost" onClick={refetch} style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+          <RefreshCw size={14} style={loading ? { animation: "spin 1s linear infinite" } : {}} />
+          Refresh
+        </button>
       </div>
+
+      {error && (
+        <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "12px 16px", color: "#ef4444", fontSize: 13, marginBottom: 20 }}>
+          {error} — <button onClick={refetch} style={{ color: "#ef4444", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}>Retry</button>
+        </div>
+      )}
 
       {/* KPI Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
-        {stats.map((stat, i) => (
-          <StatCard key={stat.title} {...stat} index={i} />
-        ))}
+        {stats.map((stat, i) => <StatCard key={stat.title} {...stat} index={i} />)}
       </div>
 
       {/* Revenue vs Expenses */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 20 }}>
-        <motion.div
-          className="chart-container"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
-        >
+        <motion.div className="chart-container" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
           <div style={{ marginBottom: 20 }}>
-            <h3 className="section-title">Revenue vs Expenses</h3>
-            <p className="section-subtitle">Monthly comparison for 2025</p>
+            <h3 className="section-title">Revenue Trend</h3>
+            <p className="section-subtitle">Monthly revenue for the last 7 months</p>
           </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={revenueData}>
-              <defs>
-                <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend
-                wrapperStyle={{ fontSize: 12, color: "var(--text-secondary)", paddingTop: 10 }}
-                formatter={(value) => <span style={{ color: "var(--text-secondary)" }}>{value}</span>}
-              />
-              <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#6366f1" strokeWidth={2} fill="url(#revGrad)" />
-              <Area type="monotone" dataKey="expenses" name="Expenses" stroke="#ef4444" strokeWidth={2} fill="url(#expGrad)" />
-            </AreaChart>
-          </ResponsiveContainer>
+          {(monthlyRevenue?.length ?? 0) > 0 ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <AreaChart data={netProfit}>
+                <defs>
+                  <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <Tooltip content={<CustomTooltip />} />
+                <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#6366f1" strokeWidth={2} fill="url(#revGrad)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 240, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>
+              No invoice data yet
+            </div>
+          )}
         </motion.div>
 
         {/* Invoice Status Mix */}
-        <motion.div
-          className="chart-container"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.35 }}
-        >
+        <motion.div className="chart-container" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
           <div style={{ marginBottom: 20 }}>
             <h3 className="section-title">Invoice Status</h3>
             <p className="section-subtitle">Payment distribution</p>
           </div>
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
-              <Pie
-                data={paymentMixData}
-                cx="50%" cy="50%"
-                innerRadius={50} outerRadius={75}
-                paddingAngle={3}
-                dataKey="value"
-              >
-                {paymentMixData.map((entry, i) => (
+              <Pie data={displayPaymentMix} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={3} dataKey="value">
+                {displayPaymentMix.map((entry, i) => (
                   <Cell key={i} fill={entry.color} stroke="transparent" />
                 ))}
               </Pie>
-              <Tooltip
-                formatter={(value) => [`${value}%`, ""]}
-                contentStyle={{
-                  background: "var(--bg-elevated)", border: "1px solid var(--border-strong)",
-                  borderRadius: 8, color: "var(--text-primary)", fontSize: 13,
-                }}
-              />
+              <Tooltip formatter={(value) => [`${value}%`, ""]} contentStyle={{ background: "var(--bg-elevated)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--text-primary)", fontSize: 13 }} />
             </PieChart>
           </ResponsiveContainer>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {paymentMixData.map((d) => (
+            {displayPaymentMix.map((d) => (
               <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ width: 10, height: 10, borderRadius: 3, background: d.color, flexShrink: 0 }} />
                 <span style={{ fontSize: 12, color: "var(--text-secondary)", flex: 1 }}>{d.name}</span>
@@ -168,65 +145,62 @@ export default function FinancePage() {
 
       {/* Net Profit + Top Customers */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        <motion.div
-          className="chart-container"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-        >
+        <motion.div className="chart-container" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
           <div style={{ marginBottom: 20 }}>
             <h3 className="section-title">Net Profit Trend</h3>
             <p className="section-subtitle">Monthly profitability</p>
           </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={netProfit}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-              <Tooltip
-                formatter={(v) => [`$${Number(v).toLocaleString()}`, "Net Profit"]}
-                contentStyle={{ background: "var(--bg-elevated)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--text-primary)", fontSize: 13 }}
-              />
-              <Bar dataKey="profit" name="Net Profit" fill="#10b981" radius={[5, 5, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {netProfit.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={netProfit}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v) => [`$${Number(v).toLocaleString()}`, "Revenue"]} contentStyle={{ background: "var(--bg-elevated)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--text-primary)", fontSize: 13 }} />
+                <Bar dataKey="revenue" name="Revenue" fill="#10b981" radius={[5, 5, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>No data yet</div>
+          )}
         </motion.div>
 
-        <motion.div
-          className="chart-container"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.45 }}
-        >
+        <motion.div className="chart-container" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
           <div style={{ marginBottom: 20 }}>
             <h3 className="section-title">Top Customers</h3>
             <p className="section-subtitle">By total revenue contribution</p>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {topCustomers.map((c, i) => {
-              const pct = (c.revenue / topCustomers[0].revenue) * 100;
-              return (
-                <div key={c.name}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                    <span style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>{c.name}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
-                      ${c.revenue.toLocaleString()}
-                    </span>
+          {displayTopCustomers.length === 0 ? (
+            <div style={{ color: "var(--text-muted)", fontSize: 13 }}>No paid invoices yet</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {displayTopCustomers.map((c, i) => {
+                const pct = (c.revenue / maxRevenue) * 100;
+                return (
+                  <div key={c.name}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                      <span style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>
+                        {c.name.length === 36 ? `Customer ${i + 1}` : c.name}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>${c.revenue.toLocaleString()}</span>
+                    </div>
+                    <div style={{ height: 5, background: "var(--bg-overlay)", borderRadius: 99, overflow: "hidden" }}>
+                      <motion.div
+                        style={{ height: "100%", borderRadius: 99, background: `hsl(${245 - i * 25}, 80%, 65%)` }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ delay: 0.5 + i * 0.08, duration: 0.6, ease: "easeOut" }}
+                      />
+                    </div>
                   </div>
-                  <div style={{ height: 5, background: "var(--bg-overlay)", borderRadius: 99, overflow: "hidden" }}>
-                    <motion.div
-                      style={{ height: "100%", borderRadius: 99, background: `hsl(${245 - i * 25}, 80%, 65%)` }}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${pct}%` }}
-                      transition={{ delay: 0.5 + i * 0.08, duration: 0.6, ease: "easeOut" }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </motion.div>
       </div>
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
