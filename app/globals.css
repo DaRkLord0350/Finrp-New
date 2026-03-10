@@ -6,20 +6,21 @@
    ============================================ */
 
 :root {
-  /* Background palette */
-  --bg-base: #09090b;
-  --bg-surface: #111113;
-  --bg-elevated: #18181b;
-  --bg-overlay: #1c1c20;
+  /* Light Theme Variables */
+  --bg-base: #ffffff;
+  --bg-surface: #f9fafb;
+  --bg-elevated: #f3f4f6;
+  --bg-overlay: #e5e7eb;
+  --bg-nav: rgba(255, 255, 255, 0.8);
 
   /* Border */
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
 
   /* Text */
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #52525b;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
 
   /* Brand — Indigo/Violet */
   --brand-50: #eef2ff;
@@ -44,6 +45,30 @@
   --radius-xl: 20px;
 
   /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.1);
+}
+
+.dark {
+  /* Dark Theme Variables */
+  --bg-base: #09090b;
+  --bg-surface: #111113;
+  --bg-elevated: #18181b;
+  --bg-overlay: #1c1c20;
+  --bg-nav: rgba(9, 9, 11, 0.8);
+
+  /* Border */
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  /* Text */
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #52525b;
+
+  /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
@@ -57,7 +82,6 @@
 }
 
 html {
-  color-scheme: dark;
   scroll-behavior: smooth;
 }
 
@@ -81,11 +105,23 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(128, 128, 128, 0.15);
   border-radius: 99px;
 }
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
 ::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.25);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
+}
+
+/* Selection */
+::selection {
+  background: rgba(99, 102, 241, 0.3);
+  color: var(--text-primary);
 }
 
 /* Selection */
@@ -111,7 +147,7 @@ body {
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-nav);
   backdrop-filter: blur(12px);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -360,7 +396,7 @@ body {
 /* Topbar */
 .topbar {
   height: 56px;
-  background: rgba(9, 9, 11, 0.8);
+  background: var(--bg-nav);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(20px);
   display: flex;

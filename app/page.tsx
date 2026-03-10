@@ -6,6 +6,7 @@ import ProductPreview from "@/components/ProductPreview";
 import LandingCTA from "@/components/LandingCTA";
 import { Zap } from "lucide-react";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const metadata = {
   title: "FinRP — AI Financial Operations Platform",
@@ -37,7 +38,7 @@ export default async function HomePage() {
           right: 0,
           zIndex: 50,
           height: 60,
-          background: "rgba(9,9,11,0.85)",
+          background: "var(--bg-surface)",
           borderBottom: "1px solid var(--border)",
           backdropFilter: "blur(20px)",
           display: "flex",
@@ -100,23 +101,26 @@ export default async function HomePage() {
           >
             Sign In
           </Link>
-          <Link
-            href="/sign-up"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "7px 16px",
-              borderRadius: 8,
-              background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-              color: "white",
-              fontSize: 13,
-              fontWeight: 600,
-              textDecoration: "none",
-            }}
-          >
-            Get Started
-          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <ThemeToggle />
+            <Link
+              href="/sign-up"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "7px 16px",
+                borderRadius: 8,
+                background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+                color: "white",
+                fontSize: 13,
+                fontWeight: 600,
+                textDecoration: "none",
+              }}
+            >
+              Get Started
+            </Link>
+          </div>
         </div>
       </nav>
 

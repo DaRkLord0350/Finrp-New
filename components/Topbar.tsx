@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { Bell, Search, ChevronRight } from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
 
 const routeLabels: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -87,6 +88,7 @@ export default function Topbar() {
 
       {/* Right actions */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <ThemeToggle />
         <button
           style={{
             background: "none",
