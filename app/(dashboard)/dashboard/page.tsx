@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Clock,
   CheckCircle,
+  Package,
 } from "lucide-react";
 import Link from "next/link";
 import StatCard from "@/components/StatCard";
@@ -63,7 +64,7 @@ const recentInvoices = [
 const quickActions = [
   { label: "New Invoice", href: "/billing/new", icon: FileText, color: "#6366f1" },
   { label: "Add Customer", href: "/crm", icon: Users, color: "#10b981" },
-  { label: "View Analytics", href: "/finance", icon: TrendingUp, color: "#3b82f6" },
+  { label: "Manage Items", href: "/items", icon: Package, color: "#3b82f6" },
   { label: "Compliance", href: "/compliance", icon: ShieldCheck, color: "#f59e0b" },
 ];
 

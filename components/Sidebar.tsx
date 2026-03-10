@@ -12,6 +12,7 @@ import {
   Settings,
   Zap,
   ChevronRight,
+  Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,11 @@ const navItems = [
     label: "Billing",
     href: "/billing",
     icon: FileText,
+  },
+  {
+    label: "Items",
+    href: "/items",
+    icon: Package,
   },
   {
     label: "Finance",

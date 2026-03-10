@@ -30,6 +30,7 @@ model Organization {
   complianceTasks  ComplianceTask[]
   businessProfile  BusinessProfile?
   analyticsRecords AnalyticsRecord[]
+  items            Item[]
 
   @@map("organizations")
 }
@@ -244,4 +245,41 @@ model AnalyticsRecord {
   @@index([organizationId])
   @@index([period])
   @@map("analytics_records")
+}
+
+// ============================================================
+// ITEM (Inventory Catalog)
+// ============================================================
+model Item {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  stock          Int      @default(0)
+  lowStockAt     Int      @default(10)
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("items")
+}
+
+// ============================================================
+// BUSINESS (Onboarding — tied directly to Clerk user ID)
+// ============================================================
+model Business {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  name      String
+  type      String
+  industry  String
+  address   String
+  country   String
+  currency  String   @default("USD")
+  taxId     String?
+  createdAt DateTime @default(now())
+
+  @@map("businesses")
 }
