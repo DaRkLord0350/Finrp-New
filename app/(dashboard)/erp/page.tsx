@@ -125,7 +125,7 @@ export default function ErpPage() {
                                 key={i}
                                 className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 p-3 rounded-lg text-sm"
                             >
-                                {alert.message}
+                                {/* {alert} */}
                             </div>
                         ))}
                     </div>
