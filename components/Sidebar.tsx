@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Bot,
   Settings,
+  Boxes,
   Zap,
   ChevronRight,
   Package,
@@ -42,6 +43,9 @@ const navItems = [
     href: "/finance",
     icon: BarChart3,
   },
+  { label: "ERP", 
+    href: "/erp", 
+    icon: Boxes },
   {
     label: "Compliance",
     href: "/compliance",
