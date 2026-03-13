@@ -31,6 +31,7 @@ model Organization {
   businessProfile  BusinessProfile?
   analyticsRecords AnalyticsRecord[]
   items            Item[]
+  loans            Loan[]
 
   @@map("organizations")
 }
@@ -308,4 +309,68 @@ model Transaction {
 enum TransactionType {
   SALE
   RESTOCK
+}
+
+// ============================================================
+// LOAN (Loan Management)
+// ============================================================
+model Loan {
+  id             String       @id @default(cuid())
+  organizationId String
+  loanAmount     Decimal      @db.Decimal(16, 2)
+  principalAmount Decimal     @db.Decimal(16, 2)
+  interestRate   Decimal      @default(0) @db.Decimal(5, 2)
+  tenure         Int          // in months
+  status         LoanStatus   @default(PENDING)
+  loanType       String       // e.g., "Working Capital", "Equipment Purchase"
+  bank           String       // e.g., "State Bank of India"
+  applicationDate DateTime    @default(now())
+  approvalDate   DateTime?
+  startDate      DateTime?
+  endDate        DateTime?
+  processingFee  Decimal      @default(0) @db.Decimal(5, 2) // percentage
+  monthlyEMI     Decimal      @default(0) @db.Decimal(12, 2)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments       LoanPayment[]
+
+  @@index([organizationId])
+  @@map("loans")
+}
+
+enum LoanStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  ACTIVE
+  COMPLETED
+  REJECTED
+}
+
+// ============================================================
+// LOAN PAYMENT (EMI tracking)
+// ============================================================
+model LoanPayment {
+  id             String   @id @default(cuid())
+  loanId         String
+  amount         Decimal  @db.Decimal(12, 2)
+  paidAmount     Decimal  @default(0) @db.Decimal(12, 2)
+  dueDate        DateTime
+  paidDate       DateTime?
+  status         PaymentStatus @default(PENDING)
+  createdAt      DateTime @default(now())
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId])
+  @@map("loan_payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  PARTIAL
 }

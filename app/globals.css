@@ -352,6 +352,15 @@ body {
   padding: 24px;
 }
 
+/* Section card */
+.section-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  transition: all 0.2s ease;
+}
+
 /* Sidebar */
 .sidebar {
   width: 240px;

@@ -1,11 +1,12 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import { TrendingUp, DollarSign, Users, FileText, RefreshCw } from "lucide-react";
+import { TrendingUp, DollarSign, Users, FileText, RefreshCw, ArrowRight } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import { useAnalytics } from "@/hooks/useAnalytics";
 
@@ -30,6 +31,7 @@ const CustomTooltip = ({ active, payload, label }: {
 };
 
 export default function FinancePage() {
+  const router = useRouter();
   const {
     totalRevenue, revenueGrowth, totalInvoices, paidInvoices, overdueInvoices,
     totalCustomers, avgDealSize, monthlyRevenue, paymentMix, topCustomers,
@@ -68,10 +70,38 @@ export default function FinancePage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Finance Analytics</h1>
           <p style={{ color: "var(--text-secondary)", fontSize: 14, marginTop: 4 }}>Revenue performance, profitability metrics, and customer insights.</p>
         </div>
-        <button className="btn-ghost" onClick={refetch} style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-          <RefreshCw size={14} style={loading ? { animation: "spin 1s linear infinite" } : {}} />
-          Refresh
-        </button>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <button className="btn-ghost" onClick={refetch} style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+            <RefreshCw size={14} style={loading ? { animation: "spin 1s linear infinite" } : {}} />
+            Refresh
+          </button>
+          <button 
+            onClick={() => router.push("/finance/loans")} 
+            style={{ 
+              padding: "8px 16px", 
+              background: "#6366f1", 
+              color: "#ffffff", 
+              border: "none", 
+              borderRadius: "var(--radius-md)", 
+              fontSize: 13, 
+              fontWeight: 600, 
+              cursor: "pointer", 
+              display: "flex", 
+              alignItems: "center", 
+              gap: 6, 
+              transition: "all 0.2s ease" 
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "#4f46e5";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "#6366f1";
+            }}
+          >
+            Loans & Dashboard
+            <ArrowRight size={14} />
+          </button>
+        </div>
       </div>
 
       {error && (
