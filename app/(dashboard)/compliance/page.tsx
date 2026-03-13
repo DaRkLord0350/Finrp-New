@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import {
-  ShieldCheck, Plus, Clock, CheckCircle, AlertTriangle, Calendar, Tag, RefreshCw, Trash2,
+  ShieldCheck, Plus, Clock, CheckCircle, AlertTriangle, Calendar, Tag, RefreshCw, Trash2, FileText, Download, Upload, Check,
 } from "lucide-react";
 import { useState } from "react";
 import { getTaskStatusColor } from "@/lib/utils";
@@ -25,6 +25,13 @@ const statusIcons: Record<string, React.ReactNode> = {
 
 const categories = ["All", "TAX", "REGULATORY", "LICENSE", "AUDIT", "REPORTING"];
 const statuses = ["All", "PENDING", "IN_PROGRESS", "COMPLETED", "OVERDUE"];
+
+const DOCUMENTS = [
+  { label: "Company PAN Card", type: "PAN", uploaded: false },
+  { label: "GST Certificate", type: "GST", uploaded: true },
+  { label: "Certificate of Incorporation", type: "INCORPORATION", uploaded: false },
+  { label: "Memorandum of Association", type: "MOA", uploaded: false },
+];
 
 export default function CompliancePage() {
   const { tasks, loading, error, refetch, createTask, updateTaskStatus, deleteTask } = useCompliance();
@@ -122,89 +129,187 @@ export default function CompliancePage() {
         ))}
       </div>
 
-      {/* Filters */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          {categories.map((cat) => (
-            <button key={cat} onClick={() => setCategoryFilter(cat)} style={{ padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 500, border: "1px solid", cursor: "pointer", background: categoryFilter === cat ? `${categoryColors[cat] || "#6366f1"}20` : "transparent", borderColor: categoryFilter === cat ? `${categoryColors[cat] || "#6366f1"}60` : "var(--border)", color: categoryFilter === cat ? (categoryColors[cat] || "#818cf8") : "var(--text-secondary)", transition: "all 0.15s ease" }}>
-              {cat}
-            </button>
-          ))}
+      {/* Filters - Dropdown Style */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Category</label>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              border: "1px solid var(--border)",
+              background: "var(--bg-surface)",
+              color: "var(--text-primary)",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+          >
+            {categories.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
         </div>
-        <div style={{ height: 20, width: 1, background: "var(--border)" }} />
-        <div style={{ display: "flex", gap: 6 }}>
-          {statuses.map((s) => (
-            <button key={s} onClick={() => setStatusFilter(s)} style={{ padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 500, border: "1px solid", cursor: "pointer", background: statusFilter === s ? "rgba(99,102,241,0.15)" : "transparent", borderColor: statusFilter === s ? "rgba(99,102,241,0.4)" : "var(--border)", color: statusFilter === s ? "#818cf8" : "var(--text-secondary)", transition: "all 0.15s ease" }}>
-              {s.replace("_", " ")}
-            </button>
-          ))}
+
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Status</label>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              border: "1px solid var(--border)",
+              background: "var(--bg-surface)",
+              color: "var(--text-primary)",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+          >
+            {statuses.map((s) => (
+              <option key={s} value={s}>{s.replace("_", " ")}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-muted)" }}>
+          {filtered.length} task{filtered.length !== 1 ? "s" : ""} found
         </div>
       </div>
 
-      {/* Task Cards */}
-      {loading ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14 }}>
-          {[...Array(4)].map((_, i) => (
-            <div key={i} style={{ height: 130, background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, animation: "pulse 1.5s ease-in-out infinite" }} />
-          ))}
+      {/* Main Layout: Tasks on Left, Documents on Right */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
+        {/* Tasks Section */}
+        <div>
+          {loading ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {[...Array(3)].map((_, i) => (
+                <div key={i} style={{ height: 120, background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, animation: "pulse 1.5s ease-in-out infinite" }} />
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "64px 20px", background: "var(--bg-surface)", borderRadius: 14, border: "1px solid var(--border)" }}>
+              <FileText size={32} style={{ color: "var(--text-muted)", margin: "0 auto 12px" }} />
+              <p style={{ fontSize: 15, color: "var(--text-secondary)", fontWeight: 500 }}>No tasks found</p>
+              <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>Try adjusting your filters or add a new task.</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {filtered.map((task, i) => (
+                <motion.div
+                  key={task.id}
+                  className="surface"
+                  style={{ padding: 18 }}
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  whileHover={{ borderColor: "var(--border-strong)" }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: `${categoryColors[task.category] || "#52525b"}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <ShieldCheck size={16} color={categoryColors[task.category] || "#52525b"} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{task.title}</h3>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 6, flexWrap: "wrap" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 99, fontSize: 10, fontWeight: 600, background: `${categoryColors[task.category] || "#52525b"}18`, color: categoryColors[task.category] || "#52525b", border: `1px solid ${categoryColors[task.category] || "#52525b"}30` }}>
+                            <Tag size={9} /> {task.category}
+                          </span>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-muted)" }}>
+                            <Calendar size={11} />
+                            {format(new Date(task.dueDate), "MMM d, yyyy")}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                      <select
+                        value={task.status}
+                        onChange={(e) => handleStatusChange(task.id, e.target.value)}
+                        style={{ padding: "4px 8px", borderRadius: 6, fontSize: 11, fontWeight: 600, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer" }}
+                      >
+                        <option value="PENDING">PENDING</option>
+                        <option value="IN_PROGRESS">IN PROGRESS</option>
+                        <option value="COMPLETED">COMPLETED</option>
+                        <option value="OVERDUE">OVERDUE</option>
+                      </select>
+                      <button onClick={() => handleDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "4px 8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
         </div>
-      ) : filtered.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "64px 0" }}>
-          <p style={{ fontSize: 15, color: "var(--text-secondary)" }}>No tasks found</p>
-          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Try adjusting your filters or add a new task.</p>
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14 }}>
-          {filtered.map((task, i) => (
-            <motion.div
-              key={task.id}
-              className="surface"
-              style={{ padding: 20 }}
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-              whileHover={{ borderColor: "var(--border-strong)" }}
-            >
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0, background: `${categoryColors[task.category] || "#52525b"}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <ShieldCheck size={16} color={categoryColors[task.category] || "#52525b"} />
+
+        {/* Company Documents Section */}
+        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 18, height: "fit-content" }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+            <FileText size={16} color="#3b82f6" />
+            Company Documents
+          </h3>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {DOCUMENTS.map((doc) => (
+              <motion.div
+                key={doc.type}
+                style={{
+                  padding: 12,
+                  background: "var(--bg-elevated)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                }}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                whileHover={{ borderColor: "var(--border-strong)" }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{doc.label}</p>
+                  <p style={{ fontSize: 11, color: doc.uploaded ? "#10b981" : "var(--text-muted)", marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                    {doc.uploaded ? (
+                      <>
+                        <Check size={12} /> Uploaded
+                      </>
+                    ) : (
+                      "Not Uploaded"
+                    )}
+                  </p>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{task.title}</h3>
-                    <button onClick={() => handleDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}>
-                      <Trash2 size={14} />
+
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  {doc.uploaded ? (
+                    <>
+                      <button style={{ padding: "5px 10px", fontSize: 11, fontWeight: 600, border: "1px solid #3b82f6", background: "#3b82f618", color: "#3b82f6", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, transition: "all 0.2s" }}>
+                        <Download size={12} /> View
+                      </button>
+                      <button style={{ padding: "5px 10px", fontSize: 11, fontWeight: 600, border: "1px solid #f59e0b", background: "#f59e0b18", color: "#f59e0b", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, transition: "all 0.2s" }}>
+                        <Upload size={12} /> Replace
+                      </button>
+                    </>
+                  ) : (
+                    <button style={{ padding: "5px 10px", fontSize: 11, fontWeight: 600, border: "1px solid #6366f1", background: "#6366f118", color: "#6366f1", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, transition: "all 0.2s" }}>
+                      <Upload size={12} /> Upload
                     </button>
-                  </div>
-                  {task.description && (
-                    <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, lineHeight: 1.5 }}>{task.description}</p>
                   )}
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 99, fontSize: 10, fontWeight: 600, background: `${categoryColors[task.category] || "#52525b"}18`, color: categoryColors[task.category] || "#52525b", border: `1px solid ${categoryColors[task.category] || "#52525b"}30` }}>
-                      <Tag size={9} /> {task.category}
-                    </span>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: task.status === "OVERDUE" ? "#ef4444" : "var(--text-muted)" }}>
-                      <Calendar size={11} />
-                      Due {format(new Date(task.dueDate), "MMM d, yyyy")}
-                    </span>
-                    {/* Status toggle */}
-                    <select
-                      value={task.status}
-                      onChange={(e) => handleStatusChange(task.id, e.target.value)}
-                      style={{ marginLeft: "auto", padding: "2px 8px", borderRadius: 99, fontSize: 10, fontWeight: 600, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer" }}
-                    >
-                      <option value="PENDING">PENDING</option>
-                      <option value="IN_PROGRESS">IN PROGRESS</option>
-                      <option value="COMPLETED">COMPLETED</option>
-                      <option value="OVERDUE">OVERDUE</option>
-                    </select>
-                  </div>
                 </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            ))}
+          </div>
         </div>
-      )}
+      </div>
 
       {showForm && (
         <ComplianceTaskForm

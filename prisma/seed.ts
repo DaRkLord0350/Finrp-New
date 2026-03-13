@@ -5,280 +5,344 @@ import {
   InvoiceStatus,
   PaymentMethod,
   TransactionType,
+  LoanStatus,
+  PaymentStatus,
+  ComplianceCategory,
+  TaskStatus
 } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  // ─────────────────────────────────────────────────────────────
-  // IMPORTANT: Pass your actual Clerk userId (or orgId) via the
-  // SEED_ORG_ID environment variable so the seeded data is
-  // visible to your logged-in account.
-  //
-  // How to find your tenantId:
-  //   1. Run `npm run dev`, log in, then visit:
-  //      http://localhost:3000/api/debug/tenant
-  //   2. Copy the `tenantId` value from the JSON response
-  //   3. Re-run seed:
-  //      $env:SEED_ORG_ID="<your-tenantId>"; npx prisma db seed
-  // ─────────────────────────────────────────────────────────────
+
   const seedOrgId = process.env.SEED_ORG_ID;
+
   if (!seedOrgId) {
-    console.error(
-      "\n❌  SEED_ORG_ID is not set!\n" +
-      "    Visit http://localhost:3000/api/debug/tenant while logged in\n" +
-      "    to get your tenantId, then run:\n\n" +
-      '    $env:SEED_ORG_ID="<your-tenantId>"; npx prisma db seed\n'
-    );
+    console.error(`
+❌ SEED_ORG_ID is not set
+
+Visit:
+http://localhost:3000/api/debug/tenant
+
+Then run:
+
+$env:SEED_ORG_ID="<tenantId>"; npx prisma db seed
+`);
     process.exit(1);
   }
 
-  console.log(`🌱 Seeding database with organizationId = ${seedOrgId}`);
+  console.log(`🌱 Seeding org: ${seedOrgId}`);
 
-  // ── Wipe existing data for this tenant so re-seeding is safe ──
+  // -------------------------------------------------------
+  // CLEANUP (Respect foreign key order)
+  // -------------------------------------------------------
+
+  await prisma.loanPayment.deleteMany({});
+  await prisma.loan.deleteMany({ where: { organizationId: seedOrgId } });
+
   await prisma.analyticsRecord.deleteMany({ where: { organizationId: seedOrgId } });
   await prisma.transaction.deleteMany({ where: { organizationId: seedOrgId } });
   await prisma.complianceTask.deleteMany({ where: { organizationId: seedOrgId } });
   await prisma.payment.deleteMany({ where: { organizationId: seedOrgId } });
+  await prisma.invoiceItem.deleteMany({});
   await prisma.invoice.deleteMany({ where: { organizationId: seedOrgId } });
   await prisma.item.deleteMany({ where: { organizationId: seedOrgId } });
   await prisma.customer.deleteMany({ where: { organizationId: seedOrgId } });
-  // Don't delete the Organization itself — it may be a Clerk user ID (virtual org)
 
-  // ── Upsert an Organization record keyed to the tenant ID ──────
-  // Use a slug derived from the seedOrgId so it's always unique.
-  const orgSlug = `org-${seedOrgId.replace(/[^a-z0-9]/gi, "").toLowerCase().slice(0, 20)}`;
+  // -------------------------------------------------------
+  // ORGANIZATION
+  // -------------------------------------------------------
+
+  const orgSlug = `org-${seedOrgId.slice(0, 10)}`;
+
   await prisma.organization.upsert({
     where: { id: seedOrgId },
-    update: { name: "FinRP Demo Org" },
+    update: {},
     create: {
       id: seedOrgId,
       name: "FinRP Demo Org",
       slug: orgSlug,
-      plan: Plan.STARTER,
-    },
+      plan: Plan.STARTER
+    }
   });
 
-  // ── User (optional — maps a Clerk ID to this org) ─────────────
+  // -------------------------------------------------------
+  // USER
+  // -------------------------------------------------------
+
   await prisma.user.upsert({
     where: { clerkId: seedOrgId },
     update: {},
     create: {
       clerkId: seedOrgId,
       email: "admin@finrp.com",
-      name: "Admin User",
+      name: "Admin",
       role: Role.ADMIN,
-      organizationId: seedOrgId,
-    },
+      organizationId: seedOrgId
+    }
   });
 
-  // ── Business Profile ──────────────────────────────────────────
+  // -------------------------------------------------------
+  // BUSINESS PROFILE
+  // -------------------------------------------------------
+
   await prisma.businessProfile.upsert({
     where: { organizationId: seedOrgId },
     update: {},
     create: {
       organizationId: seedOrgId,
       businessName: "FinRP Technologies",
-      registrationNo: "REG-123456",
-      taxId: "TAX-998877",
+      registrationNo: "REG-554433",
+      taxId: "GST-998877",
       industry: "FinTech",
       country: "India",
-      currency: "INR",
-    },
+      currency: "INR"
+    }
   });
 
-  // ── Customers ─────────────────────────────────────────────────
-  const customer1 = await prisma.customer.create({
+  // -------------------------------------------------------
+  // BUSINESS (Onboarding)
+  // -------------------------------------------------------
+
+  await prisma.business.upsert({
+    where: { clerkId: seedOrgId },
+    update: {},
+    create: {
+      clerkId: seedOrgId,
+      name: "FinRP Demo Business",
+      type: "Private Limited",
+      industry: "FinTech",
+      address: "Bangalore, India",
+      country: "India",
+      currency: "INR",
+      taxId: "GST-998877"
+    }
+  });
+
+  // -------------------------------------------------------
+  // CUSTOMERS
+  // -------------------------------------------------------
+
+  const john = await prisma.customer.create({
     data: {
       name: "John Doe",
       email: "john@example.com",
       phone: "+919999999999",
       company: "Acme Corp",
-      organizationId: seedOrgId,
-    },
+      organizationId: seedOrgId
+    }
   });
 
-  const customer2 = await prisma.customer.create({
+  const priya = await prisma.customer.create({
     data: {
       name: "Priya Sharma",
       email: "priya@startupco.in",
       phone: "+918888888888",
       company: "StartupCo",
-      organizationId: seedOrgId,
-    },
+      organizationId: seedOrgId
+    }
   });
 
-  // ── Items (Inventory) ─────────────────────────────────────────
-  const item1 = await prisma.item.create({
+  // -------------------------------------------------------
+  // INVENTORY ITEMS
+  // -------------------------------------------------------
+
+  const laptop = await prisma.item.create({
     data: {
       name: "Laptop",
       description: "Business Laptop",
       price: 75000,
       stock: 25,
-      lowStockAt: 5,
-      organizationId: seedOrgId,
-    },
+      organizationId: seedOrgId
+    }
   });
 
-  const item2 = await prisma.item.create({
+  const mouse = await prisma.item.create({
     data: {
       name: "Wireless Mouse",
-      description: "Ergonomic wireless mouse",
+      description: "Ergonomic Mouse",
       price: 1200,
-      stock: 4,           // below lowStockAt → triggers low-stock alert
+      stock: 4,
       lowStockAt: 10,
-      organizationId: seedOrgId,
-    },
+      organizationId: seedOrgId
+    }
   });
 
-  const item3 = await prisma.item.create({
+  const hub = await prisma.item.create({
     data: {
       name: "USB-C Hub",
-      description: "7-in-1 USB-C Hub",
+      description: "7 in 1 USB-C Hub",
       price: 3500,
       stock: 18,
-      lowStockAt: 5,
-      organizationId: seedOrgId,
-    },
+      organizationId: seedOrgId
+    }
   });
 
-  // ── Invoices ──────────────────────────────────────────────────
-  const invoice1 = await prisma.invoice.create({
+  // -------------------------------------------------------
+  // INVOICE
+  // -------------------------------------------------------
+
+  const invoice = await prisma.invoice.create({
     data: {
-      invoiceNumber: "INV-00001",
-      customerId: customer1.id,
+      invoiceNumber: "INV-0001",
+      customerId: john.id,
       organizationId: seedOrgId,
       status: InvoiceStatus.PAID,
-      issueDate: new Date("2026-02-15"),
-      dueDate: new Date("2026-03-01"),
+      dueDate: new Date(),
       subtotal: 75000,
       taxRate: 18,
       taxAmount: 13500,
       total: 88500,
       items: {
         create: [
-          { description: "Laptop x1", quantity: 1, unitPrice: 75000, amount: 75000 },
-        ],
-      },
-    },
+          {
+            description: "Laptop x1",
+            quantity: 1,
+            unitPrice: 75000,
+            amount: 75000
+          }
+        ]
+      }
+    }
   });
 
-  const invoice2 = await prisma.invoice.create({
-    data: {
-      invoiceNumber: "INV-00002",
-      customerId: customer2.id,
-      organizationId: seedOrgId,
-      status: InvoiceStatus.SENT,
-      issueDate: new Date("2026-03-01"),
-      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      subtotal: 8400,
-      taxRate: 18,
-      taxAmount: 1512,
-      total: 9912,
-      items: {
-        create: [
-          { description: "Wireless Mouse x7", quantity: 7, unitPrice: 1200, amount: 8400 },
-        ],
-      },
-    },
-  });
+  // -------------------------------------------------------
+  // PAYMENT
+  // -------------------------------------------------------
 
-  const invoice3 = await prisma.invoice.create({
-    data: {
-      invoiceNumber: "INV-00003",
-      customerId: customer1.id,
-      organizationId: seedOrgId,
-      status: InvoiceStatus.OVERDUE,
-      issueDate: new Date("2026-01-10"),
-      dueDate: new Date("2026-02-10"),
-      subtotal: 10500,
-      taxRate: 18,
-      taxAmount: 1890,
-      total: 12390,
-      items: {
-        create: [
-          { description: "USB-C Hub x3", quantity: 3, unitPrice: 3500, amount: 10500 },
-        ],
-      },
-    },
-  });
-
-  // ── Payments ──────────────────────────────────────────────────
   await prisma.payment.create({
     data: {
-      invoiceId: invoice1.id,
+      invoiceId: invoice.id,
       organizationId: seedOrgId,
       amount: 88500,
-      method: PaymentMethod.BANK_TRANSFER,
-    },
+      method: PaymentMethod.BANK_TRANSFER
+    }
   });
 
-  // ── Compliance Tasks ──────────────────────────────────────────
+  // -------------------------------------------------------
+  // COMPLIANCE TASKS
+  // -------------------------------------------------------
+
   await prisma.complianceTask.createMany({
     data: [
       {
-        title: "GST Filing — March 2026",
-        description: "Monthly GST return filing",
-        category: "TAX",
-        status: "PENDING",
-        dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-        organizationId: seedOrgId,
+        title: "GST Filing",
+        category: ComplianceCategory.TAX,
+        status: TaskStatus.PENDING,
+        dueDate: new Date(Date.now() + 5 * 86400000),
+        organizationId: seedOrgId
       },
       {
-        title: "Annual Audit Prep",
-        description: "Prepare documents for FY 2025-26 audit",
-        category: "AUDIT",
-        status: "IN_PROGRESS",
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        organizationId: seedOrgId,
-      },
-      {
-        title: "Trade License Renewal",
-        description: "Renew business trade license",
-        category: "LICENSE",
-        status: "PENDING",
-        dueDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-        organizationId: seedOrgId,
-      },
-    ],
+        title: "Annual Audit",
+        category: ComplianceCategory.AUDIT,
+        status: TaskStatus.IN_PROGRESS,
+        dueDate: new Date(Date.now() + 30 * 86400000),
+        organizationId: seedOrgId
+      }
+    ]
   });
 
-  // ── Transactions ──────────────────────────────────────────────
+  // -------------------------------------------------------
+  // INVENTORY TRANSACTIONS
+  // -------------------------------------------------------
+
   await prisma.transaction.createMany({
     data: [
-      { itemId: item1.id, organizationId: seedOrgId, type: TransactionType.SALE,    quantity: 1,  note: "Sold 1 laptop" },
-      { itemId: item2.id, organizationId: seedOrgId, type: TransactionType.RESTOCK, quantity: 50, note: "Restocked mouse" },
-      { itemId: item3.id, organizationId: seedOrgId, type: TransactionType.SALE,    quantity: 3,  note: "Sold 3 USB-C hubs" },
-    ],
+      {
+        itemId: laptop.id,
+        organizationId: seedOrgId,
+        type: TransactionType.SALE,
+        quantity: 1
+      },
+      {
+        itemId: mouse.id,
+        organizationId: seedOrgId,
+        type: TransactionType.RESTOCK,
+        quantity: 50
+      },
+      {
+        itemId: hub.id,
+        organizationId: seedOrgId,
+        type: TransactionType.SALE,
+        quantity: 3
+      }
+    ]
   });
 
-  // ── Analytics Records ─────────────────────────────────────────
+  // -------------------------------------------------------
+  // LOANS
+  // -------------------------------------------------------
+
+  const loan = await prisma.loan.create({
+    data: {
+      organizationId: seedOrgId,
+      loanAmount: 2500000,
+      principalAmount: 2300000,
+      interestRate: 11.5,
+      tenure: 36,
+      loanType: "Working Capital",
+      bank: "State Bank of India",
+      processingFee: 2,
+      monthlyEMI: 78000,
+      status: LoanStatus.ACTIVE,
+      startDate: new Date(),
+      endDate: new Date(Date.now() + 36 * 30 * 86400000)
+    }
+  });
+
+  // -------------------------------------------------------
+  // LOAN PAYMENTS
+  // -------------------------------------------------------
+
+  await prisma.loanPayment.createMany({
+    data: [
+      {
+        loanId: loan.id,
+        amount: 78000,
+        paidAmount: 78000,
+        status: PaymentStatus.PAID,
+        dueDate: new Date("2026-01-01"),
+        paidDate: new Date("2026-01-01")
+      },
+      {
+        loanId: loan.id,
+        amount: 78000,
+        paidAmount: 78000,
+        status: PaymentStatus.PAID,
+        dueDate: new Date("2026-02-01"),
+        paidDate: new Date("2026-02-01")
+      },
+      {
+        loanId: loan.id,
+        amount: 78000,
+        paidAmount: 0,
+        status: PaymentStatus.PENDING,
+        dueDate: new Date("2026-03-01")
+      }
+    ]
+  });
+
+  // -------------------------------------------------------
+  // ANALYTICS
+  // -------------------------------------------------------
+
   await prisma.analyticsRecord.createMany({
     data: [
-      { organizationId: seedOrgId, period: "2025-09", metric: "revenue", value: 41000 },
-      { organizationId: seedOrgId, period: "2025-10", metric: "revenue", value: 56000 },
-      { organizationId: seedOrgId, period: "2025-11", metric: "revenue", value: 49000 },
       { organizationId: seedOrgId, period: "2025-12", metric: "revenue", value: 73000 },
       { organizationId: seedOrgId, period: "2026-01", metric: "revenue", value: 62000 },
       { organizationId: seedOrgId, period: "2026-02", metric: "revenue", value: 88500 },
-      { organizationId: seedOrgId, period: "2026-03", metric: "revenue", value: 0 },
-    ],
+      { organizationId: seedOrgId, period: "2026-03", metric: "revenue", value: 0 }
+    ]
   });
 
-  console.log(`\n✅ Seed completed for tenant: ${seedOrgId}`);
-  console.log("   Customers    : 2 (John Doe, Priya Sharma)");
-  console.log("   Items        : 3 (Laptop, Wireless Mouse, USB-C Hub)");
-  console.log("   Invoices     : 3 (PAID, SENT, OVERDUE)");
-  console.log("   Compliance   : 3 tasks");
-  console.log("   Transactions : 3 entries");
-  console.log("   Analytics    : 7 monthly records");
+  console.log("✅ FinRP seed completed");
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+.catch(e=>{
+  console.error(e);
+  process.exit(1);
+})
+.finally(async ()=>{
+  await prisma.$disconnect();
+});
