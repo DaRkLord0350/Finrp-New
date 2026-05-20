@@ -5,6 +5,7 @@ const isProtectedRoute = createRouteMatcher([
   "/crm(.*)",
   "/billing(.*)",
   "/finance(.*)",
+  "/erp(.*)",
   "/compliance(.*)",
   "/advisor(.*)",
   "/items(.*)",
@@ -18,6 +19,7 @@ const isProtectedRoute = createRouteMatcher([
   "/api/business(.*)",
   "/api/transactions(.*)",
   "/api/dashboard(.*)",
+  "/api/erp(.*)",
   "/api/loans(.*)",
 ]);
 

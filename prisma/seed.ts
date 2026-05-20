@@ -37,6 +37,13 @@ $env:SEED_ORG_ID="<tenantId>"; npx prisma db seed
   // CLEANUP (Respect foreign key order)
   // -------------------------------------------------------
 
+  // ERP tables
+  await prisma.saleItem.deleteMany({});
+  await prisma.sale.deleteMany({ where: { organizationId: seedOrgId } });
+  await prisma.purchase.deleteMany({ where: { organizationId: seedOrgId } });
+  await prisma.expense.deleteMany({ where: { organizationId: seedOrgId } });
+  await prisma.payroll.deleteMany({ where: { organizationId: seedOrgId } });
+
   await prisma.loanPayment.deleteMany({});
   await prisma.loan.deleteMany({ where: { organizationId: seedOrgId } });
 
@@ -143,6 +150,16 @@ $env:SEED_ORG_ID="<tenantId>"; npx prisma db seed
     }
   });
 
+  const rajesh = await prisma.customer.create({
+    data: {
+      name: "Rajesh Kumar",
+      email: "rajesh@digihub.in",
+      phone: "+917777777777",
+      company: "DigiHub Services",
+      organizationId: seedOrgId
+    }
+  });
+
   // -------------------------------------------------------
   // INVENTORY ITEMS
   // -------------------------------------------------------
@@ -174,6 +191,28 @@ $env:SEED_ORG_ID="<tenantId>"; npx prisma db seed
       description: "7 in 1 USB-C Hub",
       price: 3500,
       stock: 18,
+      organizationId: seedOrgId
+    }
+  });
+
+  const monitor = await prisma.item.create({
+    data: {
+      name: "Monitor 27\"",
+      description: "LG UltraFine 4K",
+      price: 32000,
+      stock: 8,
+      lowStockAt: 3,
+      organizationId: seedOrgId
+    }
+  });
+
+  const keyboard = await prisma.item.create({
+    data: {
+      name: "Mechanical Keyboard",
+      description: "Keychron K2 Pro",
+      price: 8500,
+      stock: 2,
+      lowStockAt: 5,
       organizationId: seedOrgId
     }
   });
@@ -335,7 +374,191 @@ $env:SEED_ORG_ID="<tenantId>"; npx prisma db seed
     ]
   });
 
-  console.log("✅ FinRP seed completed");
+  // -------------------------------------------------------
+  // ERP: SALES (5 sales with line items)
+  // -------------------------------------------------------
+
+  const now = new Date();
+  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  await prisma.sale.create({
+    data: {
+      saleNumber: "SL-00001",
+      customerId: john.id,
+      organizationId: seedOrgId,
+      totalAmount: 150000,
+      status: "COMPLETED",
+      saleDate: new Date(now.getFullYear(), now.getMonth(), 2),
+      notes: "IT Infrastructure Setup",
+      items: { create: [
+        { description: "Business Laptop x2", quantity: 2, unitPrice: 72000, amount: 144000, itemId: laptop.id },
+        { description: "Wireless Mouse x1", quantity: 1, unitPrice: 6000, amount: 6000, itemId: mouse.id },
+      ] }
+    }
+  });
+
+  await prisma.sale.create({
+    data: {
+      saleNumber: "SL-00002",
+      customerId: priya.id,
+      organizationId: seedOrgId,
+      totalAmount: 96000,
+      status: "COMPLETED",
+      saleDate: new Date(now.getFullYear(), now.getMonth(), 5),
+      notes: "Office Equipment Order",
+      items: { create: [
+        { description: "Monitor 27\" x3", quantity: 3, unitPrice: 32000, amount: 96000, itemId: monitor.id },
+      ] }
+    }
+  });
+
+  await prisma.sale.create({
+    data: {
+      saleNumber: "SL-00003",
+      customerId: rajesh.id,
+      organizationId: seedOrgId,
+      totalAmount: 45000,
+      status: "COMPLETED",
+      saleDate: new Date(now.getFullYear(), now.getMonth(), 10),
+      notes: "Peripheral Accessories Bundle",
+      items: { create: [
+        { description: "USB-C Hub x2", quantity: 2, unitPrice: 12500, amount: 25000, itemId: hub.id },
+        { description: "Mechanical Keyboard x2", quantity: 2, unitPrice: 8500, amount: 17000, itemId: keyboard.id },
+        { description: "Cable management kit", quantity: 1, unitPrice: 3000, amount: 3000 },
+      ] }
+    }
+  });
+
+  await prisma.sale.create({
+    data: {
+      saleNumber: "SL-00004",
+      customerId: john.id,
+      organizationId: seedOrgId,
+      totalAmount: 25000,
+      status: "PENDING",
+      saleDate: new Date(now.getFullYear(), now.getMonth(), 15),
+      notes: "Software Licensing",
+      items: { create: [
+        { description: "Annual software license x5", quantity: 5, unitPrice: 5000, amount: 25000 },
+      ] }
+    }
+  });
+
+  await prisma.sale.create({
+    data: {
+      saleNumber: "SL-00005",
+      customerId: priya.id,
+      organizationId: seedOrgId,
+      totalAmount: 85000,
+      status: "COMPLETED",
+      saleDate: new Date(now.getFullYear(), now.getMonth(), 18),
+      notes: "Cloud Migration Consulting",
+      items: { create: [
+        { description: "Cloud consulting (40 hrs)", quantity: 40, unitPrice: 2125, amount: 85000 },
+      ] }
+    }
+  });
+
+  // -------------------------------------------------------
+  // ERP: PURCHASES (2)
+  // -------------------------------------------------------
+
+  await prisma.purchase.createMany({
+    data: [
+      {
+        purchaseNumber: "PO-00001",
+        vendor: "Dell Technologies India",
+        organizationId: seedOrgId,
+        totalAmount: 360000,
+        status: "RECEIVED",
+        purchaseDate: new Date(now.getFullYear(), now.getMonth(), 1),
+        notes: "Laptop restock — 5 units"
+      },
+      {
+        purchaseNumber: "PO-00002",
+        vendor: "Amazon Business India",
+        organizationId: seedOrgId,
+        totalAmount: 45000,
+        status: "RECEIVED",
+        purchaseDate: new Date(now.getFullYear(), now.getMonth(), 8),
+        notes: "Office peripherals restock"
+      }
+    ]
+  });
+
+  // -------------------------------------------------------
+  // ERP: EXPENSES (3)
+  // -------------------------------------------------------
+
+  await prisma.expense.createMany({
+    data: [
+      {
+        category: "RENT",
+        description: "Office rent — Bangalore HSR Layout",
+        amount: 45000,
+        organizationId: seedOrgId,
+        expenseDate: new Date(now.getFullYear(), now.getMonth(), 1),
+        vendor: "Prestige Properties"
+      },
+      {
+        category: "SOFTWARE",
+        description: "AWS hosting & services",
+        amount: 12500,
+        organizationId: seedOrgId,
+        expenseDate: new Date(now.getFullYear(), now.getMonth(), 5),
+        vendor: "Amazon Web Services"
+      },
+      {
+        category: "MARKETING",
+        description: "Google Ads — Lead Generation Campaign",
+        amount: 28000,
+        organizationId: seedOrgId,
+        expenseDate: new Date(now.getFullYear(), now.getMonth(), 12),
+        vendor: "Google India"
+      }
+    ]
+  });
+
+  // -------------------------------------------------------
+  // ERP: PAYROLL (3 entries)
+  // -------------------------------------------------------
+
+  await prisma.payroll.createMany({
+    data: [
+      {
+        employeeName: "Vikram Singh",
+        designation: "Senior Developer",
+        salary: 95000,
+        bonus: 5000,
+        deductions: 15000,
+        netPay: 85000,
+        organizationId: seedOrgId,
+        payPeriod: currentPeriod
+      },
+      {
+        employeeName: "Ananya Rao",
+        designation: "Product Manager",
+        salary: 80000,
+        bonus: 0,
+        deductions: 12000,
+        netPay: 68000,
+        organizationId: seedOrgId,
+        payPeriod: currentPeriod
+      },
+      {
+        employeeName: "Karthik Menon",
+        designation: "DevOps Engineer",
+        salary: 70000,
+        bonus: 3000,
+        deductions: 10000,
+        netPay: 63000,
+        organizationId: seedOrgId,
+        payPeriod: currentPeriod
+      }
+    ]
+  });
+
+  console.log("✅ FinRP seed completed (with ERP data)");
 }
 
 main()

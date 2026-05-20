@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import { Plus, Package, RefreshCw } from "lucide-react";
 import ItemTable from "@/components/ItemTable";
@@ -9,6 +11,7 @@ import { useItems } from "@/hooks/useItems";
 import type { Item } from "@/hooks/useItems";
 
 export default function ItemsPage() {
+  const router = useRouter();
   const {
     items,
     loading,
@@ -90,6 +93,33 @@ export default function ItemsPage() {
           <button onClick={handleAddNew} className="btn-brand">
             <Plus size={15} />
             Add Item
+          </button>
+          <button
+            onClick={() => router.push("/billing")}
+            style={{
+              padding: "8px 12px",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 13,
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-strong)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--text-primary)",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)";
+              (e.currentTarget as HTMLElement).style.borderColor = "#6366f1";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "var(--bg-surface)";
+              (e.currentTarget as HTMLElement).style.borderColor = "var(--border-strong)";
+            }}
+          >
+            <ArrowLeft size={14} />
+            Back to Billing
           </button>
         </div>
       </div>

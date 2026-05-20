@@ -32,6 +32,10 @@ model Organization {
   analyticsRecords AnalyticsRecord[]
   items            Item[]
   loans            Loan[]
+  sales            Sale[]
+  purchases        Purchase[]
+  expenses         Expense[]
+  payroll          Payroll[]
 
   @@map("organizations")
 }
@@ -86,6 +90,7 @@ model Customer {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invoices     Invoice[]
+  sales        Sale[]
 
   @@index([organizationId])
   @@map("customers")
@@ -264,6 +269,7 @@ model Item {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   transactions  Transaction[]
+  saleItems     SaleItem[]
 
   @@index([organizationId])
   @@map("items")
@@ -373,4 +379,134 @@ enum PaymentStatus {
   PAID
   OVERDUE
   PARTIAL
+}
+
+// ============================================================
+// SALE (ERP — Sales tracking)
+// ============================================================
+model Sale {
+  id             String     @id @default(cuid())
+  saleNumber     String
+  customerId     String?
+  organizationId String
+  totalAmount    Decimal    @db.Decimal(12, 2)
+  status         SaleStatus @default(COMPLETED)
+  saleDate       DateTime   @default(now())
+  notes          String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer?    @relation(fields: [customerId], references: [id])
+  items        SaleItem[]
+
+  @@index([organizationId])
+  @@map("sales")
+}
+
+enum SaleStatus {
+  COMPLETED
+  PENDING
+  CANCELLED
+}
+
+// ============================================================
+// SALE ITEM (ERP — Sale line items)
+// ============================================================
+model SaleItem {
+  id          String  @id @default(cuid())
+  saleId      String
+  itemId      String?
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(12, 2)
+  amount      Decimal @db.Decimal(12, 2)
+
+  sale Sale  @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  item Item? @relation(fields: [itemId], references: [id])
+
+  @@index([saleId])
+  @@map("sale_items")
+}
+
+// ============================================================
+// PURCHASE (ERP — Procurement tracking)
+// ============================================================
+model Purchase {
+  id             String         @id @default(cuid())
+  purchaseNumber String
+  vendor         String
+  organizationId String
+  totalAmount    Decimal        @db.Decimal(12, 2)
+  status         PurchaseStatus @default(RECEIVED)
+  purchaseDate   DateTime       @default(now())
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("purchases")
+}
+
+enum PurchaseStatus {
+  ORDERED
+  RECEIVED
+  CANCELLED
+}
+
+// ============================================================
+// EXPENSE (ERP — Operational expenses)
+// ============================================================
+model Expense {
+  id             String          @id @default(cuid())
+  category       ExpenseCategory @default(OPERATIONS)
+  description    String
+  amount         Decimal         @db.Decimal(12, 2)
+  organizationId String
+  expenseDate    DateTime        @default(now())
+  vendor         String?
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("expenses")
+}
+
+enum ExpenseCategory {
+  RENT
+  UTILITIES
+  SALARIES
+  MARKETING
+  TRAVEL
+  SOFTWARE
+  OPERATIONS
+  OTHER
+}
+
+// ============================================================
+// PAYROLL (ERP — Employee payroll)
+// ============================================================
+model Payroll {
+  id             String   @id @default(cuid())
+  employeeName   String
+  designation    String?
+  salary         Decimal  @db.Decimal(12, 2)
+  bonus          Decimal  @default(0) @db.Decimal(12, 2)
+  deductions     Decimal  @default(0) @db.Decimal(12, 2)
+  netPay         Decimal  @db.Decimal(12, 2)
+  organizationId String
+  payPeriod      String   // e.g. "2026-04"
+  paidAt         DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("payroll")
 }

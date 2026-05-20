@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { Plus, Search, Download, ArrowRight, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
@@ -11,6 +12,7 @@ import { format } from "date-fns";
 const statusOptions = ["All", "DRAFT", "SENT", "PAID", "OVERDUE", "CANCELLED"];
 
 export default function BillingPage() {
+  const router = useRouter();
   const { invoices, loading, error, refetch, stats } = useInvoices();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -46,6 +48,32 @@ export default function BillingPage() {
           <Link href="/billing/new" className="btn-brand">
             <Plus size={15} /> New Invoice
           </Link>
+          <button 
+            onClick={() => router.push("/billing/items")} 
+            style={{ 
+              padding: "8px 16px", 
+              background: "#6366f1", 
+              color: "#ffffff", 
+              border: "none", 
+              borderRadius: "var(--radius-md)", 
+              fontSize: 13, 
+              fontWeight: 600, 
+              cursor: "pointer", 
+              display: "flex", 
+              alignItems: "center", 
+              gap: 6, 
+              transition: "all 0.2s ease" 
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "#4f46e5";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "#6366f1";
+            }}
+          >
+            Items
+            <ArrowRight size={14} />
+          </button>
         </div>
       </div>
 

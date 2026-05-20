@@ -34,11 +34,6 @@ const navItems = [
     icon: FileText,
   },
   {
-    label: "Items",
-    href: "/items",
-    icon: Package,
-  },
-  {
     label: "Finance",
     href: "/finance",
     icon: BarChart3,
