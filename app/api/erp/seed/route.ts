@@ -140,7 +140,7 @@ export async function POST() {
         items: [
           { description: "USB-C Docking Station x2", quantity: 2, unitPrice: 12500, amount: 25000, itemId: items[3]?.id },
           { description: "Mechanical Keyboard x2", quantity: 2, unitPrice: 8500, amount: 17000, itemId: items[4]?.id },
-          { description: "Cable management kit", quantity: 1, unitPrice: 3000, amount: 3000 },
+          { description: "Cable management kit", quantity: 1, unitPrice: 3000, amount: 3000, itemId: undefined },
         ],
       },
       {
@@ -151,7 +151,7 @@ export async function POST() {
         saleDate: new Date(now.getFullYear(), now.getMonth(), 15),
         notes: "Software Licensing",
         items: [
-          { description: "Annual software license", quantity: 5, unitPrice: 5000, amount: 25000 },
+          { description: "Annual software license", quantity: 5, unitPrice: 5000, amount: 25000, itemId: undefined },
         ],
       },
       {
@@ -162,7 +162,7 @@ export async function POST() {
         saleDate: new Date(now.getFullYear(), now.getMonth(), 18),
         notes: "Cloud Migration Consulting",
         items: [
-          { description: "Cloud consulting (hours)", quantity: 40, unitPrice: 2125, amount: 85000 },
+          { description: "Cloud consulting (hours)", quantity: 40, unitPrice: 2125, amount: 85000, itemId: undefined },
         ],
       },
     ];
