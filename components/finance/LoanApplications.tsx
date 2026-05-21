@@ -40,7 +40,7 @@ export default function LoanApplications({ applications, onViewDetails }: LoanAp
         <p className="section-subtitle">Track your loan applications and approvals</p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 440px), 1fr))", gap: 16 }}>
         {applications.length === 0 ? (
           <div
             style={{

@@ -2,56 +2,34 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Plus, Package, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
-import { Plus, Package, RefreshCw } from "lucide-react";
 import ItemTable from "@/components/ItemTable";
 import ItemForm from "@/components/ItemForm";
 import { useItems } from "@/hooks/useItems";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 import type { Item } from "@/hooks/useItems";
 
 export default function ItemsPage() {
   const router = useRouter();
+  const { isMobile } = useBreakpoint();
   const {
-    items,
-    loading,
-    error,
-    refetch,
-    deleteItem,
-    lowStockCount,
-    runningLowCount,
-    healthyCount,
+    items, loading, error, refetch, deleteItem,
+    lowStockCount, runningLowCount, healthyCount,
   } = useItems();
 
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
 
   const handleDelete = async (id: string) => {
-    try {
-      await deleteItem(id);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete item.");
-    }
+    try { await deleteItem(id); }
+    catch (err) { alert(err instanceof Error ? err.message : "Failed to delete item."); }
   };
 
-  const handleEdit = (item: Item) => {
-    setEditingItem(item);
-    setShowForm(true);
-  };
-
-  const handleAddNew = () => {
-    setEditingItem(null);
-    setShowForm(true);
-  };
-
-  const handleFormClose = () => {
-    setShowForm(false);
-    setEditingItem(null);
-  };
-
-  const handleFormSuccess = () => {
-    refetch();
-  };
+  const handleEdit = (item: Item) => { setEditingItem(item); setShowForm(true); };
+  const handleAddNew = () => { setEditingItem(null); setShowForm(true); };
+  const handleFormClose = () => { setShowForm(false); setEditingItem(null); };
+  const handleFormSuccess = () => { refetch(); };
 
   return (
     <div>
@@ -59,91 +37,47 @@ export default function ItemsPage() {
       <div
         style={{
           display: "flex",
-          alignItems: "flex-start",
+          alignItems: isMobile ? "flex-start" : "center",
+          flexDirection: isMobile ? "column" : "row",
           justifyContent: "space-between",
           marginBottom: 28,
-          flexWrap: "wrap",
-          gap: 12,
+          gap: 14,
         }}
       >
         <div>
-          <h1
-            style={{
-              fontSize: 24,
-              fontWeight: 700,
-              color: "var(--text-primary)",
-              letterSpacing: "-0.02em",
-            }}
-          >
+          <h1 style={{ fontSize: isMobile ? 20 : 24, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
             Inventory Catalog
           </h1>
           <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>
             Manage your product and service catalog with real-time stock tracking.
           </p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={refetch}
-            className="btn-ghost"
-            style={{ padding: "8px 12px" }}
-            title="Refresh"
-          >
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={refetch} className="btn-ghost" style={{ padding: "8px 12px" }} title="Refresh">
             <RefreshCw size={15} style={loading ? { animation: "spin 1s linear infinite" } : {}} />
           </button>
           <button onClick={handleAddNew} className="btn-brand">
             <Plus size={15} />
-            Add Item
+            {isMobile ? "Add" : "Add Item"}
           </button>
           <button
             onClick={() => router.push("/billing")}
             style={{
-              padding: "8px 12px",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 13,
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-strong)",
-              borderRadius: "var(--radius-md)",
-              color: "var(--text-primary)",
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)";
-              (e.currentTarget as HTMLElement).style.borderColor = "#6366f1";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "var(--bg-surface)";
-              (e.currentTarget as HTMLElement).style.borderColor = "var(--border-strong)";
+              padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, fontSize: 13,
+              background: "var(--bg-surface)", border: "1px solid var(--border-strong)",
+              borderRadius: "var(--radius-md)", color: "var(--text-primary)", cursor: "pointer", transition: "all 0.2s ease",
             }}
           >
             <ArrowLeft size={14} />
-            Back to Billing
+            {isMobile ? "Billing" : "Back to Billing"}
           </button>
         </div>
       </div>
 
-      {/* Error state */}
+      {/* Error */}
       {error && (
-        <div
-          style={{
-            background: "rgba(239,68,68,0.1)",
-            border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 10,
-            padding: "12px 16px",
-            color: "#ef4444",
-            fontSize: 13,
-            marginBottom: 20,
-          }}
-        >
-          {error} —{" "}
-          <button
-            onClick={refetch}
-            style={{ color: "#ef4444", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}
-          >
-            Retry
-          </button>
+        <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "12px 16px", color: "#ef4444", fontSize: 13, marginBottom: 20 }}>
+          {error} — <button onClick={refetch} style={{ color: "#ef4444", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}>Retry</button>
         </div>
       )}
 
@@ -152,32 +86,16 @@ export default function ItemsPage() {
         className="stagger"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 14,
+          gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)",
+          gap: 12,
           marginBottom: 24,
         }}
       >
         {[
-          {
-            label: "Total Items",
-            value: loading ? "—" : items.length,
-            color: "#818cf8",
-          },
-          {
-            label: "In Stock",
-            value: loading ? "—" : healthyCount,
-            color: "#10b981",
-          },
-          {
-            label: "Running Low",
-            value: loading ? "—" : runningLowCount,
-            color: "#f59e0b",
-          },
-          {
-            label: "Low Stock",
-            value: loading ? "—" : lowStockCount,
-            color: "#ef4444",
-          },
+          { label: "Total Items", value: loading ? "—" : items.length, color: "#818cf8" },
+          { label: "In Stock", value: loading ? "—" : healthyCount, color: "#10b981" },
+          { label: "Running Low", value: loading ? "—" : runningLowCount, color: "#f59e0b" },
+          { label: "Low Stock", value: loading ? "—" : lowStockCount, color: "#ef4444" },
         ].map((stat) => (
           <motion.div
             key={stat.label}
@@ -185,11 +103,12 @@ export default function ItemsPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
+            style={{ padding: isMobile ? "14px 16px" : "20px 24px" }}
           >
-            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            <p style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
               {stat.label}
             </p>
-            <p style={{ fontSize: 28, fontWeight: 700, color: stat.color, marginTop: 6 }}>
+            <p style={{ fontSize: isMobile ? 22 : 28, fontWeight: 700, color: stat.color, marginTop: 6 }}>
               {stat.value}
             </p>
           </motion.div>
@@ -209,28 +128,16 @@ export default function ItemsPage() {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "20px 24px 16px",
+            padding: isMobile ? "16px" : "20px 24px 16px",
             borderBottom: "1px solid var(--border)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                background: "rgba(99,102,241,0.1)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(99,102,241,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Package size={16} color="var(--brand-400)" />
             </div>
             <div>
-              <h3 className="section-title" style={{ fontSize: 15 }}>
-                All Items
-              </h3>
+              <h3 className="section-title" style={{ fontSize: 15 }}>All Items</h3>
               <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
                 {items.length} item{items.length !== 1 ? "s" : ""} total
               </p>
@@ -239,36 +146,17 @@ export default function ItemsPage() {
         </div>
 
         {loading ? (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "60px 24px",
-              gap: 10,
-              color: "var(--text-muted)",
-              fontSize: 14,
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "60px 24px", gap: 10, color: "var(--text-muted)", fontSize: 14 }}>
             <RefreshCw size={16} style={{ animation: "spin 1s linear infinite" }} />
             Loading inventory...
           </div>
         ) : (
-          <ItemTable
-            items={items}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
+          <ItemTable items={items} onEdit={handleEdit} onDelete={handleDelete} />
         )}
       </motion.div>
 
-      {/* Item Form Modal */}
       {showForm && (
-        <ItemForm
-          item={editingItem}
-          onSuccess={handleFormSuccess}
-          onClose={handleFormClose}
-        />
+        <ItemForm item={editingItem} onSuccess={handleFormSuccess} onClose={handleFormClose} />
       )}
 
       <style>{`

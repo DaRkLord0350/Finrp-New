@@ -103,7 +103,7 @@ export default function CashFlowAnalysis({ inflows, outflows, netCashFlow }: Cas
         <p className="section-subtitle">Monthly financial inflows and outflows summary</p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 28 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 20, marginBottom: 28 }}>
         <CashFlowColumn
           title="Monthly Inflows"
           icon={<TrendingUp size={20} />}
