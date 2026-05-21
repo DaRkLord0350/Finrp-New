@@ -461,3 +461,264 @@ body {
   border-radius: 8px !important;
   color: var(--text-primary) !important;
 }
+
+
+/* ============================================
+   RESPONSIVE — Mobile / Tablet
+   ============================================ */
+
+/* ── Sidebar backdrop (mobile overlay) ─────── */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 49;
+  backdrop-filter: blur(2px);
+}
+
+/* ── Sidebar close button (mobile only) ─────── */
+.sidebar-close-btn {
+  display: none;
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: 6px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.sidebar-close-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+/* ── Topbar hamburger (mobile only) ─────────── */
+.topbar-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 6px;
+  border-radius: 8px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.topbar-menu-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+/* ── Topbar search bar ───────────────────────── */
+.topbar-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  width: 240px;
+  margin-right: 12px;
+  cursor: text;
+}
+
+/* ============================================
+   Breakpoint: tablet ≤ 1024px
+   ============================================ */
+@media (max-width: 1024px) {
+  /* Shrink sidebar on tablet */
+  .sidebar {
+    width: 200px;
+  }
+  .main-content {
+    margin-left: 200px;
+  }
+
+  /* Narrower search */
+  .topbar-search {
+    width: 180px;
+  }
+
+  /* Dashboard 4-col stats → 2-col */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* ============================================
+   Breakpoint: mobile ≤ 768px
+   ============================================ */
+@media (max-width: 768px) {
+  /* Sidebar becomes off-canvas drawer */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 260px;
+    box-shadow: none;
+  }
+  .sidebar--open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* Show backdrop when open */
+  .sidebar--open ~ .sidebar-backdrop,
+  .sidebar-backdrop {
+    display: block;
+  }
+
+  /* Show hamburger and close btn */
+  .topbar-menu-btn {
+    display: flex;
+  }
+  .sidebar-close-btn {
+    display: flex;
+  }
+
+  /* Main content fills full width */
+  .main-content {
+    margin-left: 0 !important;
+  }
+
+  /* Page padding reduced */
+  .page-container {
+    padding: 20px 16px;
+  }
+
+  /* Topbar adjustments */
+  .topbar {
+    padding: 0 14px;
+  }
+
+  /* Hide search bar on mobile */
+  .topbar-search {
+    display: none;
+  }
+
+  /* Stats: 2-col on mobile */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Dashboard grids → single column */
+  .dashboard-main-grid,
+  .dashboard-bottom-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Section cards */
+  .section-card,
+  .chart-container {
+    padding: 16px;
+  }
+
+  /* Stat card padding */
+  .stat-card {
+    padding: 16px 18px;
+  }
+
+  /* Data table — allow horizontal scroll */
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .data-table {
+    min-width: 500px;
+  }
+
+  /* Chat bubbles */
+  .chat-bubble-user,
+  .chat-bubble-ai {
+    max-width: 90%;
+  }
+
+  /* Finance / ERP page grids */
+  .finance-grid,
+  .erp-grid,
+  .crm-grid,
+  .compliance-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Section title */
+  .section-title {
+    font-size: 16px;
+  }
+
+  /* Hide breadcrumb text beyond first segment */
+  .topbar-breadcrumb-extra {
+    display: none;
+  }
+}
+
+/* ============================================
+   Breakpoint: small mobile ≤ 480px
+   ============================================ */
+@media (max-width: 480px) {
+  /* Stats: 1-col on very small screens */
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .page-container {
+    padding: 16px 12px;
+  }
+
+  /* Topbar tighter */
+  .topbar {
+    padding: 0 10px;
+    gap: 6px;
+  }
+
+  /* Buttons */
+  .btn-brand,
+  .btn-ghost {
+    padding: 7px 12px;
+    font-size: 13px;
+  }
+
+  /* Form inputs */
+  .input {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+}
+
+/* ============================================
+   Dashboard page — responsive grid helpers
+   (applied via inline style overrides)
+   ============================================ */
+
+/* Override inline grid styles on dashboard page for mobile */
+@media (max-width: 768px) {
+  /* Stats row */
+  div[style*="repeat(4, 1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Main 2-col content grids */
+  div[style*="1fr 320px"],
+  div[style*="1fr 340px"],
+  div[style*="1fr 360px"],
+  div[style*="2fr 1fr"],
+  div[style*="3fr 2fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ERP / finance multi-col grids */
+  div[style*="repeat(3, 1fr)"],
+  div[style*="repeat(2, 1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  div[style*="repeat(4, 1fr)"],
+  div[style*="repeat(3, 1fr)"],
+  div[style*="repeat(2, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+}

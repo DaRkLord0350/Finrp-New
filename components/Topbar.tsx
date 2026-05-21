@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
-import { Bell, Search, ChevronRight } from "lucide-react";
+import { Bell, Search, ChevronRight, Menu } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 
 const routeLabels: Record<string, string> = {
@@ -15,26 +15,41 @@ const routeLabels: Record<string, string> = {
   "/settings": "Settings",
 };
 
-export default function Topbar() {
+interface TopbarProps {
+  onMenuClick?: () => void;
+}
+
+export default function Topbar({ onMenuClick }: TopbarProps) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
 
   return (
     <header className="topbar">
+      {/* Hamburger — mobile only */}
+      <button
+        className="topbar-menu-btn"
+        onClick={onMenuClick}
+        aria-label="Open menu"
+      >
+        <Menu size={20} />
+      </button>
+
       {/* Breadcrumb */}
       <div
-        style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}
+        style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}
       >
-        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>FinRP</span>
+        <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>FinRP</span>
         {segments.map((seg, i) => {
           const href = "/" + segments.slice(0, i + 1).join("/");
-          const label = routeLabels[href] || seg.charAt(0).toUpperCase() + seg.slice(1);
+          const label =
+            routeLabels[href] ||
+            seg.charAt(0).toUpperCase() + seg.slice(1);
           return (
             <span
               key={href}
-              style={{ display: "flex", alignItems: "center", gap: 6 }}
+              style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}
             >
-              <ChevronRight size={12} color="var(--text-muted)" />
+              <ChevronRight size={12} color="var(--text-muted)" style={{ flexShrink: 0 }} />
               <span
                 style={{
                   fontSize: 13,
@@ -43,6 +58,9 @@ export default function Topbar() {
                     i === segments.length - 1
                       ? "var(--text-primary)"
                       : "var(--text-secondary)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {label}
@@ -52,21 +70,8 @@ export default function Topbar() {
         })}
       </div>
 
-      {/* Search */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          background: "var(--bg-elevated)",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          padding: "6px 12px",
-          width: 240,
-          marginRight: 12,
-          cursor: "text",
-        }}
-      >
+      {/* Search — hidden on mobile */}
+      <div className="topbar-search">
         <Search size={14} color="var(--text-muted)" />
         <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
           Search...
@@ -87,7 +92,7 @@ export default function Topbar() {
       </div>
 
       {/* Right actions */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
         <ThemeToggle />
         <button
           style={{
@@ -117,10 +122,7 @@ export default function Topbar() {
         <UserButton
           appearance={{
             elements: {
-              avatarBox: {
-                width: 30,
-                height: 30,
-              },
+              avatarBox: { width: 30, height: 30 },
             },
           }}
         />
