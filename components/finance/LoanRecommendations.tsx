@@ -38,7 +38,7 @@ export default function LoanRecommendations({ products, onApply }: LoanRecommend
         <p className="section-subtitle">Best loan products tailored for your business</p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))", gap: 20 }}>
         {products.map((product, idx) => {
           const tagStyle = tagConfig[product.tag] || { bg: "rgba(99, 102, 241, 0.1)", text: "#6366f1" };
           return (
@@ -103,7 +103,7 @@ export default function LoanRecommendations({ products, onApply }: LoanRecommend
                 </p>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12, marginBottom: 20 }}>
                 <div>
                   <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     Max Amount

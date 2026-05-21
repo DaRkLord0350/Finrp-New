@@ -99,7 +99,7 @@ export default function CMAReport({ report, isLoading = false, onDownload }: CMA
             </button>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))", gap: 16 }}>
             <div style={{ paddingBottom: 20, borderBottom: "1px solid var(--border)" }}>
               <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Annual Turnover

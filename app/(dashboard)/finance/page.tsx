@@ -4,11 +4,12 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { TrendingUp, DollarSign, Users, FileText, RefreshCw, ArrowRight } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import { useAnalytics } from "@/hooks/useAnalytics";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 const CustomTooltip = ({ active, payload, label }: {
   active?: boolean;
@@ -32,6 +33,7 @@ const CustomTooltip = ({ active, payload, label }: {
 
 export default function FinancePage() {
   const router = useRouter();
+  const { isMobile, isTablet } = useBreakpoint();
   const {
     totalRevenue, revenueGrowth, totalInvoices, paidInvoices, overdueInvoices,
     totalCustomers, avgDealSize, monthlyRevenue, paymentMix, topCustomers,
@@ -41,10 +43,7 @@ export default function FinancePage() {
     topCustomers?: { name: string; revenue: number }[];
   };
 
-  const netProfit = (monthlyRevenue ?? []).map(d => ({
-    ...d,
-    profit: d.revenue,
-  }));
+  const netProfit = (monthlyRevenue ?? []).map((d) => ({ ...d, profit: d.revenue }));
 
   const displayPaymentMix = paymentMix ?? [
     { name: "Paid", value: 0, color: "#10b981" },
@@ -63,42 +62,26 @@ export default function FinancePage() {
     { title: "Customers", value: loading ? "—" : String(totalCustomers), change: 0, changeLabel: "active in org", icon: Users, iconColor: "#f59e0b" },
   ];
 
+  const cols2 = isMobile ? "1fr" : "1fr 1fr";
+
   return (
     <div>
-      <div style={{ marginBottom: 28, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28, display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", gap: isMobile ? 12 : 0 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Finance Analytics</h1>
+          <h1 style={{ fontSize: isMobile ? 20 : 24, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Finance Analytics</h1>
           <p style={{ color: "var(--text-secondary)", fontSize: 14, marginTop: 4 }}>Revenue performance, profitability metrics, and customer insights.</p>
         </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button className="btn-ghost" onClick={refetch} style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
             <RefreshCw size={14} style={loading ? { animation: "spin 1s linear infinite" } : {}} />
-            Refresh
+            {!isMobile && "Refresh"}
           </button>
-          <button 
-            onClick={() => router.push("/finance/loans")} 
-            style={{ 
-              padding: "8px 16px", 
-              background: "#6366f1", 
-              color: "#ffffff", 
-              border: "none", 
-              borderRadius: "var(--radius-md)", 
-              fontSize: 13, 
-              fontWeight: 600, 
-              cursor: "pointer", 
-              display: "flex", 
-              alignItems: "center", 
-              gap: 6, 
-              transition: "all 0.2s ease" 
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "#4f46e5";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "#6366f1";
-            }}
+          <button
+            onClick={() => router.push("/finance/loans")}
+            style={{ padding: "8px 16px", background: "#6366f1", color: "#ffffff", border: "none", borderRadius: "var(--radius-md)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s ease" }}
           >
-            Loans & Dashboard
+            {isMobile ? "Loans" : "Loans & Dashboard"}
             <ArrowRight size={14} />
           </button>
         </div>
@@ -111,19 +94,19 @@ export default function FinancePage() {
       )}
 
       {/* KPI Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 14, marginBottom: 24 }}>
         {stats.map((stat, i) => <StatCard key={stat.title} {...stat} index={i} />)}
       </div>
 
-      {/* Revenue vs Expenses */}
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 20 }}>
+      {/* Revenue Trend + Invoice Status */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : isTablet ? "1fr" : "2fr 1fr", gap: 20, marginBottom: 20 }}>
         <motion.div className="chart-container" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
           <div style={{ marginBottom: 20 }}>
             <h3 className="section-title">Revenue Trend</h3>
             <p className="section-subtitle">Monthly revenue for the last 7 months</p>
           </div>
           {(monthlyRevenue?.length ?? 0) > 0 ? (
-            <ResponsiveContainer width="100%" height={240}>
+            <ResponsiveContainer width="100%" height={isMobile ? 180 : 240}>
               <AreaChart data={netProfit}>
                 <defs>
                   <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
@@ -133,27 +116,24 @@ export default function FinancePage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                 <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} width={40} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#6366f1" strokeWidth={2} fill="url(#revGrad)" />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div style={{ height: 240, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>
-              No invoice data yet
-            </div>
+            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>No invoice data yet</div>
           )}
         </motion.div>
 
-        {/* Invoice Status Mix */}
         <motion.div className="chart-container" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-          <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 16 }}>
             <h3 className="section-title">Invoice Status</h3>
             <p className="section-subtitle">Payment distribution</p>
           </div>
-          <ResponsiveContainer width="100%" height={180}>
+          <ResponsiveContainer width="100%" height={isMobile ? 140 : 180}>
             <PieChart>
-              <Pie data={displayPaymentMix} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={3} dataKey="value">
+              <Pie data={displayPaymentMix} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
                 {displayPaymentMix.map((entry, i) => (
                   <Cell key={i} fill={entry.color} stroke="transparent" />
                 ))}
@@ -161,10 +141,10 @@ export default function FinancePage() {
               <Tooltip formatter={(value) => [`${value}%`, ""]} contentStyle={{ background: "var(--bg-elevated)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--text-primary)", fontSize: 13 }} />
             </PieChart>
           </ResponsiveContainer>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             {displayPaymentMix.map((d) => (
-              <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 3, background: d.color, flexShrink: 0 }} />
+              <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 8, height: 8, borderRadius: 3, background: d.color, flexShrink: 0 }} />
                 <span style={{ fontSize: 12, color: "var(--text-secondary)", flex: 1 }}>{d.name}</span>
                 <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{d.value}%</span>
               </div>
@@ -174,24 +154,24 @@ export default function FinancePage() {
       </div>
 
       {/* Net Profit + Top Customers */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: cols2, gap: 20 }}>
         <motion.div className="chart-container" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
           <div style={{ marginBottom: 20 }}>
             <h3 className="section-title">Net Profit Trend</h3>
             <p className="section-subtitle">Monthly profitability</p>
           </div>
           {netProfit.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
+            <ResponsiveContainer width="100%" height={isMobile ? 160 : 200}>
               <BarChart data={netProfit}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                 <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} width={40} />
                 <Tooltip formatter={(v) => [`$${Number(v).toLocaleString()}`, "Revenue"]} contentStyle={{ background: "var(--bg-elevated)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--text-primary)", fontSize: 13 }} />
                 <Bar dataKey="revenue" name="Revenue" fill="#10b981" radius={[5, 5, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>No data yet</div>
+            <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>No data yet</div>
           )}
         </motion.div>
 
