@@ -15,6 +15,7 @@
 
 #schema
 /prisma/migrations
+/prisma/seed.ts
 
 # next.js
 /.next/
