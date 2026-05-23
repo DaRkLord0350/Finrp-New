@@ -1,15 +1,17 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/auth/tenant";
 
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId, orgId } = await auth();
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = orgId ?? userId;
+    const tenantId = await getTenantId();
+    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
     const body = await req.json();
     const { status, title, description, dueDate, category } = body;
@@ -38,9 +40,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId, orgId } = await auth();
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = orgId ?? userId;
+    const tenantId = await getTenantId();
+    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
 
     await prisma.complianceTask.delete({ where: { id, organizationId: tenantId } });

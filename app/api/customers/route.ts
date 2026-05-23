@@ -1,12 +1,15 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/auth/tenant";
 
 export async function GET() {
   try {
-    const { userId, orgId } = await auth();
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = orgId || userId;
+    
+    const tenantId = await getTenantId();
+    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const customers = await prisma.customer.findMany({
       where: { organizationId: tenantId },
@@ -35,9 +38,11 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const { userId, orgId } = await auth();
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = orgId || userId;
+    
+    const tenantId = await getTenantId();
+    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
     const { name, email, phone, company, address, notes } = body;
