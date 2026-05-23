@@ -4,7 +4,8 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { Plus, Trash2, ArrowLeft, Send, Save } from "lucide-react";
 import Link from "next/link";
-import { formatCurrency } from "@/lib/utils";
+// import { formatCurrency } from "@/lib/utils";
+import { formatCurrency } from "@/lib/formatters/currency";
 
 interface LineItem {
   id: string;
