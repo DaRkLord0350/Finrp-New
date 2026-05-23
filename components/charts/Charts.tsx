@@ -41,7 +41,8 @@ export const CHART_COLORS = [
 // ---------------------------------------------------------------------------
 // Custom Tooltip
 // ---------------------------------------------------------------------------
-function CustomTooltip({ active, payload, label }: TooltipProps<number, string>) {
+function CustomTooltip(props: TooltipProps<number, string>) {
+  const { active, payload, label } = props as any;
   if (!active || !payload?.length) return null;
   return (
     <div
@@ -57,7 +58,7 @@ function CustomTooltip({ active, payload, label }: TooltipProps<number, string>)
       {label && (
         <p style={{ color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>{label}</p>
       )}
-      {payload.map((entry, i) => (
+      {payload.map((entry: any, i: number) => (
         <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", color: entry.color }}>
           <span style={{ fontWeight: 500 }}>{entry.name}:</span>
           <span>{typeof entry.value === "number" ? formatCompactCurrency(entry.value) : entry.value}</span>
@@ -250,7 +251,7 @@ export function DonutChart({ data, height = 220, colors = CHART_COLORS, currency
           ))}
         </Pie>
         <Tooltip
-          formatter={(v: number) => [currency ? formatCompactCurrency(v) : v, ""]}
+          formatter={(v: any) => [currency ? formatCompactCurrency(v || 0) : v, ""]}
           contentStyle={{
             background: "var(--bg-card)",
             border: "1px solid var(--border)",

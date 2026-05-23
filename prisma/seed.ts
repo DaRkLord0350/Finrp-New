@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-
-
-
 import {
   PrismaClient,
   Plan,
@@ -577,6 +573,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-=======
-
->>>>>>> e4f680f2d810915ceea214f7ce50a697ad2db957
