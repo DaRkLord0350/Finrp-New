@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     const purchase = await prisma.purchase.create({
       data: {
         purchaseNumber,
-        vendor: body.vendor,
+        vendorName: body.vendorName,
         organizationId: tenantId,
         totalAmount: body.totalAmount,
         status: body.status || "RECEIVED",

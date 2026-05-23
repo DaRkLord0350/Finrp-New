@@ -14,12 +14,19 @@ export interface Customer {
   company?: string | null;
   address?: string | null;
   notes?: string | null;
+  customerType?: string;
+  creditLimit?: number;
+  outstandingAmount?: number;
+  totalPurchases?: number;
+  customerScore?: number;
+  isActive?: boolean;
   organizationId: string;
   createdAt: string;
   updatedAt: string;
   _count?: { invoices: number };
   // stats derived from invoices
   totalRevenue?: number;
+  outstandingRevenue?: number;
 }
 
 export function useCustomers() {

@@ -6,7 +6,7 @@ export async function GET() {
   try {
     const { userId, orgId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = orgId ?? userId;
+    const tenantId = orgId || userId;
 
     const customers = await prisma.customer.findMany({
       where: { organizationId: tenantId },
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   try {
     const { userId, orgId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = orgId ?? userId;
+    const tenantId = orgId || userId;
 
     const body = await req.json();
     const { name, email, phone, company, address, notes } = body;
@@ -47,8 +47,12 @@ export async function POST(req: Request) {
       data: { name, email, phone, company, address, notes, organizationId: tenantId },
     });
     return NextResponse.json(customer, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error("[CUSTOMERS_POST]", error);
+    // Handle foreign key constraint violation
+    if (error?.code === "P2003") {
+      return NextResponse.json({ error: "Invalid organization. Please ensure your account is properly set up." }, { status: 400 });
+    }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -63,6 +63,9 @@ export default function CRMPage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <Link href="/crm/analytics" className="btn-ghost" style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px" }}>
+            📊 Analytics
+          </Link>
           <button className="btn-ghost" onClick={refetch} style={{ padding: "8px 12px" }}>
             <RefreshCw size={14} style={loading ? { animation: "spin 1s linear infinite" } : {}} />
           </button>
@@ -169,12 +172,12 @@ export default function CRMPage() {
               <div style={{ display: "flex", gap: 0, background: "var(--bg-elevated)", borderRadius: 8, border: "1px solid var(--border)", marginBottom: 14, overflow: "hidden" }}>
                 {[
                   { label: "Revenue", value: customer.totalRevenue ? `$${(customer.totalRevenue / 1000).toFixed(1)}k` : "$0" },
+                  { label: "Outstanding", value: (customer.outstandingAmount ?? 0) ? `$${((customer.outstandingAmount ?? 0) / 1000).toFixed(1)}k` : "$0", color: (customer.outstandingAmount ?? 0) > 0 ? "#f59e0b" : undefined },
                   { label: "Invoices", value: (customer._count?.invoices ?? 0).toString() },
-                  { label: "Since", value: format(new Date(customer.createdAt), "MMM d") },
                 ].map((stat, si) => (
                   <div key={stat.label} style={{ flex: 1, padding: "10px 12px", borderRight: si < 2 ? "1px solid var(--border)" : "none" }}>
                     <p style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{stat.label}</p>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginTop: 2 }}>{stat.value}</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: stat.color || "var(--text-primary)", marginTop: 2 }}>{stat.value}</p>
                   </div>
                 ))}
               </div>

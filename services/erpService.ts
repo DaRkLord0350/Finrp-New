@@ -112,14 +112,14 @@ export const erpService = {
   },
 
   /**
-   * Inventory value — SUM(Item.price * Item.stock)
+   * Inventory value — SUM(Item.sellingPrice * Item.stock)
    */
   async getInventoryValue(orgId: string): Promise<number> {
     const items = await prisma.item.findMany({
       where: { organizationId: orgId },
-      select: { price: true, stock: true },
+      select: { sellingPrice: true, stock: true },
     });
-    return items.reduce((sum, i) => sum + Number(i.price) * i.stock, 0);
+    return items.reduce((sum, i) => sum + Number(i.sellingPrice) * i.stock, 0);
   },
 
   /**

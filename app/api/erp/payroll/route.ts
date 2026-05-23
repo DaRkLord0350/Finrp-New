@@ -35,21 +35,45 @@ export async function POST(req: Request) {
     const tenantId = orgId ?? userId;
     const body = await req.json();
 
-    const netPay =
-      body.netPay ??
-      (body.salary || 0) + (body.bonus || 0) - (body.deductions || 0);
+    const baseSalary = body.baseSalary || body.salary || 0;
+    const hra = body.hra || 0;
+    const bonus = body.bonus || 0;
+    const allowances = body.allowances || 0;
+    const grossPay = baseSalary + hra + bonus + allowances;
+
+    const pf = body.pf || 0;
+    const esi = body.esi || 0;
+    const tax = body.tax || 0;
+    const otherDeductions = body.otherDeductions || 0;
+    const totalDeductions = pf + esi + tax + otherDeductions;
+
+    const netPay = body.netPay ?? (grossPay - totalDeductions);
 
     const payroll = await prisma.payroll.create({
       data: {
         employeeName: body.employeeName,
         designation: body.designation,
-        salary: body.salary,
-        bonus: body.bonus || 0,
-        deductions: body.deductions || 0,
+        department: body.department || null,
+        baseSalary,
+        hra,
+        bonus,
+        allowances,
+        overtime: body.overtime || 0,
+        grossPay,
+        pf,
+        esi,
+        tax,
+        otherDeductions,
+        totalDeductions,
         netPay,
         organizationId: tenantId,
         payPeriod: body.payPeriod,
+        payPeriodStart: body.payPeriodStart ? new Date(body.payPeriodStart) : undefined,
+        payPeriodEnd: body.payPeriodEnd ? new Date(body.payPeriodEnd) : undefined,
         paidAt: body.paidAt ? new Date(body.paidAt) : new Date(),
+        attendanceDays: body.attendanceDays || null,
+        leaveDays: body.leaveDays || null,
+        paymentMethod: body.paymentMethod || "BANK_TRANSFER",
       },
     });
 
