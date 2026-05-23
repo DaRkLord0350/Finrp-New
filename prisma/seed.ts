@@ -1,3 +1,6 @@
+
+
+
 import {
   PrismaClient,
   Plan,
@@ -8,564 +11,568 @@ import {
   LoanStatus,
   PaymentStatus,
   ComplianceCategory,
-  TaskStatus
+  TaskStatus,
+  AccountType,
+  CustomerType,
+  ExpenseCategory,
+  SaleStatus,
+  PurchaseStatus,
+  EmploymentType,
+  LeadStatus,
+  NotificationType,
+  AuditAction,
+  LenderType,
 } from "@prisma/client";
+
+import { faker } from "@faker-js/faker";
 
 const prisma = new PrismaClient();
 
-async function main() {
+const randomDecimal = (min: number, max: number) =>
+  Number((Math.random() * (max - min) + min).toFixed(2));
 
-  const seedOrgId = process.env.SEED_ORG_ID;
+async function main() {
+  // =======================================================
+  // ASK TENANT ID FROM TERMINAL
+  // =======================================================
+
+  const seedOrgId = process.argv[2];
 
   if (!seedOrgId) {
     console.error(`
-❌ SEED_ORG_ID is not set
+❌ Organization/Tenant ID missing
 
-Visit:
-http://localhost:3000/api/debug/tenant
+Usage:
 
-Then run:
-
-$env:SEED_ORG_ID="<tenantId>"; npx prisma db seed
+npx tsx prisma/seed.ts YOUR_ORG_ID
 `);
     process.exit(1);
   }
 
-  console.log(`🌱 Seeding org: ${seedOrgId}`);
+  console.log(`🌱 Seeding organization: ${seedOrgId}`);
 
-  // -------------------------------------------------------
-  // CLEANUP (Respect foreign key order)
-  // -------------------------------------------------------
+  // =======================================================
+  // VERIFY ORGANIZATION EXISTS
+  // =======================================================
 
-  // ERP tables
+  const organization = await prisma.organization.findFirst({
+    where: {
+      OR: [
+        {
+          id: seedOrgId,
+        },
+        {
+          users: {
+            some: {
+              clerkId: seedOrgId,
+            },
+          },
+        },
+      ],
+    },
+    include: {
+      users: true,
+    },
+  });
+
+  if (!organization) {
+    console.error("❌ Organization not found");
+    process.exit(1);
+  }
+
+  const actualOrganizationId = organization.id;
+
+  // =======================================================
+  // FIND EXISTING USER
+  // =======================================================
+
+  let users = await prisma.user.findMany({
+    where: {
+      organizationId: actualOrganizationId,
+    },
+  });
+
+  // create users if none exist
+
+  if (users.length === 0) {
+    for (let i = 0; i < 10; i++) {
+      const created = await prisma.user.create({
+        data: {
+          clerkId: `seed_user_${i}`,
+          email: faker.internet.email(),
+          name: faker.person.fullName(),
+          phone: faker.phone.number(),
+          role: faker.helpers.arrayElement([
+            Role.ADMIN,
+            Role.MANAGER,
+            Role.ACCOUNTANT,
+            Role.STAFF,
+          ]),
+          designation: faker.person.jobTitle(),
+          department: faker.commerce.department(),
+          organizationId: actualOrganizationId,
+        },
+      });
+
+      users.push(created);
+    }
+  }
+
+  const seedUser = users[0];
+
+  // =======================================================
+  // CLEAN OLD SEEDED DATA
+  // =======================================================
+
   await prisma.saleItem.deleteMany({});
-  await prisma.sale.deleteMany({ where: { organizationId: seedOrgId } });
-  await prisma.purchase.deleteMany({ where: { organizationId: seedOrgId } });
-  await prisma.expense.deleteMany({ where: { organizationId: seedOrgId } });
-  await prisma.payroll.deleteMany({ where: { organizationId: seedOrgId } });
-
-  await prisma.loanPayment.deleteMany({});
-  await prisma.loan.deleteMany({ where: { organizationId: seedOrgId } });
-
-  await prisma.analyticsRecord.deleteMany({ where: { organizationId: seedOrgId } });
-  await prisma.transaction.deleteMany({ where: { organizationId: seedOrgId } });
-  await prisma.complianceTask.deleteMany({ where: { organizationId: seedOrgId } });
-  await prisma.payment.deleteMany({ where: { organizationId: seedOrgId } });
+  await prisma.purchaseItem.deleteMany({});
   await prisma.invoiceItem.deleteMany({});
-  await prisma.invoice.deleteMany({ where: { organizationId: seedOrgId } });
-  await prisma.item.deleteMany({ where: { organizationId: seedOrgId } });
-  await prisma.customer.deleteMany({ where: { organizationId: seedOrgId } });
+  await prisma.loanPayment.deleteMany({});
 
-  // -------------------------------------------------------
-  // ORGANIZATION
-  // -------------------------------------------------------
-
-  const orgSlug = `org-${seedOrgId.slice(0, 10)}`;
-
-  await prisma.organization.upsert({
-    where: { id: seedOrgId },
-    update: {},
-    create: {
-      id: seedOrgId,
-      name: "FinRP Demo Org",
-      slug: orgSlug,
-      plan: Plan.STARTER
-    }
+  await prisma.payment.deleteMany({
+    where: { organizationId: actualOrganizationId },
   });
 
-  // -------------------------------------------------------
-  // USER
-  // -------------------------------------------------------
-
-  await prisma.user.upsert({
-    where: { clerkId: seedOrgId },
-    update: {},
-    create: {
-      clerkId: seedOrgId,
-      email: "admin@finrp.com",
-      name: "Admin",
-      role: Role.ADMIN,
-      organizationId: seedOrgId
-    }
+  await prisma.transaction.deleteMany({
+    where: { organizationId: actualOrganizationId },
   });
 
-  // -------------------------------------------------------
+  await prisma.sale.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.purchase.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.invoice.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.expense.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.payroll.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.employee.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.loan.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.analyticsRecord.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.notification.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.complianceTask.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.lead.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.item.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.vendor.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.customer.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.account.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  await prisma.bankAccount.deleteMany({
+    where: { organizationId: actualOrganizationId },
+  });
+
+  // =======================================================
+  // SETTINGS
+  // =======================================================
+
+  await prisma.settings.upsert({
+    where: {
+      organizationId: actualOrganizationId,
+    },
+    update: {},
+    create: {
+      organizationId: actualOrganizationId,
+    },
+  });
+
+  // =======================================================
   // BUSINESS PROFILE
-  // -------------------------------------------------------
+  // =======================================================
 
   await prisma.businessProfile.upsert({
-    where: { organizationId: seedOrgId },
+    where: {
+      organizationId: actualOrganizationId,
+    },
     update: {},
     create: {
-      organizationId: seedOrgId,
-      businessName: "FinRP Technologies",
-      registrationNo: "REG-554433",
-      taxId: "GST-998877",
-      industry: "FinTech",
+      organizationId: actualOrganizationId,
+      businessName: organization.name,
+      businessType: "Private Limited",
+      industry: "Software",
       country: "India",
-      currency: "INR"
-    }
-  });
-
-  // -------------------------------------------------------
-  // BUSINESS (Onboarding)
-  // -------------------------------------------------------
-
-  await prisma.business.upsert({
-    where: { clerkId: seedOrgId },
-    update: {},
-    create: {
-      clerkId: seedOrgId,
-      name: "FinRP Demo Business",
-      type: "Private Limited",
-      industry: "FinTech",
-      address: "Bangalore, India",
-      country: "India",
+      state: "Karnataka",
+      city: "Bangalore",
+      address: faker.location.streetAddress(),
+      onboardingComplete: true,
+      onboardingStep: 10,
       currency: "INR",
-      taxId: "GST-998877"
-    }
+      initialCapital: 1000000,
+      openingBankBalance: 500000,
+      openingCashBalance: 100000,
+    },
   });
 
-  // -------------------------------------------------------
+  // =======================================================
+  // CHART OF ACCOUNTS
+  // =======================================================
+
+  const accountTemplates = [
+    {
+      code: "1001",
+      name: "Cash",
+      type: AccountType.ASSET,
+    },
+    {
+      code: "1002",
+      name: "Bank",
+      type: AccountType.ASSET,
+    },
+    {
+      code: "2001",
+      name: "Accounts Payable",
+      type: AccountType.LIABILITY,
+    },
+    {
+      code: "3001",
+      name: "Capital",
+      type: AccountType.EQUITY,
+    },
+    {
+      code: "4001",
+      name: "Sales Revenue",
+      type: AccountType.REVENUE,
+    },
+    {
+      code: "5001",
+      name: "Office Expense",
+      type: AccountType.EXPENSE,
+    },
+  ];
+
+  const accounts = [];
+
+  for (const acc of accountTemplates) {
+    const account = await prisma.account.create({
+      data: {
+        ...acc,
+        organizationId: actualOrganizationId,
+        balance: randomDecimal(10000, 500000),
+      },
+    });
+
+    accounts.push(account);
+  }
+
+  // =======================================================
+  // BANK ACCOUNT
+  // =======================================================
+
+  const bankAccount = await prisma.bankAccount.create({
+    data: {
+      organizationId: actualOrganizationId,
+      accountName: "Main Business Account",
+      bankName: "HDFC Bank",
+      accountNumber: faker.finance.accountNumber(),
+      ifscCode: "HDFC0001234",
+      openingBalance: 500000,
+      currentBalance: 750000,
+      isPrimary: true,
+    },
+  });
+
+  // =======================================================
   // CUSTOMERS
-  // -------------------------------------------------------
+  // =======================================================
 
-  const john = await prisma.customer.create({
-    data: {
-      name: "John Doe",
-      email: "john@example.com",
-      phone: "+919999999999",
-      company: "Acme Corp",
-      organizationId: seedOrgId
-    }
-  });
+  const customers = [];
 
-  const priya = await prisma.customer.create({
-    data: {
-      name: "Priya Sharma",
-      email: "priya@startupco.in",
-      phone: "+918888888888",
-      company: "StartupCo",
-      organizationId: seedOrgId
-    }
-  });
-
-  const rajesh = await prisma.customer.create({
-    data: {
-      name: "Rajesh Kumar",
-      email: "rajesh@digihub.in",
-      phone: "+917777777777",
-      company: "DigiHub Services",
-      organizationId: seedOrgId
-    }
-  });
-
-  // -------------------------------------------------------
-  // INVENTORY ITEMS
-  // -------------------------------------------------------
-
-  const laptop = await prisma.item.create({
-    data: {
-      name: "Laptop",
-      description: "Business Laptop",
-      price: 75000,
-      stock: 25,
-      organizationId: seedOrgId
-    }
-  });
-
-  const mouse = await prisma.item.create({
-    data: {
-      name: "Wireless Mouse",
-      description: "Ergonomic Mouse",
-      price: 1200,
-      stock: 4,
-      lowStockAt: 10,
-      organizationId: seedOrgId
-    }
-  });
-
-  const hub = await prisma.item.create({
-    data: {
-      name: "USB-C Hub",
-      description: "7 in 1 USB-C Hub",
-      price: 3500,
-      stock: 18,
-      organizationId: seedOrgId
-    }
-  });
-
-  const monitor = await prisma.item.create({
-    data: {
-      name: "Monitor 27\"",
-      description: "LG UltraFine 4K",
-      price: 32000,
-      stock: 8,
-      lowStockAt: 3,
-      organizationId: seedOrgId
-    }
-  });
-
-  const keyboard = await prisma.item.create({
-    data: {
-      name: "Mechanical Keyboard",
-      description: "Keychron K2 Pro",
-      price: 8500,
-      stock: 2,
-      lowStockAt: 5,
-      organizationId: seedOrgId
-    }
-  });
-
-  // -------------------------------------------------------
-  // INVOICE
-  // -------------------------------------------------------
-
-  const invoice = await prisma.invoice.create({
-    data: {
-      invoiceNumber: "INV-0001",
-      customerId: john.id,
-      organizationId: seedOrgId,
-      status: InvoiceStatus.PAID,
-      dueDate: new Date(),
-      subtotal: 75000,
-      taxRate: 18,
-      taxAmount: 13500,
-      total: 88500,
-      items: {
-        create: [
-          {
-            description: "Laptop x1",
-            quantity: 1,
-            unitPrice: 75000,
-            amount: 75000
-          }
-        ]
-      }
-    }
-  });
-
-  // -------------------------------------------------------
-  // PAYMENT
-  // -------------------------------------------------------
-
-  await prisma.payment.create({
-    data: {
-      invoiceId: invoice.id,
-      organizationId: seedOrgId,
-      amount: 88500,
-      method: PaymentMethod.BANK_TRANSFER
-    }
-  });
-
-  // -------------------------------------------------------
-  // COMPLIANCE TASKS
-  // -------------------------------------------------------
-
-  await prisma.complianceTask.createMany({
-    data: [
-      {
-        title: "GST Filing",
-        category: ComplianceCategory.TAX,
-        status: TaskStatus.PENDING,
-        dueDate: new Date(Date.now() + 5 * 86400000),
-        organizationId: seedOrgId
+  for (let i = 0; i < 40; i++) {
+    const customer = await prisma.customer.create({
+      data: {
+        customerCode: `CUST-${1000 + i}`,
+        name: faker.person.fullName(),
+        email: faker.internet.email(),
+        phone: faker.phone.number(),
+        company: faker.company.name(),
+        address: faker.location.streetAddress(),
+        city: faker.location.city(),
+        state: faker.location.state(),
+        country: "India",
+        gstin: faker.string.alphanumeric(15),
+        customerType: faker.helpers.arrayElement([
+          CustomerType.BUSINESS,
+          CustomerType.RETAIL,
+          CustomerType.WHOLESALE,
+        ]),
+        creditLimit: randomDecimal(5000, 50000),
+        outstandingAmount: randomDecimal(1000, 10000),
+        totalPurchases: randomDecimal(10000, 500000),
+        customerScore: faker.number.int({ min: 50, max: 100 }),
+        tags: ["vip", "priority"],
+        organizationId: actualOrganizationId,
       },
-      {
-        title: "Annual Audit",
-        category: ComplianceCategory.AUDIT,
-        status: TaskStatus.IN_PROGRESS,
-        dueDate: new Date(Date.now() + 30 * 86400000),
-        organizationId: seedOrgId
-      }
-    ]
-  });
+    });
 
-  // -------------------------------------------------------
-  // INVENTORY TRANSACTIONS
-  // -------------------------------------------------------
+    customers.push(customer);
+  }
 
-  await prisma.transaction.createMany({
-    data: [
-      {
-        itemId: laptop.id,
-        organizationId: seedOrgId,
-        type: TransactionType.SALE,
-        quantity: 1
+  // =======================================================
+  // VENDORS
+  // =======================================================
+
+  const vendors = [];
+
+  for (let i = 0; i < 20; i++) {
+    const vendor = await prisma.vendor.create({
+      data: {
+        vendorCode: `VEND-${1000 + i}`,
+        name: faker.company.name(),
+        contactPerson: faker.person.fullName(),
+        email: faker.internet.email(),
+        phone: faker.phone.number(),
+        address: faker.location.streetAddress(),
+        city: faker.location.city(),
+        state: faker.location.state(),
+        country: "India",
+        gstin: faker.string.alphanumeric(15),
+        outstandingBalance: randomDecimal(5000, 50000),
+        totalPurchases: randomDecimal(10000, 100000),
+        organizationId: actualOrganizationId,
       },
-      {
-        itemId: mouse.id,
-        organizationId: seedOrgId,
-        type: TransactionType.RESTOCK,
-        quantity: 50
+    });
+
+    vendors.push(vendor);
+  }
+
+  // =======================================================
+  // ITEMS
+  // =======================================================
+
+  const items = [];
+
+  for (let i = 0; i < 50; i++) {
+    const item = await prisma.item.create({
+      data: {
+        sku: `SKU-${1000 + i}`,
+        barcode: faker.string.numeric(12),
+        name: faker.commerce.productName(),
+        description: faker.commerce.productDescription(),
+        category: faker.commerce.department(),
+        brand: faker.company.name(),
+        unit: "pcs",
+        stock: faker.number.int({ min: 10, max: 500 }),
+        reorderLevel: 20,
+        lowStockAt: 15,
+        warehouse: "Main Warehouse",
+        costPrice: randomDecimal(100, 1000),
+        sellingPrice: randomDecimal(1000, 5000),
+        taxRate: 18,
+        organizationId: actualOrganizationId,
+        vendorId: faker.helpers.arrayElement(vendors).id,
       },
-      {
-        itemId: hub.id,
-        organizationId: seedOrgId,
-        type: TransactionType.SALE,
-        quantity: 3
-      }
-    ]
-  });
+    });
 
-  // -------------------------------------------------------
-  // LOANS
-  // -------------------------------------------------------
+    items.push(item);
+  }
 
-  const loan = await prisma.loan.create({
-    data: {
-      organizationId: seedOrgId,
-      loanAmount: 2500000,
-      principalAmount: 2300000,
-      interestRate: 11.5,
-      tenure: 36,
-      loanType: "Working Capital",
-      bank: "State Bank of India",
-      processingFee: 2,
-      monthlyEMI: 78000,
-      status: LoanStatus.ACTIVE,
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 36 * 30 * 86400000)
+  // =======================================================
+  // INVOICES + PAYMENTS
+  // =======================================================
+
+  for (let i = 0; i < 60; i++) {
+    const customer = faker.helpers.arrayElement(customers);
+
+    const selectedItems = faker.helpers.arrayElements(items, 3);
+
+    let subtotal = 0;
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        invoiceNumber: `INV-${1000 + i}`,
+        customerId: customer.id,
+        organizationId: actualOrganizationId,
+        status: faker.helpers.arrayElement([
+          InvoiceStatus.PAID,
+          InvoiceStatus.PARTIAL,
+          InvoiceStatus.SENT,
+        ]),
+        dueDate: faker.date.future(),
+        subtotal: 0,
+        total: 0,
+        balanceDue: 0,
+        createdById: seedUser.id,
+      },
+    });
+
+    for (const item of selectedItems) {
+      const qty = faker.number.int({ min: 1, max: 10 });
+
+      const amount = Number(item.sellingPrice) * qty;
+
+      subtotal += amount;
+
+      await prisma.invoiceItem.create({
+        data: {
+          invoiceId: invoice.id,
+          description: item.name,
+          sku: item.sku,
+          quantity: qty,
+          unitPrice: item.sellingPrice,
+          costPrice: item.costPrice,
+          taxPercent: item.taxRate,
+          amount,
+          profit: amount - Number(item.costPrice) * qty,
+        },
+      });
     }
-  });
 
-  // -------------------------------------------------------
-  // LOAN PAYMENTS
-  // -------------------------------------------------------
+    const tax = subtotal * 0.18;
+    const total = subtotal + tax;
 
-  await prisma.loanPayment.createMany({
-    data: [
-      {
-        loanId: loan.id,
-        amount: 78000,
-        paidAmount: 78000,
-        status: PaymentStatus.PAID,
-        dueDate: new Date("2026-01-01"),
-        paidDate: new Date("2026-01-01")
+    const paid = faker.number.int({
+      min: 0,
+      max: Math.floor(total),
+    });
+
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        subtotal,
+        taxAmount: tax,
+        total,
+        paidAmount: paid,
+        balanceDue: total - paid,
       },
-      {
-        loanId: loan.id,
-        amount: 78000,
-        paidAmount: 78000,
-        status: PaymentStatus.PAID,
-        dueDate: new Date("2026-02-01"),
-        paidDate: new Date("2026-02-01")
-      },
-      {
-        loanId: loan.id,
-        amount: 78000,
-        paidAmount: 0,
-        status: PaymentStatus.PENDING,
-        dueDate: new Date("2026-03-01")
-      }
-    ]
-  });
+    });
 
-  // -------------------------------------------------------
+    if (paid > 0) {
+      await prisma.payment.create({
+        data: {
+          invoiceId: invoice.id,
+          organizationId: actualOrganizationId,
+          amount: paid,
+          method: faker.helpers.arrayElement([
+            PaymentMethod.UPI,
+            PaymentMethod.BANK_TRANSFER,
+            PaymentMethod.CASH,
+          ]),
+          paidAt: faker.date.recent(),
+          bankAccountId: bankAccount.id,
+          createdById: seedUser.id,
+        },
+      });
+    }
+  }
+
+  // =======================================================
+  // EXPENSES
+  // =======================================================
+
+  for (let i = 0; i < 40; i++) {
+    await prisma.expense.create({
+      data: {
+        category: faker.helpers.arrayElement([
+          ExpenseCategory.RENT,
+          ExpenseCategory.MARKETING,
+          ExpenseCategory.SOFTWARE,
+          ExpenseCategory.OPERATIONS,
+        ]),
+        description: faker.commerce.productDescription(),
+        amount: randomDecimal(1000, 50000),
+        organizationId: actualOrganizationId,
+        createdById: seedUser.id,
+        paymentAccountId: faker.helpers.arrayElement(accounts).id,
+      },
+    });
+  }
+
+  // =======================================================
+  // LEADS
+  // =======================================================
+
+  for (let i = 0; i < 30; i++) {
+    await prisma.lead.create({
+      data: {
+        organizationId: actualOrganizationId,
+        name: faker.person.fullName(),
+        email: faker.internet.email(),
+        phone: faker.phone.number(),
+        company: faker.company.name(),
+        source: "Website",
+        valueEstimate: randomDecimal(10000, 500000),
+        status: faker.helpers.arrayElement([
+          LeadStatus.NEW,
+          LeadStatus.CONTACTED,
+          LeadStatus.WON,
+        ]),
+        assignedToId: seedUser.id,
+      },
+    });
+  }
+
+  // =======================================================
   // ANALYTICS
-  // -------------------------------------------------------
+  // =======================================================
 
-  await prisma.analyticsRecord.createMany({
-    data: [
-      { organizationId: seedOrgId, period: "2025-12", metric: "revenue", value: 73000 },
-      { organizationId: seedOrgId, period: "2026-01", metric: "revenue", value: 62000 },
-      { organizationId: seedOrgId, period: "2026-02", metric: "revenue", value: 88500 },
-      { organizationId: seedOrgId, period: "2026-03", metric: "revenue", value: 0 }
-    ]
-  });
+  const metrics = [
+    "revenue",
+    "expenses",
+    "profit",
+    "customers",
+    "sales",
+  ];
 
-  // -------------------------------------------------------
-  // ERP: SALES (5 sales with line items)
-  // -------------------------------------------------------
-
-  const now = new Date();
-  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-
-  await prisma.sale.create({
-    data: {
-      saleNumber: "SL-00001",
-      customerId: john.id,
-      organizationId: seedOrgId,
-      totalAmount: 150000,
-      status: "COMPLETED",
-      saleDate: new Date(now.getFullYear(), now.getMonth(), 2),
-      notes: "IT Infrastructure Setup",
-      items: { create: [
-        { description: "Business Laptop x2", quantity: 2, unitPrice: 72000, amount: 144000, itemId: laptop.id },
-        { description: "Wireless Mouse x1", quantity: 1, unitPrice: 6000, amount: 6000, itemId: mouse.id },
-      ] }
+  for (const metric of metrics) {
+    for (let month = 1; month <= 12; month++) {
+      await prisma.analyticsRecord.create({
+        data: {
+          organizationId: actualOrganizationId,
+          period: `2026-${month.toString().padStart(2, "0")}`,
+          metric,
+          value: randomDecimal(10000, 1000000),
+        },
+      });
     }
-  });
+  }
 
-  await prisma.sale.create({
-    data: {
-      saleNumber: "SL-00002",
-      customerId: priya.id,
-      organizationId: seedOrgId,
-      totalAmount: 96000,
-      status: "COMPLETED",
-      saleDate: new Date(now.getFullYear(), now.getMonth(), 5),
-      notes: "Office Equipment Order",
-      items: { create: [
-        { description: "Monitor 27\" x3", quantity: 3, unitPrice: 32000, amount: 96000, itemId: monitor.id },
-      ] }
-    }
-  });
-
-  await prisma.sale.create({
-    data: {
-      saleNumber: "SL-00003",
-      customerId: rajesh.id,
-      organizationId: seedOrgId,
-      totalAmount: 45000,
-      status: "COMPLETED",
-      saleDate: new Date(now.getFullYear(), now.getMonth(), 10),
-      notes: "Peripheral Accessories Bundle",
-      items: { create: [
-        { description: "USB-C Hub x2", quantity: 2, unitPrice: 12500, amount: 25000, itemId: hub.id },
-        { description: "Mechanical Keyboard x2", quantity: 2, unitPrice: 8500, amount: 17000, itemId: keyboard.id },
-        { description: "Cable management kit", quantity: 1, unitPrice: 3000, amount: 3000 },
-      ] }
-    }
-  });
-
-  await prisma.sale.create({
-    data: {
-      saleNumber: "SL-00004",
-      customerId: john.id,
-      organizationId: seedOrgId,
-      totalAmount: 25000,
-      status: "PENDING",
-      saleDate: new Date(now.getFullYear(), now.getMonth(), 15),
-      notes: "Software Licensing",
-      items: { create: [
-        { description: "Annual software license x5", quantity: 5, unitPrice: 5000, amount: 25000 },
-      ] }
-    }
-  });
-
-  await prisma.sale.create({
-    data: {
-      saleNumber: "SL-00005",
-      customerId: priya.id,
-      organizationId: seedOrgId,
-      totalAmount: 85000,
-      status: "COMPLETED",
-      saleDate: new Date(now.getFullYear(), now.getMonth(), 18),
-      notes: "Cloud Migration Consulting",
-      items: { create: [
-        { description: "Cloud consulting (40 hrs)", quantity: 40, unitPrice: 2125, amount: 85000 },
-      ] }
-    }
-  });
-
-  // -------------------------------------------------------
-  // ERP: PURCHASES (2)
-  // -------------------------------------------------------
-
-  await prisma.purchase.createMany({
-    data: [
-      {
-        purchaseNumber: "PO-00001",
-        vendor: "Dell Technologies India",
-        organizationId: seedOrgId,
-        totalAmount: 360000,
-        status: "RECEIVED",
-        purchaseDate: new Date(now.getFullYear(), now.getMonth(), 1),
-        notes: "Laptop restock — 5 units"
-      },
-      {
-        purchaseNumber: "PO-00002",
-        vendor: "Amazon Business India",
-        organizationId: seedOrgId,
-        totalAmount: 45000,
-        status: "RECEIVED",
-        purchaseDate: new Date(now.getFullYear(), now.getMonth(), 8),
-        notes: "Office peripherals restock"
-      }
-    ]
-  });
-
-  // -------------------------------------------------------
-  // ERP: EXPENSES (3)
-  // -------------------------------------------------------
-
-  await prisma.expense.createMany({
-    data: [
-      {
-        category: "RENT",
-        description: "Office rent — Bangalore HSR Layout",
-        amount: 45000,
-        organizationId: seedOrgId,
-        expenseDate: new Date(now.getFullYear(), now.getMonth(), 1),
-        vendor: "Prestige Properties"
-      },
-      {
-        category: "SOFTWARE",
-        description: "AWS hosting & services",
-        amount: 12500,
-        organizationId: seedOrgId,
-        expenseDate: new Date(now.getFullYear(), now.getMonth(), 5),
-        vendor: "Amazon Web Services"
-      },
-      {
-        category: "MARKETING",
-        description: "Google Ads — Lead Generation Campaign",
-        amount: 28000,
-        organizationId: seedOrgId,
-        expenseDate: new Date(now.getFullYear(), now.getMonth(), 12),
-        vendor: "Google India"
-      }
-    ]
-  });
-
-  // -------------------------------------------------------
-  // ERP: PAYROLL (3 entries)
-  // -------------------------------------------------------
-
-  await prisma.payroll.createMany({
-    data: [
-      {
-        employeeName: "Vikram Singh",
-        designation: "Senior Developer",
-        salary: 95000,
-        bonus: 5000,
-        deductions: 15000,
-        netPay: 85000,
-        organizationId: seedOrgId,
-        payPeriod: currentPeriod
-      },
-      {
-        employeeName: "Ananya Rao",
-        designation: "Product Manager",
-        salary: 80000,
-        bonus: 0,
-        deductions: 12000,
-        netPay: 68000,
-        organizationId: seedOrgId,
-        payPeriod: currentPeriod
-      },
-      {
-        employeeName: "Karthik Menon",
-        designation: "DevOps Engineer",
-        salary: 70000,
-        bonus: 3000,
-        deductions: 10000,
-        netPay: 63000,
-        organizationId: seedOrgId,
-        payPeriod: currentPeriod
-      }
-    ]
-  });
-
-  console.log("✅ FinRP seed completed (with ERP data)");
+  console.log("✅ Org-scoped database seeded successfully");
 }
 
 main()
-.catch(e=>{
-  console.error(e);
-  process.exit(1);
-})
-.finally(async ()=>{
-  await prisma.$disconnect();
-});
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
