@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { Plus, Search, Download, ArrowRight, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { formatCurrency, getInvoiceStatusColor } from "@/lib/utils";
+import { InvoiceStatus } from "@prisma/client";
+// import { formatCurrency, getInvoiceStatusColor } from "@/lib/utils";
+import { formatCurrency } from "@/lib/formatters/currency";
+import { getInvoiceStatusColor } from "@/lib/helpers/invoice";
 import { useInvoices } from "@/hooks/useInvoices";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { format } from "date-fns";
@@ -200,7 +203,7 @@ export default function BillingPage() {
                   <span style={{ fontFamily: "monospace", fontSize: 13, color: "var(--text-primary)", fontWeight: 600 }}>
                     {inv.invoiceNumber}
                   </span>
-                  <span className={`badge ${getInvoiceStatusColor(inv.status)}`} style={{ border: "none", fontSize: 10 }}>
+                  <span className={`badge ${getInvoiceStatusColor(inv.status as InvoiceStatus)}`} style={{ border: "none", fontSize: 10 }}>
                     {inv.status}
                   </span>
                 </div>
@@ -255,7 +258,7 @@ export default function BillingPage() {
                       <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{formatCurrency(Number(inv.total))}</span>
                     </td>
                     <td>
-                      <span className={`badge ${getInvoiceStatusColor(inv.status)}`}>{inv.status}</span>
+                      <span className={`badge ${getInvoiceStatusColor(inv.status as InvoiceStatus)}`}>{inv.status}</span>
                     </td>
                     {!isTablet && <td style={{ fontSize: 13 }}>{format(new Date(inv.issueDate), "MMM d, yyyy")}</td>}
                     <td style={{ fontSize: 13 }}>{format(new Date(inv.dueDate), "MMM d, yyyy")}</td>
