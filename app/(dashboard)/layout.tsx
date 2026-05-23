@@ -1,42 +1,27 @@
-// import Sidebar from "@/components/Sidebar";
-// import Topbar from "@/components/Topbar";
+// ============================================================
+// Dashboard layout — server + client hybrid.
+// The server part ensures the user is provisioned in the DB
+// before any child route renders. Runs on every navigation
+// but is fast (single indexed DB lookup, no-op if found).
+// ============================================================
 
-// export default function DashboardLayout({
-//   children,
-// }: {
-//   children: React.ReactNode;
-// }) {
-//   return (
-//     <div style={{ display: "flex", minHeight: "100vh" }}>
-//       <Sidebar />
-//       <div className="main-content" style={{ flex: 1 }}>
-//         <Topbar />
-//         <main className="page-container animate-fade-in">{children}</main>
-//       </div>
-//     </div>
-//   );
-// }
+import { getCurrentUser } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
+import DashboardShell from "./DashboardShell";
 
-"use client";
-
-import { useState } from "react";
-import Sidebar from "@/components/Sidebar";
-import Topbar from "@/components/Topbar";
-
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // This call auto-provisions Organization + User if missing.
+  // If Clerk says not authenticated, getCurrentUser throws → middleware
+  // already redirects to sign-in before we get here.
+  try {
+    await getCurrentUser();
+  } catch {
+    redirect("/sign-in");
+  }
 
-  return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="main-content" style={{ flex: 1 }}>
-        <Topbar onMenuClick={() => setSidebarOpen(true)} />
-        <main className="page-container animate-fade-in">{children}</main>
-      </div>
-    </div>
-  );
+  return <DashboardShell>{children}</DashboardShell>;
 }

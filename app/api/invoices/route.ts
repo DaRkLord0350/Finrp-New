@@ -1,12 +1,14 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/auth/tenant";
 
 export async function GET(req: Request) {
   try {
-    const { userId, orgId } = await auth();
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = orgId ?? userId;
+    const tenantId = await getTenantId();
+    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
@@ -31,9 +33,10 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { userId, orgId } = await auth();
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = orgId ?? userId;
+    const tenantId = await getTenantId();
+    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
     const { customerId, dueDate, taxRate = 0, notes, items } = body;

@@ -16,6 +16,7 @@
   "dependencies": {
     "@base-ui/react": "^1.5.0",
     "@clerk/nextjs": "^7.0.2",
+    "@faker-js/faker": "^10.4.0",
     "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^5.2.2",
     "@prisma/client": "^5.22.0",
