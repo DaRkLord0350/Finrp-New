@@ -49,6 +49,7 @@ export async function POST(req: Request) {
     );
     const taxAmount = subtotal * (taxRate / 100);
     const total = subtotal + taxAmount;
+    const balanceDue = total; // Initial balance is equal to total
 
     const invoiceCount = await prisma.invoice.count({ where: { organizationId: tenantId } });
     const invoiceNumber = `INV-${String(invoiceCount + 1).padStart(5, "0")}`;
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
         taxAmount,
         subtotal,
         total,
+        balanceDue,
         notes,
         items: {
           create: items.map((item: { description: string; quantity: number; unitPrice: number }) => ({

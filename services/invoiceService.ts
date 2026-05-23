@@ -28,6 +28,7 @@ export const invoiceService = {
     const taxRate = data.taxRate ?? 0;
     const taxAmount = subtotal * (taxRate / 100);
     const total = subtotal + taxAmount;
+    const balanceDue = total; // Initial balance is equal to total
     const count = await prisma.invoice.count({ where: { organizationId } });
     const invoiceNumber = `INV-${String(count + 1).padStart(5, "0")}`;
 
@@ -41,6 +42,7 @@ export const invoiceService = {
         taxAmount,
         subtotal,
         total,
+        balanceDue,
         notes: data.notes,
         items: {
           create: data.items.map((item) => ({

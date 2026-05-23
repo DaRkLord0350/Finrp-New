@@ -42,7 +42,7 @@ export async function POST(req: Request) {
         amount: body.amount,
         organizationId: tenantId,
         expenseDate: body.expenseDate ? new Date(body.expenseDate) : new Date(),
-        vendor: body.vendor,
+        vendorName: body.vendorName,
         notes: body.notes,
       },
     });
