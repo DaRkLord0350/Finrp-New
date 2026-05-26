@@ -1,17 +1,17 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/auth/tenant";
 
 export async function GET() {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const organizationId = await getTenantId();
+    if (!organizationId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // Get all overdue invoices for the organization
     const now = new Date();
     const overdueInvoices = await prisma.invoice.findMany({
       where: {
-        organizationId: orgId,
+        organizationId,
         dueDate: { lt: now },
         status: { in: ["OVERDUE", "PARTIAL"] },
       },

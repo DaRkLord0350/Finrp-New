@@ -104,17 +104,12 @@ export async function generateInvoicePdf(
 
   const pdfUrl = `/invoices/${pdfFileName}`;
 
-  // Update invoice record.
-  // Using $executeRaw so this works even before the Prisma client is fully
-  // regenerated (the columns exist in the DB from the migration).
+  // Update invoice record with generated PDF details.
   const generatedAt = new Date();
-  await prisma.$executeRaw`
-    UPDATE "invoices"
-    SET "pdfUrl" = ${pdfUrl},
-        "pdfFileName" = ${pdfFileName},
-        "pdfGeneratedAt" = ${generatedAt}
-    WHERE "id" = ${invoiceId}
-  `;
+  await prisma.invoice.update({
+    where: { id: invoiceId },
+    data: { pdfUrl, pdfFileName, pdfGeneratedAt: generatedAt },
+  });
 
   return { pdfUrl, pdfFileName };
 }
