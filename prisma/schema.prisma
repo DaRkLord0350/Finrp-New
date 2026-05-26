@@ -221,6 +221,11 @@ model Invoice {
   paidAmount     Decimal       @default(0) @db.Decimal(12, 2)
   balanceDue     Decimal       @db.Decimal(12, 2)
 
+  // PDF
+  pdfUrl         String?
+  pdfFileName    String?
+  pdfGeneratedAt DateTime?
+
   // Metadata
   currency       String        @default("INR")
   notes          String?
@@ -1408,4 +1413,18 @@ model Payroll {
 
   @@index([organizationId])
   @@map("payroll")
+}
+
+// ============================================================
+// INVOICE COUNTER (Atomic sequence for collision-safe numbering)
+// ============================================================
+model InvoiceCounter {
+  id             String @id @default(cuid())
+  organizationId String
+  year           Int
+  lastNumber     Int    @default(0)
+
+  @@unique([organizationId, year])
+  @@index([organizationId])
+  @@map("invoice_counters")
 }

@@ -1,12 +1,10 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
+import { generateNextInvoiceNumber } from "@/lib/generators/invoice-number";
 
 export async function GET(req: Request) {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const tenantId = await getTenantId();
     if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -31,31 +29,46 @@ export async function GET(req: Request) {
   }
 }
 
+interface IncomingItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  sku?: string;
+  taxPercent?: number;
+  itemId?: string;
+}
+
 export async function POST(req: Request) {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const tenantId = await getTenantId();
     if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const { customerId, dueDate, taxRate = 0, notes, items } = body;
+    const { customerId, dueDate, taxRate = 0, notes, items, discount = 0, shipping = 0 } = body;
 
     if (!customerId || !dueDate || !items?.length) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const subtotal = items.reduce(
-      (sum: number, item: { quantity: number; unitPrice: number }) =>
-        sum + item.quantity * item.unitPrice,
+    // Verify customer belongs to this org
+    const customer = await prisma.customer.findFirst({
+      where: { id: customerId, organizationId: tenantId },
+      select: { id: true },
+    });
+    if (!customer) {
+      return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    }
+
+    const subtotal = (items as IncomingItem[]).reduce(
+      (sum, item) => sum + item.quantity * item.unitPrice,
       0
     );
-    const taxAmount = subtotal * (taxRate / 100);
-    const total = subtotal + taxAmount;
-    const balanceDue = total; // Initial balance is equal to total
+    const taxAmount = subtotal * (Number(taxRate) / 100);
+    const total = subtotal + taxAmount + Number(shipping) - Number(discount);
+    const balanceDue = total;
 
-    const invoiceCount = await prisma.invoice.count({ where: { organizationId: tenantId } });
-    const invoiceNumber = `INV-${String(invoiceCount + 1).padStart(5, "0")}`;
+    // Atomic collision-safe invoice number (Task 6)
+    const invoiceNumber = await generateNextInvoiceNumber(tenantId);
 
     const invoice = await prisma.invoice.create({
       data: {
@@ -63,18 +76,23 @@ export async function POST(req: Request) {
         customerId,
         organizationId: tenantId,
         dueDate: new Date(dueDate),
-        taxRate,
+        taxRate: Number(taxRate),
         taxAmount,
         subtotal,
+        discount: Number(discount),
+        shipping: Number(shipping),
         total,
         balanceDue,
         notes,
         items: {
-          create: items.map((item: { description: string; quantity: number; unitPrice: number }) => ({
+          create: (items as IncomingItem[]).map((item) => ({
             description: item.description,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             amount: item.quantity * item.unitPrice,
+            sku: item.sku ?? null,
+            taxPercent: item.taxPercent ?? 0,
+            taxAmount: item.quantity * item.unitPrice * ((item.taxPercent ?? 0) / 100),
           })),
         },
       },

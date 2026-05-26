@@ -1,18 +1,20 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/auth/tenant";
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const organizationId = await getTenantId();
+    if (!organizationId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const { id } = await params;
     const invoice = await prisma.invoice.findFirst({
-      where: { id, organizationId: orgId },
+      where: { id, organizationId },
       include: { customer: true, items: true, payments: true },
     });
 
@@ -29,15 +31,17 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const organizationId = await getTenantId();
+    if (!organizationId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const { id } = await params;
     const body = await req.json();
-    const { items, ...invoiceData } = body;
+    const { items: _items, ...invoiceData } = body;
 
     const invoice = await prisma.invoice.updateMany({
-      where: { id, organizationId: orgId },
+      where: { id, organizationId },
       data: invoiceData,
     });
 
@@ -53,12 +57,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const organizationId = await getTenantId();
+    if (!organizationId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const { id } = await params;
     await prisma.invoice.deleteMany({
-      where: { id, organizationId: orgId },
+      where: { id, organizationId },
     });
 
     return NextResponse.json({ message: "Deleted" });
