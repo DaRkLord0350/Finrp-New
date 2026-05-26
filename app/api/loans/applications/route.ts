@@ -1,30 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAuth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(req: NextRequest) {
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
   try {
-    const { userId } = getAuth(req);
-
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Get user's organization
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { organizationId: true },
-    });
-
-    if (!user) {
-      // Return default empty data for new users
-      return NextResponse.json([]);
-    }
-
     // Get all loans for the organization
     const loans = await prisma.loan.findMany({
       where: {
-        organizationId: user.organizationId,
+        organizationId,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -48,4 +31,4 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, "loans.read");

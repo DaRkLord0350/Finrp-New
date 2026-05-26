@@ -3,41 +3,23 @@
 // POST /api/transactions — create a sale or restock record
 // ============================================================
 
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { getTransactions, createTransaction } from "@/services/transactionService";
 import { transactionSchema } from "@/lib/validations";
-import { getTenantId } from "@/lib/auth/tenant";
 
-export async function GET() {
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const transactions = await getTransactions(tenantId);
+    const transactions = await getTransactions(organizationId);
     return NextResponse.json({ transactions });
   } catch (error) {
     console.error("[GET /api/transactions]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "finance.read");
 
-export async function POST(req: Request) {
+export const POST = withAuth(async (req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = await req.json();
     const parsed = transactionSchema.safeParse(body);
     if (!parsed.success) {
@@ -49,7 +31,7 @@ export async function POST(req: Request) {
 
     const transaction = await createTransaction({
       ...parsed.data,
-      organizationId: tenantId,
+      organizationId,
     });
 
     return NextResponse.json({ transaction }, { status: 201 });
@@ -58,4 +40,4 @@ export async function POST(req: Request) {
     const msg = error instanceof Error ? error.message : "Internal server error";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
+}, "finance.write");

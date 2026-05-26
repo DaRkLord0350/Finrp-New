@@ -1,23 +1,25 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
-import { getTenantId } from "@/lib/auth/tenant";
 
-export async function PATCH(
+export const PATCH = withAuth(async (
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { organizationId }
+) => {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = await getTenantId();
-    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const { id } = await params;
+    // Extract ID from URL
+    const url = new URL(req.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing compliance task ID" }, { status: 400 });
+    }
+
     const body = await req.json();
     const { status, title, description, dueDate, category } = body;
 
     const task = await prisma.complianceTask.update({
-      where: { id, organizationId: tenantId },
+      where: { id, organizationId },
       data: {
         ...(status && { status }),
         ...(title && { title }),
@@ -33,23 +35,25 @@ export async function PATCH(
     console.error("[COMPLIANCE_PATCH]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "compliance.write");
 
-export async function DELETE(
+export const DELETE = withAuth(async (
   _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { organizationId }
+) => {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = await getTenantId();
-    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const { id } = await params;
+    // Extract ID from URL
+    const url = new URL(_req.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing compliance task ID" }, { status: 400 });
+    }
 
-    await prisma.complianceTask.delete({ where: { id, organizationId: tenantId } });
+    await prisma.complianceTask.delete({ where: { id, organizationId } });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[COMPLIANCE_DELETE]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "compliance.write");

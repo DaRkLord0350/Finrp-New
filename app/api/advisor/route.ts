@@ -1,18 +1,16 @@
-import { auth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 
-export async function POST(req: Request) {
+export const POST = withAuth(async (req: Request, { organizationId }) => {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return new Response("Unauthorized", { status: 401 });
-
     const body = await req.json();
     const { message } = body;
 
-    if (!message) return new Response("Message required", { status: 400 });
+    if (!message) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
     const businessContext = `
 You are an AI Business Advisor for FinRP, an AI-powered business operating system.
-Organization ID: ${orgId}
+Organization ID: ${organizationId}
 
 Current business snapshot (March 2025):
 - Total Revenue MTD: $51,200 (up 13.2% from last month)
@@ -38,9 +36,7 @@ User question: ${message}`;
     if (!GEMINI_API_KEY) {
       // Graceful fallback when no API key configured
       const fallback = `## Business Advisor Response\n\nI'm ready to help with your business questions. To enable AI responses, please add your \`GEMINI_API_KEY\` to \`.env.local\`.\n\n**Based on your current data:**\n- Revenue is trending up 13.2% MoM ✅\n- 5 overdue invoices need follow-up ⚠️\n- Q1 GST Filing due March 31st – action required soon`;
-      return new Response(JSON.stringify({ response: fallback }), {
-        headers: { "Content-Type": "application/json" },
-      });
+      return NextResponse.json({ response: fallback });
     }
 
     // Call Gemini with streaming
@@ -115,9 +111,9 @@ User question: ${message}`;
     });
   } catch (error) {
     console.error("[ADVISOR_STREAM]", error);
-    return new Response(
-      JSON.stringify({ response: "I'm unable to connect to the AI advisor right now. Please check your GEMINI_API_KEY in .env.local." }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+    return NextResponse.json(
+      { response: "I'm unable to connect to the AI advisor right now. Please check your GEMINI_API_KEY in .env.local." },
+      { status: 500 }
     );
   }
-}
+}, "advisor.access");

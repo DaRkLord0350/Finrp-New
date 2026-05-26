@@ -1,27 +1,21 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getTenantId } from "@/lib/auth/tenant";
+import { withAuth } from "@/lib/auth/middleware";
 
-export async function GET() {
-  try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = await getTenantId();
-    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const GET = withAuth(
+  async (req, { organizationId }) => {
     const [invoices, customers, payments] = await Promise.all([
       prisma.invoice.findMany({
-        where: { organizationId: tenantId },
+        where: { organizationId },
         include: {
           items: true,
-          customer: { select: { id: true, name: true } }, // ← join customer name
+          customer: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: "desc" },
       }),
-      prisma.customer.count({ where: { organizationId: tenantId } }),
+      prisma.customer.count({ where: { organizationId } }),
       prisma.payment.findMany({
-        where: { organizationId: tenantId },
+        where: { organizationId },
         orderBy: { paidAt: "desc" },
       }),
     ]);
@@ -53,7 +47,7 @@ export async function GET() {
       return {
         month,
         revenue: monthInvoices.reduce((s: number, inv) => s + Number(inv.total), 0),
-        expenses: 0, // extend later if expense model exists
+        expenses: 0,
         invoices: monthInvoices.length,
       };
     });
@@ -105,8 +99,6 @@ export async function GET() {
       paymentMix,
       topCustomers,
     });
-  } catch (error) {
-    console.error("[ANALYTICS_GET]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
-}
+  },
+  "analytics.read"
+);

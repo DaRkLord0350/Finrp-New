@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAuth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 
 // Mock loan products database - in production, this would come from a database or external API
 const LOAN_PRODUCTS = [
@@ -55,16 +55,10 @@ const LOAN_PRODUCTS = [
   },
 ];
 
-export async function GET(req: NextRequest) {
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
   try {
-    const { userId } = getAuth(req);
-
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     // Return recommended products
-    // In production, you could filter based on user's business profile
+    // In production, you could filter based on organization's business profile
     return NextResponse.json(LOAN_PRODUCTS);
   } catch (error) {
     console.error("Error fetching loan products:", error);
@@ -73,4 +67,4 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, "loans.read");

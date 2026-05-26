@@ -1,39 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAuth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(req: NextRequest) {
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
   try {
-    const { userId } = getAuth(req);
-
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Get user's organization
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { organizationId: true },
-    });
-
-    if (!user) {
-      // Return default CMA report for new users
-      return NextResponse.json({
-        generatedDate: new Date().toLocaleDateString("en-IN", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        }),
-        annualTurnover: 0,
-        profitMargin: 0,
-        financialHealth: "Good",
-      });
-    }
-
     // Get financial data for CMA report
     const invoices = await prisma.invoice.findMany({
       where: {
-        organizationId: user.organizationId,
+        organizationId,
         status: "PAID",
       },
       select: { total: true },
@@ -67,4 +41,4 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, "loans.read");

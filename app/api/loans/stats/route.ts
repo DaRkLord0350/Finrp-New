@@ -1,41 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAuth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(req: NextRequest) {
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
   try {
-    const { userId } = getAuth(req);
-
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Get user's organization
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { organizationId: true },
-    });
-
-    if (!user) {
-      // Return default stats for new users
-      return NextResponse.json({
-        annualTurnover: 0,
-        turnoverGrowth: 0,
-        monthlyCashFlow: 0,
-        outstandingLoans: 0,
-        creditScore: 0,
-      });
-    }
-
     // Get business profile for financial data
     const businessProfile = await prisma.businessProfile.findUnique({
-      where: { organizationId: user.organizationId },
+      where: { organizationId },
     });
 
     // Get all invoices for turnover calculation
     const invoices = await prisma.invoice.findMany({
       where: {
-        organizationId: user.organizationId,
+        organizationId,
         status: "PAID",
       },
       select: { total: true },
@@ -44,7 +21,7 @@ export async function GET(req: NextRequest) {
     // Get active loans
     const loans = await prisma.loan.findMany({
       where: {
-        organizationId: user.organizationId,
+        organizationId,
         status: { in: ["ACTIVE", "UNDER_REVIEW"] },
       },
       select: { loanAmount: true },
@@ -71,4 +48,4 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, "loans.read");

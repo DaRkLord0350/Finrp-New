@@ -2,24 +2,14 @@
 // /api/erp/payroll — Payroll CRUD
 // ============================================================
 
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
-import { getTenantId } from "@/lib/auth/tenant";
 
-export async function GET() {
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const payroll = await prisma.payroll.findMany({
-      where: { organizationId: tenantId },
+      where: { organizationId },
       orderBy: { paidAt: "desc" },
     });
 
@@ -28,18 +18,10 @@ export async function GET() {
     console.error("[GET /api/erp/payroll]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "erp.read");
 
-export async function POST(req: Request) {
+export const POST = withAuth(async (req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     const body = await req.json();
 
     const baseSalary = body.baseSalary || body.salary || 0;
@@ -73,7 +55,7 @@ export async function POST(req: Request) {
         otherDeductions,
         totalDeductions,
         netPay,
-        organizationId: tenantId,
+        organizationId,
         payPeriod: body.payPeriod,
         payPeriodStart: body.payPeriodStart ? new Date(body.payPeriodStart) : undefined,
         payPeriodEnd: body.payPeriodEnd ? new Date(body.payPeriodEnd) : undefined,
@@ -89,4 +71,4 @@ export async function POST(req: Request) {
     console.error("[POST /api/erp/payroll]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "erp.write");

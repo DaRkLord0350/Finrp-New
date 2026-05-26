@@ -1,34 +1,21 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getTenantId } from "@/lib/auth/tenant";
+import { withAuth } from "@/lib/auth/middleware";
 
-export async function GET() {
-  try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = await getTenantId();
-    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const GET = withAuth(
+  async (req, { organizationId }) => {
     const tasks = await prisma.complianceTask.findMany({
-      where: { organizationId: tenantId },
+      where: { organizationId },
       orderBy: { dueDate: "asc" },
     });
 
     return NextResponse.json(tasks);
-  } catch (error) {
-    console.error("[COMPLIANCE_GET]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
-}
+  },
+  "compliance.read"
+);
 
-export async function POST(req: Request) {
-  try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = await getTenantId();
-    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const POST = withAuth(
+  async (req, { organizationId }) => {
     const body = await req.json();
     const { title, description, category = "OTHER", dueDate } = body;
 
@@ -42,13 +29,11 @@ export async function POST(req: Request) {
         description,
         category,
         dueDate: new Date(dueDate),
-        organizationId: tenantId,
+        organizationId,
       },
     });
 
     return NextResponse.json(task, { status: 201 });
-  } catch (error) {
-    console.error("[COMPLIANCE_POST]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
-}
+  },
+  "compliance.write"
+);

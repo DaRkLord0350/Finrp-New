@@ -8,22 +8,12 @@
 //   - Monthly revenue array (last 7 months)
 // ============================================================
 
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
-import { getTenantId } from "@/lib/auth/tenant";
 
-export async function GET() {
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     const [
       invoices,
@@ -34,17 +24,17 @@ export async function GET() {
     ] = await Promise.all([
       // All invoices for revenue + overdue calculations
       prisma.invoice.findMany({
-        where: { organizationId: tenantId },
+        where: { organizationId },
         select: { total: true, status: true, issueDate: true },
       }),
 
       // Customer count
-      prisma.customer.count({ where: { organizationId: tenantId } }),
+      prisma.customer.count({ where: { organizationId } }),
 
       // Upcoming compliance tasks (not completed, ordered by due date)
       prisma.complianceTask.findMany({
         where: {
-          organizationId: tenantId,
+          organizationId,
           status: { not: "COMPLETED" },
         },
         orderBy: { dueDate: "asc" },
@@ -55,7 +45,7 @@ export async function GET() {
       // Items that are at or below low stock threshold
       prisma.item.findMany({
         where: {
-          organizationId: tenantId,
+          organizationId,
         },
         orderBy: { stock: "asc" },
         take: 20,
@@ -63,7 +53,7 @@ export async function GET() {
 
       // 5 most recent invoices with customer name
       prisma.invoice.findMany({
-        where: { organizationId: tenantId },
+        where: { organizationId },
         include: { customer: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
         take: 5,
@@ -134,4 +124,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-}
+}, "dashboard.read");

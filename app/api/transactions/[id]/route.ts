@@ -2,29 +2,27 @@
 // DELETE /api/transactions/[id]
 // ============================================================
 
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { deleteTransaction } from "@/services/transactionService";
-import { getTenantId } from "@/lib/auth/tenant";
 
-export async function DELETE(
+export const DELETE = withAuth(async (
   _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { organizationId }
+) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Extract ID from URL
+    const url = new URL(_req.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing transaction ID" }, { status: 400 });
     }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const { id } = await params;
-    await deleteTransaction(id, tenantId);
+
+    await deleteTransaction(id, organizationId);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[DELETE /api/transactions/[id]]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "finance.write");

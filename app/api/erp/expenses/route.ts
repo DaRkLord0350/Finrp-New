@@ -2,24 +2,14 @@
 // /api/erp/expenses — Expenses CRUD
 // ============================================================
 
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
-import { getTenantId } from "@/lib/auth/tenant";
 
-export async function GET() {
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const expenses = await prisma.expense.findMany({
-      where: { organizationId: tenantId },
+      where: { organizationId },
       orderBy: { expenseDate: "desc" },
     });
 
@@ -28,18 +18,10 @@ export async function GET() {
     console.error("[GET /api/erp/expenses]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "erp.read");
 
-export async function POST(req: Request) {
+export const POST = withAuth(async (req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     const body = await req.json();
 
     const expense = await prisma.expense.create({
@@ -47,7 +29,7 @@ export async function POST(req: Request) {
         category: body.category || "OPERATIONS",
         description: body.description,
         amount: body.amount,
-        organizationId: tenantId,
+        organizationId,
         expenseDate: body.expenseDate ? new Date(body.expenseDate) : new Date(),
         vendorName: body.vendorName,
         notes: body.notes,
@@ -59,4 +41,4 @@ export async function POST(req: Request) {
     console.error("[POST /api/erp/expenses]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "erp.write");

@@ -1,20 +1,14 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getTenantId } from "@/lib/auth/tenant";
+import { withAuth } from "@/lib/auth/middleware";
 
-export async function GET(req: Request) {
-  try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = await getTenantId();
-    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const GET = withAuth(
+  async (req, { organizationId }) => {
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
     const customerId = searchParams.get("customerId");
 
-    const where: Record<string, unknown> = { organizationId: tenantId };
+    const where: Record<string, unknown> = { organizationId };
     if (status) where.status = status;
     if (customerId) where.customerId = customerId;
 
@@ -25,21 +19,14 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json(invoices);
-  } catch (error) {
-    console.error("[INVOICES_GET]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
-}
+  },
+  "invoices.read"
+);
 
-export async function POST(req: Request) {
-  try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const tenantId = await getTenantId();
-    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export const POST = withAuth(
+  async (req, { organizationId }) => {
     const body = await req.json();
-    const { customerId, dueDate, taxRate = 0, notes, items } = body;
+    const { customerId, dueDate, taxRate = 0, notes, status = "DRAFT", items } = body;
 
     if (!customerId || !dueDate || !items?.length) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -52,38 +39,57 @@ export async function POST(req: Request) {
     );
     const taxAmount = subtotal * (taxRate / 100);
     const total = subtotal + taxAmount;
-    const balanceDue = total; // Initial balance is equal to total
 
-    const invoiceCount = await prisma.invoice.count({ where: { organizationId: tenantId } });
-    const invoiceNumber = `INV-${String(invoiceCount + 1).padStart(5, "0")}`;
+    const invoice = await prisma.$transaction(async (tx) => {
+      // Atomically read + increment the invoice counter from Settings
+      const settings = await tx.settings.findUnique({
+        where: { organizationId },
+        select: { invoicePrefix: true, invoiceStartNumber: true },
+      });
 
-    const invoice = await prisma.invoice.create({
-      data: {
-        invoiceNumber,
-        customerId,
-        organizationId: tenantId,
-        dueDate: new Date(dueDate),
-        taxRate,
-        taxAmount,
-        subtotal,
-        total,
-        balanceDue,
-        notes,
-        items: {
-          create: items.map((item: { description: string; quantity: number; unitPrice: number }) => ({
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            amount: item.quantity * item.unitPrice,
-          })),
+      const prefix = settings?.invoicePrefix ?? "INV";
+      const nextNumber = settings?.invoiceStartNumber ?? 1;
+
+      await tx.settings.upsert({
+        where: { organizationId },
+        update: { invoiceStartNumber: nextNumber + 1 },
+        create: {
+          organizationId,
+          invoiceStartNumber: nextNumber + 1,
         },
-      },
-      include: { customer: true, items: true },
+      });
+
+      const invoiceNumber = `${prefix}-${String(nextNumber).padStart(5, "0")}`;
+
+      return tx.invoice.create({
+        data: {
+          invoiceNumber,
+          customerId,
+          organizationId,
+          status,
+          dueDate: new Date(dueDate),
+          taxRate,
+          taxAmount,
+          subtotal,
+          total,
+          balanceDue: total,
+          notes,
+          items: {
+            create: items.map(
+              (item: { description: string; quantity: number; unitPrice: number }) => ({
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                amount: item.quantity * item.unitPrice,
+              })
+            ),
+          },
+        },
+        include: { customer: true, items: true },
+      });
     });
 
     return NextResponse.json(invoice, { status: 201 });
-  } catch (error) {
-    console.error("[INVOICES_POST]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
-}
+  },
+  "invoices.write"
+);

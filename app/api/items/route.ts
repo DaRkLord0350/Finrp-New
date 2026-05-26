@@ -1,43 +1,20 @@
-// ============================================================
-// GET  /api/items  — list all items for the org
-// POST /api/items  — create a new item
-// ============================================================
-
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { createItem, getItems } from "@/services/itemService";
 import { itemSchema } from "@/lib/validations";
-import { getTenantId } from "@/lib/auth/tenant";
 
-export async function GET() {
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const items = await getItems(tenantId);
+    const items = await getItems(organizationId);
     return NextResponse.json({ items });
   } catch (error) {
     console.error("[GET /api/items]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "inventory.read");
 
-export async function POST(req: Request) {
+export const POST = withAuth(async (req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = await req.json();
     const parsed = itemSchema.safeParse(body);
     if (!parsed.success) {
@@ -55,7 +32,7 @@ export async function POST(req: Request) {
       price,
       stock,
       lowStockAt,
-      organizationId: tenantId,
+      organizationId,
     });
 
     return NextResponse.json({ item }, { status: 201 });
@@ -63,4 +40,4 @@ export async function POST(req: Request) {
     console.error("[POST /api/items]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "inventory.write");

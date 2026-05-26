@@ -1,19 +1,22 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(
+export const GET = withAuth(async (
   _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { organizationId }
+) => {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const { id } = await params;
+    // Extract ID from URL
+    const url = new URL(_req.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing customer ID" }, { status: 400 });
+    }
 
     const customer = await prisma.customer.findFirst({
-      where: { id, organizationId: orgId },
+      where: { id, organizationId },
       include: {
         invoices: {
           orderBy: { createdAt: "desc" },
@@ -28,20 +31,24 @@ export async function GET(
     console.error("[CUSTOMER_GET]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "customers.read");
 
-export async function PUT(
+export const PUT = withAuth(async (
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { organizationId }
+) => {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Extract ID from URL
+    const url = new URL(req.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing customer ID" }, { status: 400 });
+    }
 
-    const { id } = await params;
     const body = await req.json();
     const customer = await prisma.customer.updateMany({
-      where: { id, organizationId: orgId },
+      where: { id, organizationId },
       data: body,
     });
 
@@ -50,19 +57,23 @@ export async function PUT(
     console.error("[CUSTOMER_PUT]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "customers.write");
 
-export async function DELETE(
+export const DELETE = withAuth(async (
   _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { organizationId }
+) => {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Extract ID from URL
+    const url = new URL(_req.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing customer ID" }, { status: 400 });
+    }
 
-    const { id } = await params;
     await prisma.customer.deleteMany({
-      where: { id, organizationId: orgId },
+      where: { id, organizationId },
     });
 
     return NextResponse.json({ message: "Deleted" });
@@ -70,5 +81,4 @@ export async function DELETE(
     console.error("[CUSTOMER_DELETE]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
-
+}, "customers.write");

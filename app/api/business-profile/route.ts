@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server"
+import { withAuth } from "@/lib/auth/middleware"
 import { prisma } from "@/lib/prisma"
 
-export async function GET() {
-
-  const profile = await prisma.businessProfile.findFirst()
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
+  const profile = await prisma.businessProfile.findUnique({
+    where: { organizationId }
+  })
 
   if (!profile) {
     return NextResponse.json(null)
@@ -13,4 +15,4 @@ export async function GET() {
     organizationId: profile.organizationId,
     industry: profile.industry
   })
-}
+}, "business.read")

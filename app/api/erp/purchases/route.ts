@@ -2,24 +2,14 @@
 // /api/erp/purchases — Purchases CRUD
 // ============================================================
 
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
-import { getTenantId } from "@/lib/auth/tenant";
 
-export async function GET() {
+export const GET = withAuth(async (_req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const purchases = await prisma.purchase.findMany({
-      where: { organizationId: tenantId },
+      where: { organizationId },
       orderBy: { purchaseDate: "desc" },
     });
 
@@ -28,28 +18,20 @@ export async function GET() {
     console.error("[GET /api/erp/purchases]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "erp.read");
 
-export async function POST(req: Request) {
+export const POST = withAuth(async (req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     const body = await req.json();
 
-    const count = await prisma.purchase.count({ where: { organizationId: tenantId } });
+    const count = await prisma.purchase.count({ where: { organizationId } });
     const purchaseNumber = `PO-${String(count + 1).padStart(5, "0")}`;
 
     const purchase = await prisma.purchase.create({
       data: {
         purchaseNumber,
         vendorName: body.vendorName,
-        organizationId: tenantId,
+        organizationId,
         totalAmount: body.totalAmount,
         status: body.status || "RECEIVED",
         purchaseDate: body.purchaseDate ? new Date(body.purchaseDate) : new Date(),
@@ -62,4 +44,4 @@ export async function POST(req: Request) {
     console.error("[POST /api/erp/purchases]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "erp.write");

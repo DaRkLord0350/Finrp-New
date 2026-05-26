@@ -3,26 +3,24 @@
 // DELETE /api/items/[id]  — remove an item
 // ============================================================
 
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { updateItem, deleteItem } from "@/services/itemService";
 import { itemSchema } from "@/lib/validations";
-import { getTenantId } from "@/lib/auth/tenant";
 
-export async function PATCH(
+export const PATCH = withAuth(async (
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { organizationId }
+) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Extract params from the URL
+    const url = new URL(req.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing item ID" }, { status: 400 });
     }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const { id } = await params;
+
     const body = await req.json();
 
     // Partial validation — allow partial updates
@@ -34,7 +32,7 @@ export async function PATCH(
       );
     }
 
-    const item = await updateItem(id, tenantId, {
+    const item = await updateItem(id, organizationId, {
       name: parsed.data.name,
       description: parsed.data.description,
       price: parsed.data.price,
@@ -47,29 +45,28 @@ export async function PATCH(
     console.error("[PATCH /api/items/[id]]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "inventory.write");
 
 // Also support PUT for form compatibility
 export { PATCH as PUT };
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth(async (
+  req: Request,
+  { organizationId }
+) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Extract params from the URL
+    const url = new URL(req.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing item ID" }, { status: 400 });
     }
-    const tenantId = await getTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const { id } = await params;
-    await deleteItem(id, tenantId);
+
+    await deleteItem(id, organizationId);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[DELETE /api/items/[id]]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "inventory.write");

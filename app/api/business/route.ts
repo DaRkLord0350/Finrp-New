@@ -4,33 +4,24 @@
 // PATCH /api/business — update business details
 // ============================================================
 
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { createBusiness, getBusinessByUser, updateBusiness } from "@/services/businessService";
+import { withAuth } from "@/lib/auth/middleware";
+import { createBusiness, getBusinessByOrganization, updateBusiness } from "@/services/businessService";
 
-export async function GET() {
+export const GET = withAuth(async (_req: Request, { organizationId, user }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const business = await getBusinessByUser(userId);
+    const business = await getBusinessByOrganization(organizationId);
     return NextResponse.json({ business });
   } catch (error) {
     console.error("[GET /api/business]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "business.read");
 
-export async function POST(req: Request) {
+export const POST = withAuth(async (req: Request, { organizationId, user }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     // Return existing business if already onboarded
-    const existing = await getBusinessByUser(userId);
+    const existing = await getBusinessByOrganization(organizationId);
     if (existing) {
       return NextResponse.json({ business: existing });
     }
@@ -46,7 +37,7 @@ export async function POST(req: Request) {
     }
 
     const business = await createBusiness({
-      clerkId: userId,
+      organizationId,
       name,
       type,
       industry,
@@ -61,19 +52,15 @@ export async function POST(req: Request) {
     console.error("[POST /api/business]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "business.write");
 
-export async function PATCH(req: Request) {
+export const PATCH = withAuth(async (req: Request, { organizationId }) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     const body = await req.json();
-    const business = await updateBusiness(userId, body);
+    const business = await updateBusiness(organizationId, body);
     return NextResponse.json({ business });
   } catch (error) {
     console.error("[PATCH /api/business]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "business.write");

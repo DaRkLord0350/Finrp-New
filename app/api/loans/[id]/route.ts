@@ -1,31 +1,25 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withAuth(async (
+  _req: Request,
+  { organizationId }
+) => {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Extract ID from URL
+    const url = new URL(_req.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing loan ID" }, { status: 400 });
+    }
 
-    const { id } = await params;
-
-    // Get user's organization
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { organizationId: true },
-    });
-
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
-
-    // Get loan and verify it belongs to user's organization
     const loan = await prisma.loan.findUnique({
       where: { id },
     });
 
-    if (!loan || loan.organizationId !== user.organizationId) {
+    if (!loan || loan.organizationId !== organizationId) {
       return NextResponse.json({ error: "Loan not found" }, { status: 404 });
     }
 
@@ -34,32 +28,27 @@ export async function GET(
     console.error("[LOAN_GET]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "loans.read");
 
-export async function PUT(
+export const PUT = withAuth(async (
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { organizationId }
+) => {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const { id } = await params;
-
-    // Get user's organization
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { organizationId: true },
-    });
-
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    // Extract ID from URL
+    const url = new URL(request.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing loan ID" }, { status: 400 });
+    }
 
     // Get loan and verify it belongs to user's organization
     const loan = await prisma.loan.findUnique({
       where: { id },
     });
 
-    if (!loan || loan.organizationId !== user.organizationId) {
+    if (!loan || loan.organizationId !== organizationId) {
       return NextResponse.json({ error: "Loan not found" }, { status: 404 });
     }
 
@@ -74,32 +63,27 @@ export async function PUT(
     console.error("[LOAN_PUT]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "loans.write");
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth(async (
+  _request: Request,
+  { organizationId }
+) => {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const { id } = await params;
-
-    // Get user's organization
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { organizationId: true },
-    });
-
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    // Extract ID from URL
+    const url = new URL(_request.url);
+    const id = url.pathname.split("/").pop();
+    
+    if (!id) {
+      return NextResponse.json({ error: "Missing loan ID" }, { status: 400 });
+    }
 
     // Get loan and verify it belongs to user's organization
     const loan = await prisma.loan.findUnique({
       where: { id },
     });
 
-    if (!loan || loan.organizationId !== user.organizationId) {
+    if (!loan || loan.organizationId !== organizationId) {
       return NextResponse.json({ error: "Loan not found" }, { status: 404 });
     }
 
@@ -112,4 +96,4 @@ export async function DELETE(
     console.error("[LOAN_DELETE]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
+}, "loans.write");
