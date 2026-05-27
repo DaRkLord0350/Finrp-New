@@ -16,14 +16,19 @@ datasource db {
 // ORGANIZATION (Tenant root)
 // ============================================================
 model Organization {
-  id          String   @id @default(cuid())
-  name        String
-  slug        String   @unique
-  plan        Plan     @default(FREE)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  name                String
+  slug                String   @unique
+  plan                Plan     @default(FREE)
+  onboardingCompleted Boolean  @default(false)
+  enabledModules      String[] @default([])
+  createdBy           String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   users            User[]
+  memberships      Membership[]
+  invitations      Invitation[]
   customers        Customer[]
   vendors          Vendor[]
   invoices         Invoice[]
@@ -85,6 +90,7 @@ model User {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   auditLogs AuditLog[]
   notifications Notification[]
+  memberships Membership[]
   complianceTasks ComplianceTask[] @relation("AssignedTo")
   invoices Invoice[] @relation("InvoiceCreatedBy")
   payments Payment[] @relation("PaymentCreatedBy")
@@ -1413,6 +1419,48 @@ model Payroll {
 
   @@index([organizationId])
   @@map("payroll")
+}
+
+// ============================================================
+// MEMBERSHIP (User ↔ Organization many-to-many with roles)
+// Complements User.role for multi-org and invite flow support.
+// ============================================================
+model Membership {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role
+  invitedBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@map("memberships")
+}
+
+// ============================================================
+// INVITATION (Pending team invites)
+// ============================================================
+model Invitation {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String
+  role           Role
+  token          String   @unique @default(cuid())
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  invitedBy      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("invitations")
 }
 
 // ============================================================
