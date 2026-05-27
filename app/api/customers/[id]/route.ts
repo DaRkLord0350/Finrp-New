@@ -1,19 +1,21 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/auth/tenant";
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const organizationId = await getTenantId();
+    if (!organizationId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const { id } = await params;
 
     const customer = await prisma.customer.findFirst({
-      where: { id, organizationId: orgId },
+      where: { id, organizationId },
       include: {
         invoices: {
           orderBy: { createdAt: "desc" },
@@ -35,13 +37,16 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const organizationId = await getTenantId();
+    if (!organizationId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const { id } = await params;
     const body = await req.json();
+
     const customer = await prisma.customer.updateMany({
-      where: { id, organizationId: orgId },
+      where: { id, organizationId },
       data: body,
     });
 
@@ -57,12 +62,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const organizationId = await getTenantId();
+    if (!organizationId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const { id } = await params;
     await prisma.customer.deleteMany({
-      where: { id, organizationId: orgId },
+      where: { id, organizationId },
     });
 
     return NextResponse.json({ message: "Deleted" });
@@ -71,4 +78,3 @@ export async function DELETE(
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
-

@@ -34,7 +34,11 @@ export async function getCurrentUser() {
   // Happy path — user exists
   const existing = await prisma.user.findUnique({
     where: { clerkId: userId },
-    include: { organization: true },
+    include: {
+      organization: {
+        include: { businessProfile: true },
+      },
+    },
   });
 
   if (existing) return existing;
@@ -89,7 +93,26 @@ export async function getCurrentUser() {
         isActive: true,
         organizationId: organization.id,
       },
-      include: { organization: true },
+      include: {
+        organization: {
+          include: { businessProfile: true },
+        },
+      },
+    });
+
+    // Stamp createdBy and create Membership for the OWNER
+    await tx.organization.update({
+      where: { id: organization.id },
+      data: { createdBy: user.id },
+    });
+
+    await tx.membership.create({
+      data: {
+        userId: user.id,
+        organizationId: organization.id,
+        role: "OWNER",
+        invitedBy: user.id,
+      },
     });
 
     return user;

@@ -178,6 +178,22 @@ async function handleUserCreated(
       },
     });
 
+    // 3. Stamp the org's createdBy with the internal user id
+    await tx.organization.update({
+      where: { id: organization.id },
+      data: { createdBy: user.id },
+    });
+
+    // 4. Create Membership record for the OWNER
+    await tx.membership.create({
+      data: {
+        userId: user.id,
+        organizationId: organization.id,
+        role: "OWNER",
+        invitedBy: user.id,
+      },
+    });
+
     return { organization, user };
   });
 

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { generateNextInvoiceNumber } from "@/lib/generators/invoice-number";
 import type { CreateInvoiceInput } from "@/types";
 
 export const invoiceService = {
@@ -28,9 +29,10 @@ export const invoiceService = {
     const taxRate = data.taxRate ?? 0;
     const taxAmount = subtotal * (taxRate / 100);
     const total = subtotal + taxAmount;
-    const balanceDue = total; // Initial balance is equal to total
-    const count = await prisma.invoice.count({ where: { organizationId } });
-    const invoiceNumber = `INV-${String(count + 1).padStart(5, "0")}`;
+    const balanceDue = total;
+
+    // Atomic collision-safe invoice number
+    const invoiceNumber = await generateNextInvoiceNumber(organizationId);
 
     return prisma.invoice.create({
       data: {

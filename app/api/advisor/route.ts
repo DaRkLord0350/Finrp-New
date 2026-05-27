@@ -1,9 +1,9 @@
-import { auth } from "@clerk/nextjs/server";
+import { getTenantId } from "@/lib/auth/tenant";
 
 export async function POST(req: Request) {
   try {
-    const { orgId } = await auth();
-    if (!orgId) return new Response("Unauthorized", { status: 401 });
+    const organizationId = await getTenantId();
+    if (!organizationId) return new Response("Unauthorized", { status: 401 });
 
     const body = await req.json();
     const { message } = body;
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
 
     const businessContext = `
 You are an AI Business Advisor for FinRP, an AI-powered business operating system.
-Organization ID: ${orgId}
+Organization ID: ${organizationId}
 
 Current business snapshot (March 2025):
 - Total Revenue MTD: $51,200 (up 13.2% from last month)

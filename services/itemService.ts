@@ -1,9 +1,16 @@
 import { prisma } from "@/lib/prisma";
 import type { Decimal } from "@prisma/client/runtime/library";
 
+// ─────────────────────────────────────────────────────────
+// NOTE: The form layer (ItemForm + itemSchema) uses `price`
+// as the field name. The Prisma Item model stores it as
+// `sellingPrice`. All create/update operations map here.
+// ─────────────────────────────────────────────────────────
+
 export interface CreateItemData {
   name: string;
   description?: string;
+  /** Maps to Item.sellingPrice */
   price?: number | Decimal;
   stock: number;
   lowStockAt: number;
@@ -13,6 +20,7 @@ export interface CreateItemData {
 export interface UpdateItemData {
   name?: string;
   description?: string;
+  /** Maps to Item.sellingPrice */
   price?: number | Decimal;
   stock?: number;
   lowStockAt?: number;
@@ -32,7 +40,14 @@ export async function getItemById(id: string, organizationId: string) {
 }
 
 export async function createItem(data: CreateItemData) {
-  return prisma.item.create({ data });
+  // Destructure `price` out and map it to `sellingPrice`
+  const { price, ...rest } = data;
+  return prisma.item.create({
+    data: {
+      ...rest,
+      sellingPrice: price ?? 0,
+    },
+  });
 }
 
 export async function updateItem(
@@ -40,10 +55,17 @@ export async function updateItem(
   organizationId: string,
   data: UpdateItemData
 ) {
-  // Remove undefined keys so Prisma doesn't overwrite with null
+  // Map `price` → `sellingPrice` and strip undefined values
+  const { price, ...rest } = data;
+
+  const mapped = {
+    ...rest,
+    ...(price !== undefined ? { sellingPrice: price } : {}),
+  };
+
   const cleanData = Object.fromEntries(
-    Object.entries(data).filter(([, v]) => v !== undefined)
-  ) as UpdateItemData;
+    Object.entries(mapped).filter(([, v]) => v !== undefined)
+  );
 
   return prisma.item.update({
     where: { id },
@@ -56,4 +78,3 @@ export async function deleteItem(id: string, organizationId: string) {
     where: { id },
   });
 }
-

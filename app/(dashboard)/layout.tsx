@@ -1,12 +1,14 @@
 // ============================================================
 // Dashboard layout — server + client hybrid.
-// The server part ensures the user is provisioned in the DB
-// before any child route renders. Runs on every navigation
-// but is fast (single indexed DB lookup, no-op if found).
+// Guards:
+//   1. Unauthenticated → /sign-in (via getCurrentUser throw)
+//   2. Onboarding not complete → /onboarding
+//   3. Provisioning: auto-creates Org+User if Clerk webhook missed.
 // ============================================================
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
+import { isOnboardingComplete } from "@/services/onboardingService";
 import DashboardShell from "./DashboardShell";
 
 export default async function DashboardLayout({
@@ -14,13 +16,17 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // This call auto-provisions Organization + User if missing.
-  // If Clerk says not authenticated, getCurrentUser throws → middleware
-  // already redirects to sign-in before we get here.
+  let user;
   try {
-    await getCurrentUser();
+    user = await getCurrentUser();
   } catch {
     redirect("/sign-in");
+  }
+
+  // Guard: redirect users who haven't completed onboarding
+  const done = await isOnboardingComplete(user.organizationId);
+  if (!done) {
+    redirect("/onboarding");
   }
 
   return <DashboardShell>{children}</DashboardShell>;
