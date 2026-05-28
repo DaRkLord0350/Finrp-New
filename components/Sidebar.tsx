@@ -135,9 +135,16 @@ export default function Sidebar({ open = false, onClose }: SidebarProps) {
             gap: 2,
           }}
         >
-          <Link href="/settings" className="sidebar-nav-item" onClick={onClose}>
+          <Link
+            href="/settings"
+            className={cn("sidebar-nav-item", pathname.startsWith("/settings") && "active")}
+            onClick={onClose}
+          >
             <Settings size={16} strokeWidth={1.75} />
             <span>Settings</span>
+            {pathname.startsWith("/settings") && (
+              <ChevronRight size={12} style={{ marginLeft: "auto", opacity: 0.5 }} />
+            )}
           </Link>
 
           {/* AI Badge */}

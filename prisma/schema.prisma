@@ -66,6 +66,8 @@ model Organization {
   auditLogs        AuditLog[]
   settings         Settings?
   subscription     Subscription?
+  orgDocuments     OrganizationDocument[]
+  apiTokens        ApiToken[]
 
   @@index([slug])
   @@map("organizations")
@@ -405,6 +407,9 @@ model BusinessProfile {
   businessType        String?
   registrationNo      String?
   taxId               String?        // GST / VAT / EIN
+  gstin               String?
+  pan                 String?
+  cin                 String?
   industry            String?
   companySize         String?        // "1-10", "11-50", etc.
 
@@ -451,8 +456,10 @@ model BusinessProfile {
   // Branding
   logoUrl             String?
   website             String?
+  websiteUrl          String?
   contactEmail        String?
   contactPhone        String?
+  phone               String?
 
   // Onboarding
   onboardingComplete  Boolean        @default(false)
@@ -2165,4 +2172,68 @@ model ComplianceStatusHistory {
   @@index([submissionId])
   @@index([organizationId])
   @@map("compliance_status_history")
+}
+
+// ============================================================
+// ORGANIZATION DOCUMENT (Settings > Compliance doc center)
+// Stores compliance/identity documents for the organization.
+// ============================================================
+model OrganizationDocument {
+  id             String                   @id @default(cuid())
+  organizationId String
+  documentType   String                   // "PAN", "GST", "CIN", etc.
+  displayName    String
+  fileName       String
+  mimeType       String
+  fileSize       Int
+  fileUrl        String                   // Cloud storage URL or base64 ref
+  storageKey     String?                  // Cloud storage key
+  uploadedById   String?
+  uploadedAt     DateTime                 @default(now())
+  expiryDate     DateTime?
+  status         OrgDocumentStatus        @default(UPLOADED)
+  isVerified     Boolean                  @default(false)
+  verifiedBy     String?
+  verifiedAt     DateTime?
+  notes          String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, documentType])
+  @@index([organizationId])
+  @@map("organization_documents")
+}
+
+enum OrgDocumentStatus {
+  UPLOADED
+  PENDING_VERIFICATION
+  VERIFIED
+  REJECTED
+  EXPIRED
+  MISSING
+}
+
+// ============================================================
+// API TOKEN (Settings > Security — programmatic API access)
+// ============================================================
+model ApiToken {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  tokenHash      String    @unique   // SHA-256 of actual token
+  tokenPrefix    String              // first 8 chars for display (e.g. "fnrp_a1b")
+  scopes         String[]  @default([])
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  isActive       Boolean   @default(true)
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("api_tokens")
 }
