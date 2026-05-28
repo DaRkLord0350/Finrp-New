@@ -36,8 +36,17 @@ model Organization {
   vendors          Vendor[]
   invoices         Invoice[]
   payments         Payment[]
-  complianceTasks  ComplianceTask[]
-  businessProfile  BusinessProfile?
+  complianceTasks             ComplianceTask[]
+  businessProfile             BusinessProfile?
+  complianceCategories        ComplianceCategory[]
+  complianceTypes             ComplianceType[]
+  complianceSubmissions       ComplianceSubmission[]
+  complianceDocuments         ComplianceDocument[]
+  complianceApprovals         ComplianceApproval[]
+  complianceReminders         ComplianceReminder[]
+  complianceDeadlines         ComplianceDeadline[]
+  complianceAuditLogs         ComplianceAuditLog[]
+  complianceStatusHistory     ComplianceStatusHistory[]
   analyticsRecords AnalyticsRecord[]
   items            Item[]
   loans            Loan[]
@@ -346,7 +355,7 @@ model ComplianceTask {
   id             String             @id @default(cuid())
   title          String
   description    String?
-  category       ComplianceCategory @default(OTHER)
+  category       TaskCategory @default(OTHER)
   status         TaskStatus         @default(PENDING)
   priority       PriorityLevel      @default(MEDIUM)
   dueDate        DateTime
@@ -366,7 +375,7 @@ model ComplianceTask {
   @@map("compliance_tasks")
 }
 
-enum ComplianceCategory {
+enum TaskCategory {
   TAX
   GST
   TDS
@@ -1842,4 +1851,318 @@ model InvoiceCounter {
   @@unique([organizationId, year])
   @@index([organizationId])
   @@map("invoice_counters")
+}
+
+// ============================================================
+// =============== COMPLIANCE MANAGEMENT MODULE ===============
+// ============================================================
+
+enum ComplianceStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+  PENDING_RENEWAL
+}
+
+enum ComplianceApprovalAction {
+  APPROVE
+  REJECT
+  REQUEST_CHANGES
+  ESCALATE
+}
+
+enum ComplianceReminderType {
+  DUE_DATE
+  EXPIRY
+  PENDING_APPROVAL
+  REJECTED_FOLLOW_UP
+  RENEWAL
+  CUSTOM
+}
+
+// ============================================================
+// COMPLIANCE CATEGORY (dynamic, org-scoped categories)
+// ============================================================
+model ComplianceCategory {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  code           String
+  color          String   @default("#6366f1")
+  icon           String   @default("ShieldCheck")
+  isActive       Boolean  @default(true)
+  isSystem       Boolean  @default(false)
+  sortOrder      Int      @default(0)
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  types        ComplianceType[]
+  submissions  ComplianceSubmission[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("compliance_categories")
+}
+
+// ============================================================
+// COMPLIANCE TYPE (sub-types within categories)
+// ============================================================
+model ComplianceType {
+  id                String   @id @default(cuid())
+  organizationId    String
+  categoryId        String
+  name              String
+  description       String?
+  code              String
+  requiredDocuments String[]
+  validityDays      Int?
+  defaultPenalty    Decimal? @db.Decimal(12, 2)
+  isActive          Boolean  @default(true)
+  isSystem          Boolean  @default(false)
+  sortOrder         Int      @default(0)
+  createdBy         String?
+  updatedBy         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     ComplianceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  submissions  ComplianceSubmission[]
+
+  @@unique([organizationId, categoryId, code])
+  @@index([organizationId, categoryId])
+  @@map("compliance_types")
+}
+
+// ============================================================
+// COMPLIANCE DOCUMENT (PostgreSQL BYTEA binary storage)
+// Binary data excluded from listing queries — fetched on demand
+// ============================================================
+model ComplianceDocument {
+  id             String   @id @default(cuid())
+  organizationId String
+  submissionId   String?
+
+  fileName       String
+  fileExtension  String
+  mimeType       String
+  fileSize       Int
+  checksum       String
+
+  binaryData     Bytes
+
+  version        Int      @default(1)
+  isLatest       Boolean  @default(true)
+  documentType   String?
+  description    String?
+
+  uploadedById   String?
+  uploadedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  submission   ComplianceSubmission?  @relation(fields: [submissionId], references: [id])
+
+  @@index([organizationId])
+  @@index([submissionId])
+  @@map("compliance_documents")
+}
+
+// ============================================================
+// COMPLIANCE SUBMISSION (core compliance lifecycle record)
+// ============================================================
+model ComplianceSubmission {
+  id              String           @id @default(cuid())
+  organizationId  String
+  categoryId      String
+  typeId          String?
+
+  title           String
+  description     String?
+  referenceNumber String?
+
+  status          ComplianceStatus @default(DRAFT)
+
+  submissionDate  DateTime?
+  effectiveDate   DateTime?
+  expiryDate      DateTime?
+  dueDate         DateTime?
+  renewalDate     DateTime?
+
+  penaltyAmount   Decimal?         @db.Decimal(12, 2)
+  feeAmount       Decimal?         @db.Decimal(12, 2)
+
+  assignedToId    String?
+  reviewedById    String?
+
+  complianceData  Json?
+
+  version         Int              @default(1)
+  tags            String[]
+  notes           String?
+
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  organization   Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category       ComplianceCategory        @relation(fields: [categoryId], references: [id])
+  type           ComplianceType?           @relation(fields: [typeId], references: [id])
+  documents      ComplianceDocument[]
+  approvals      ComplianceApproval[]
+  reminders      ComplianceReminder[]
+  statusHistory  ComplianceStatusHistory[]
+  deadlines      ComplianceDeadline[]
+  auditLogs      ComplianceAuditLog[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, categoryId])
+  @@index([organizationId, dueDate])
+  @@index([organizationId, expiryDate])
+  @@index([organizationId, deletedAt])
+  @@map("compliance_submissions")
+}
+
+// ============================================================
+// COMPLIANCE APPROVAL (approve/reject/escalate workflow)
+// ============================================================
+model ComplianceApproval {
+  id             String                   @id @default(cuid())
+  organizationId String
+  submissionId   String
+
+  action         ComplianceApprovalAction
+  comments       String?
+  conditions     String?
+
+  approvedById   String?
+  approvedAt     DateTime                 @default(now())
+
+  createdAt      DateTime                 @default(now())
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  submission   ComplianceSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([submissionId])
+  @@map("compliance_approvals")
+}
+
+// ============================================================
+// COMPLIANCE REMINDER (automated reminders for deadlines/expiry)
+// ============================================================
+model ComplianceReminder {
+  id             String                 @id @default(cuid())
+  organizationId String
+  submissionId   String?
+
+  type           ComplianceReminderType
+  title          String
+  message        String?
+
+  reminderDate   DateTime
+  isTriggered    Boolean                @default(false)
+  triggeredAt    DateTime?
+
+  assignedToId   String?
+  isActive       Boolean                @default(true)
+
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  submission   ComplianceSubmission?  @relation(fields: [submissionId], references: [id])
+
+  @@index([organizationId])
+  @@index([reminderDate, isTriggered, isActive])
+  @@map("compliance_reminders")
+}
+
+// ============================================================
+// COMPLIANCE DEADLINE (deadline tracking with penalty rates)
+// ============================================================
+model ComplianceDeadline {
+  id              String   @id @default(cuid())
+  organizationId  String
+  submissionId    String?
+
+  title           String
+  description     String?
+  deadlineDate    DateTime
+  gracePeriodDays Int      @default(0)
+
+  isCompleted     Boolean  @default(false)
+  completedAt     DateTime?
+
+  penaltyPerDay   Decimal? @db.Decimal(10, 2)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  submission   ComplianceSubmission?  @relation(fields: [submissionId], references: [id])
+
+  @@index([organizationId])
+  @@index([deadlineDate, isCompleted])
+  @@map("compliance_deadlines")
+}
+
+// ============================================================
+// COMPLIANCE AUDIT LOG (compliance-specific event trail)
+// ============================================================
+model ComplianceAuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  submissionId   String?
+
+  action         String
+  description    String
+
+  performedById  String?
+  oldValue       Json?
+  newValue       Json?
+
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  submission   ComplianceSubmission?  @relation(fields: [submissionId], references: [id])
+
+  @@index([organizationId])
+  @@index([submissionId])
+  @@map("compliance_audit_logs")
+}
+
+// ============================================================
+// COMPLIANCE STATUS HISTORY (immutable status change trail)
+// ============================================================
+model ComplianceStatusHistory {
+  id             String            @id @default(cuid())
+  organizationId String
+  submissionId   String
+
+  fromStatus     ComplianceStatus?
+  toStatus       ComplianceStatus
+
+  reason         String?
+  comments       String?
+
+  changedById    String?
+  changedAt      DateTime          @default(now())
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  submission   ComplianceSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@index([organizationId])
+  @@map("compliance_status_history")
 }

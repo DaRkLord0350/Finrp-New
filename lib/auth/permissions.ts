@@ -30,6 +30,8 @@ export const rolePermissions: Record<Role, string[]> = {
     "compliance.read",
     "compliance.write",
     "compliance.delete",
+    "compliance.approve",
+    "compliance.audit.read",
     "employees.read",
     "employees.write",
     "payroll.read",
@@ -52,6 +54,9 @@ export const rolePermissions: Record<Role, string[]> = {
     "inventory.write",
     "erp.read",
     "compliance.read",
+    "compliance.write",
+    "compliance.approve",
+    "compliance.audit.read",
     "employees.read",
     "payroll.read",
     "analytics.read",
@@ -72,6 +77,7 @@ export const rolePermissions: Record<Role, string[]> = {
     "payroll.read",
     "payroll.write",
     "compliance.read",
+    "compliance.audit.read",
   ],
 
   STAFF: [
