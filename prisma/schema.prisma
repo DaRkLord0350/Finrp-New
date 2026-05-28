@@ -9,7 +9,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ============================================================
@@ -29,6 +28,10 @@ model Organization {
   users            User[]
   memberships      Membership[]
   invitations      Invitation[]
+  integrations     Integration[]
+  importJobs       ImportJob[]
+  fieldMappings    FieldMapping[]
+  webhookEvents    WebhookEvent[]
   customers        Customer[]
   vendors          Vendor[]
   invoices         Invoice[]
@@ -1461,6 +1464,370 @@ model Invitation {
   @@index([organizationId])
   @@index([email])
   @@map("invitations")
+}
+
+// ============================================================
+// =================== INTEGRATION PLATFORM ===================
+// ============================================================
+
+// ============================================================
+// INTEGRATION (Connector connection record — one per provider)
+// ============================================================
+model Integration {
+  id               String            @id @default(cuid())
+  organizationId   String
+  type             ConnectorType
+  name             String
+  status           IntegrationStatus @default(INACTIVE)
+  config           Json?             // non-sensitive config (data center, server URL, etc.)
+  lastSyncAt       DateTime?
+  lastSyncStatus   SyncJobStatus?
+  lastSyncError    String?
+  syncIntervalMins Int               @default(60)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  oauthToken    OAuthToken?
+  syncJobs      SyncJob[]
+  importJobs    ImportJob[]
+  fieldMappings FieldMapping[]
+  webhookEvents WebhookEvent[]
+
+  @@unique([organizationId, type])
+  @@index([organizationId])
+  @@map("integrations")
+}
+
+enum ConnectorType {
+  ZOHO_CRM
+  ZOHO_BOOKS
+  ZOHO_INVENTORY
+  TALLY
+  ODOO
+  CSV
+  EXCEL
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  PENDING_AUTH
+  EXPIRED
+  SYNCING
+}
+
+// ============================================================
+// OAUTH TOKEN (encrypted at rest — AES-256-GCM)
+// ============================================================
+model OAuthToken {
+  id             String    @id @default(cuid())
+  integrationId  String    @unique
+  organizationId String
+  accessToken    String    // AES-256-GCM encrypted ciphertext
+  refreshToken   String?   // AES-256-GCM encrypted ciphertext
+  tokenType      String    @default("Bearer")
+  scope          String?
+  expiresAt      DateTime?
+  grantedScopes  String[]
+  accountId      String?   // Zoho accountId / Odoo dbname
+  serverUrl      String?   // Odoo instance URL
+  metadata       Json?     // provider-specific data
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("oauth_tokens")
+}
+
+// ============================================================
+// SYNC JOB (background connector sync run)
+// ============================================================
+model SyncJob {
+  id               String        @id @default(cuid())
+  organizationId   String
+  integrationId    String
+  type             SyncJobType
+  entity           String?       // "customers" | "invoices" | "products" | "all"
+  status           SyncJobStatus @default(QUEUED)
+  bullmqJobId      String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  totalRecords     Int           @default(0)
+  processedRecords Int           @default(0)
+  successRecords   Int           @default(0)
+  failedRecords    Int           @default(0)
+  lastCursor       String?       // incremental sync cursor (ISO date or page token)
+  scheduledAt      DateTime?
+  triggeredBy      String?       // userId who triggered
+  error            String?
+  metadata         Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  organization Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  logs         SyncLog[]
+
+  @@index([integrationId, status])
+  @@index([organizationId, status])
+  @@map("sync_jobs")
+}
+
+enum SyncJobType {
+  FULL
+  INCREMENTAL
+  ENTITY_SPECIFIC
+  TRIGGERED
+  SCHEDULED
+}
+
+enum SyncJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  PAUSED
+}
+
+// ============================================================
+// SYNC LOG (per-record audit trail)
+// ============================================================
+model SyncLog {
+  id         String     @id @default(cuid())
+  syncJobId  String
+  entityType String
+  entityId   String?    // our DB record id
+  externalId String?    // source system id
+  action     SyncAction
+  status     SyncLogStatus @default(SUCCESS)
+  data       Json?
+  error      String?
+  durationMs Int?
+  createdAt  DateTime   @default(now())
+
+  syncJob SyncJob @relation(fields: [syncJobId], references: [id], onDelete: Cascade)
+
+  @@index([syncJobId])
+  @@index([entityType, entityId])
+  @@map("sync_logs")
+}
+
+enum SyncAction {
+  CREATE
+  UPDATE
+  SKIP
+  DELETE
+  MERGE
+  ERROR
+}
+
+enum SyncLogStatus {
+  SUCCESS
+  FAILED
+  SKIPPED
+  WARNING
+}
+
+// ============================================================
+// IMPORT JOB (CSV/Excel file import)
+// ============================================================
+model ImportJob {
+  id             String       @id @default(cuid())
+  organizationId String
+  integrationId  String?
+  type           ImportType
+  entity         ImportEntity
+  status         ImportStatus @default(PENDING)
+  bullmqJobId    String?
+  fileName       String
+  originalName   String
+  fileSize       Int
+  filePath       String       // local tmp path or cloud URL
+  mimeType       String
+  totalRows      Int          @default(0)
+  processedRows  Int          @default(0)
+  successRows    Int          @default(0)
+  failedRows     Int          @default(0)
+  skippedRows    Int          @default(0)
+  duplicateRows  Int          @default(0)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  uploadedById   String
+  fieldMapping   Json?        // saved column → field mappings
+  options        Json?        // { skipDuplicates, updateExisting, dryRun }
+  detectedColumns String[]    // detected CSV headers
+  errorFilePath  String?      // downloadable error CSV path
+  error          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integration  Integration?  @relation(fields: [integrationId], references: [id])
+  rows         ImportRow[]
+  errors       ImportError[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, entity])
+  @@map("import_jobs")
+}
+
+enum ImportType {
+  CSV
+  EXCEL
+  JSON
+  XML
+}
+
+enum ImportEntity {
+  CUSTOMERS
+  VENDORS
+  INVOICES
+  PRODUCTS
+  EMPLOYEES
+  EXPENSES
+  PAYMENTS
+  LEADS
+}
+
+enum ImportStatus {
+  PENDING
+  MAPPING
+  VALIDATING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  PARTIAL
+}
+
+// ============================================================
+// IMPORT ROW (staging table — one row per source record)
+// ============================================================
+model ImportRow {
+  id           String    @id @default(cuid())
+  importJobId  String
+  rowIndex     Int
+  rawData      Json      // original CSV row as key-value
+  mappedData   Json?     // after field mapping applied
+  normalizedData Json?   // after normalization (GST, dates, etc.)
+  status       RowStatus @default(PENDING)
+  isDuplicate  Boolean   @default(false)
+  mergedIntoId String?   // entityId it was merged into
+  entityId     String?   // created/updated entity id
+  error        String?
+  warnings     String[]
+  processedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  importJob ImportJob    @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  errors    ImportError[]
+
+  @@index([importJobId, status])
+  @@index([importJobId, rowIndex])
+  @@map("import_rows")
+}
+
+enum RowStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  SKIPPED
+  DUPLICATE
+  MERGED
+}
+
+// ============================================================
+// IMPORT ERROR (validation and processing errors)
+// ============================================================
+model ImportError {
+  id          String        @id @default(cuid())
+  importJobId String
+  importRowId String?
+  rowIndex    Int?
+  field       String?
+  errorCode   String
+  message     String
+  value       String?       // the value that caused the error
+  severity    ErrorSeverity @default(ERROR)
+  createdAt   DateTime      @default(now())
+
+  importJob ImportJob  @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  importRow ImportRow? @relation(fields: [importRowId], references: [id])
+
+  @@index([importJobId])
+  @@index([importRowId])
+  @@map("import_errors")
+}
+
+enum ErrorSeverity {
+  ERROR
+  WARNING
+  INFO
+}
+
+// ============================================================
+// FIELD MAPPING (saved reusable column mapping templates)
+// ============================================================
+model FieldMapping {
+  id             String       @id @default(cuid())
+  organizationId String
+  integrationId  String?
+  name           String
+  entity         ImportEntity
+  sourceType     ConnectorType
+  mappings       Json         // MappingRule[] — see connector types
+  isDefault      Boolean      @default(false)
+  useCount       Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integration  Integration?  @relation(fields: [integrationId], references: [id])
+
+  @@index([organizationId, entity])
+  @@map("field_mappings")
+}
+
+// ============================================================
+// WEBHOOK EVENT (inbound webhooks from Zoho, etc.)
+// ============================================================
+model WebhookEvent {
+  id             String        @id @default(cuid())
+  organizationId String
+  integrationId  String
+  source         ConnectorType
+  eventType      String
+  externalId     String?       // provider event id (for dedup)
+  payload        Json
+  rawPayload     String?       // raw body for signature verify
+  signature      String?
+  status         WebhookStatus @default(PENDING)
+  bullmqJobId    String?
+  processedAt    DateTime?
+  error          String?
+  retryCount     Int           @default(0)
+  createdAt      DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integration  Integration  @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([externalId])
+  @@map("webhook_events")
+}
+
+enum WebhookStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
 }
 
 // ============================================================
