@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import type { Decimal } from "@prisma/client/runtime/library";
+// import type { Decimal } from "@prisma/client/runtime/library";
+import { Prisma } from "@prisma/client";
+
 
 // Infer types from Prisma select shapes
 type InvoiceSelectRow = {
-  total: Decimal;
+  total: Prisma.Decimal;
   status: string;
   issueDate: Date;
   customerId: string;
@@ -13,7 +15,7 @@ type CustomerWithInvoices = {
   id: string;
   name: string;
   company: string | null;
-  invoices: { total: Decimal }[];
+  invoices: { total: Prisma.Decimal }[];
 };
 
 export const analyticsService = {
@@ -79,7 +81,7 @@ export const analyticsService = {
         id: c.id,
         name: c.name,
         company: c.company,
-        totalRevenue: c.invoices.reduce((s: number, inv: { total: Decimal }) => s + Number(inv.total), 0),
+        totalRevenue: c.invoices.reduce((s: number, inv: { total: Prisma.Decimal }) => s + Number(inv.total), 0),
         invoiceCount: c.invoices.length,
       }))
       .sort((a: { totalRevenue: number }, b: { totalRevenue: number }) => b.totalRevenue - a.totalRevenue)

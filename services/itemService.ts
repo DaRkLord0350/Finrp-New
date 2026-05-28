@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import type { Decimal } from "@prisma/client/runtime/library";
+// import type { Prisma.Decimal } from "@prisma/client/runtime/library";
+import { Prisma } from "@prisma/client";
 
 // ─────────────────────────────────────────────────────────
 // NOTE: The form layer (ItemForm + itemSchema) uses `price`
@@ -11,7 +12,7 @@ export interface CreateItemData {
   name: string;
   description?: string;
   /** Maps to Item.sellingPrice */
-  price?: number | Decimal;
+  price?: number | Prisma.Decimal;
   stock: number;
   lowStockAt: number;
   organizationId: string;
@@ -21,7 +22,7 @@ export interface UpdateItemData {
   name?: string;
   description?: string;
   /** Maps to Item.sellingPrice */
-  price?: number | Decimal;
+  price?: number | Prisma.Decimal;
   stock?: number;
   lowStockAt?: number;
 }
