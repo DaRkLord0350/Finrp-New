@@ -2,8 +2,9 @@
 // Dashboard layout — server + client hybrid.
 // Guards:
 //   1. Unauthenticated → /sign-in (via getCurrentUser throw)
-//   2. Onboarding not complete → /onboarding
-//   3. Provisioning: auto-creates Org+User if Clerk webhook missed.
+//   2. CA/ADMIN role → /ca (wrong portal)
+//   3. Onboarding not complete → /onboarding
+//   4. Provisioning: auto-creates Org+User if Clerk webhook missed.
 // ============================================================
 
 import { getCurrentUser } from "@/lib/auth/session";
@@ -21,6 +22,11 @@ export default async function DashboardLayout({
     user = await getCurrentUser();
   } catch {
     redirect("/sign-in");
+  }
+
+  // CA and ADMIN users belong in the CA portal
+  if (user.userRole === "CA" || user.userRole === "ADMIN") {
+    redirect("/ca");
   }
 
   // Guard: redirect users who haven't completed onboarding

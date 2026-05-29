@@ -28,6 +28,7 @@ interface ClerkUserCreatedEvent {
     last_name: string | null;
     image_url: string | null;
     phone_numbers: { phone_number: string }[];
+    public_metadata?: { userRole?: string };
   };
 }
 
@@ -164,13 +165,18 @@ async function handleUserCreated(
       },
     });
 
-    // 2. Create the User as OWNER
+    // 2. Create the User as OWNER with CUSTOMER platform role
+    const rawUserRole = data.public_metadata?.userRole;
+    const userRole =
+      rawUserRole === "CA" || rawUserRole === "ADMIN" ? rawUserRole : "CUSTOMER";
+
     const user = await tx.user.create({
       data: {
         clerkId,
         email,
         name,
         role: "OWNER",
+        userRole,
         avatarUrl: data.image_url ?? null,
         phone: data.phone_numbers?.[0]?.phone_number ?? null,
         isActive: true,
@@ -218,12 +224,20 @@ async function handleUserUpdated(
   const email = data.email_addresses[0]?.email_address ?? "";
   const name = [data.first_name, data.last_name].filter(Boolean).join(" ") || undefined;
 
+  // Sync userRole from Clerk publicMetadata (set by admin in Clerk Dashboard)
+  const rawUserRole = data.public_metadata?.userRole;
+  const userRole =
+    rawUserRole === "CA" || rawUserRole === "ADMIN" || rawUserRole === "CUSTOMER"
+      ? (rawUserRole as "CA" | "ADMIN" | "CUSTOMER")
+      : undefined;
+
   await prisma.user.updateMany({
     where: { clerkId },
     data: {
       email,
       ...(name && { name }),
       ...(data.image_url && { avatarUrl: data.image_url }),
+      ...(userRole && { userRole }),
       updatedAt: new Date(),
     },
   });

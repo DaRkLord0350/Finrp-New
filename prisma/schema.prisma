@@ -68,6 +68,7 @@ model Organization {
   subscription     Subscription?
   orgDocuments     OrganizationDocument[]
   apiTokens        ApiToken[]
+  caClients        CAClient[] @relation("CAManagedOrgs")
 
   @@index([slug])
   @@map("organizations")
@@ -90,6 +91,7 @@ model User {
   name                   String?
   phone                  String?
   role                   Role     @default(STAFF)
+  userRole               UserRole @default(CUSTOMER)
   department             String?
   designation            String?
   lastActiveAt           DateTime?
@@ -101,20 +103,23 @@ model User {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  auditLogs AuditLog[]
-  notifications Notification[]
-  memberships Membership[]
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  memberships    Membership[]
   complianceTasks ComplianceTask[] @relation("AssignedTo")
-  invoices Invoice[] @relation("InvoiceCreatedBy")
-  payments Payment[] @relation("PaymentCreatedBy")
-  sales Sale[] @relation("SaleCreatedBy")
-  purchases Purchase[] @relation("PurchaseCreatedBy")
-  expenses Expense[] @relation("ExpenseCreatedBy")
-  journalEntries JournalEntry[] @relation("JournalEntryCreatedBy")
-  leads Lead[] @relation("LeadAssignedTo")
+  invoices       Invoice[]        @relation("InvoiceCreatedBy")
+  payments       Payment[]        @relation("PaymentCreatedBy")
+  sales          Sale[]           @relation("SaleCreatedBy")
+  purchases      Purchase[]       @relation("PurchaseCreatedBy")
+  expenses       Expense[]        @relation("ExpenseCreatedBy")
+  journalEntries JournalEntry[]   @relation("JournalEntryCreatedBy")
+  leads          Lead[]           @relation("LeadAssignedTo")
+  caClients      CAClient[]       @relation("CAManagedClients")
+  caMessages     CAMessage[]      @relation("CASentMessages")
 
   @@index([organizationId])
+  @@index([userRole])
   @@map("users")
 }
 
@@ -125,6 +130,12 @@ enum Role {
   ACCOUNTANT
   STAFF
   VIEWER
+}
+
+enum UserRole {
+  CUSTOMER
+  CA
+  ADMIN
 }
 
 enum AccountType {
@@ -1872,6 +1883,7 @@ enum ComplianceStatus {
   REJECTED
   EXPIRED
   PENDING_RENEWAL
+  COMPLETED
 }
 
 enum ComplianceApprovalAction {
@@ -1965,10 +1977,15 @@ model ComplianceDocument {
 
   binaryData     Bytes
 
-  version        Int      @default(1)
-  isLatest       Boolean  @default(true)
+  version        Int                  @default(1)
+  isLatest       Boolean              @default(true)
   documentType   String?
   description    String?
+
+  reviewStatus   DocumentReviewStatus @default(PENDING)
+  reviewComment  String?
+  reviewedById   String?
+  reviewedAt     DateTime?
 
   uploadedById   String?
   uploadedAt     DateTime @default(now())
@@ -1979,7 +1996,15 @@ model ComplianceDocument {
 
   @@index([organizationId])
   @@index([submissionId])
+  @@index([reviewStatus])
   @@map("compliance_documents")
+}
+
+enum DocumentReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
 }
 
 // ============================================================
@@ -2008,6 +2033,8 @@ model ComplianceSubmission {
 
   assignedToId    String?
   reviewedById    String?
+  assignedCaId    String?
+  verifiedById    String?
 
   complianceData  Json?
 
@@ -2236,4 +2263,80 @@ model ApiToken {
 
   @@index([organizationId])
   @@map("api_tokens")
+}
+
+// ============================================================
+// CA CLIENT (CA ↔ Customer Organization relationship)
+// ============================================================
+model CAClient {
+  id             String   @id @default(cuid())
+  caUserId       String
+  organizationId String
+  assignedAt     DateTime @default(now())
+  isActive       Boolean  @default(true)
+  notes          String?
+
+  caUser       User         @relation("CAManagedClients", fields: [caUserId], references: [id])
+  organization Organization @relation("CAManagedOrgs", fields: [organizationId], references: [id])
+
+  @@unique([caUserId, organizationId])
+  @@index([caUserId])
+  @@index([organizationId])
+  @@map("ca_clients")
+}
+
+// ============================================================
+// COMPLIANCE CHECKLIST (CA builds per-compliance checklist)
+// ============================================================
+model ComplianceChecklist {
+  id             String   @id @default(cuid())
+  submissionId   String   @unique
+  organizationId String
+  name           String
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  items ChecklistItem[]
+
+  @@index([organizationId])
+  @@map("compliance_checklists")
+}
+
+model ChecklistItem {
+  id          String   @id @default(cuid())
+  checklistId String
+  label       String
+  isMandatory Boolean  @default(false)
+  isCompleted Boolean  @default(false)
+  dueDate     DateTime?
+  notes       String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  checklist ComplianceChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@index([checklistId])
+  @@map("checklist_items")
+}
+
+// ============================================================
+// CA MESSAGE (CA ↔ Client communication)
+// ============================================================
+model CAMessage {
+  id             String   @id @default(cuid())
+  caUserId       String
+  organizationId String
+  subject        String
+  body           String
+  templateType   String?
+  isRead         Boolean  @default(false)
+  sentAt         DateTime @default(now())
+
+  caUser User @relation("CASentMessages", fields: [caUserId], references: [id])
+
+  @@index([caUserId])
+  @@index([organizationId])
+  @@map("ca_messages")
 }
