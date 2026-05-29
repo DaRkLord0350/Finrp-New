@@ -1,46 +1,21 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-// const isProtectedRoute = createRouteMatcher([
-//   "/dashboard(.*)",
-//   "/crm(.*)",
-//   "/billing(.*)",
-//   "/finance(.*)",
-//   "/erp(.*)",
-//   "/compliance(.*)",
-//   "/advisor(.*)",
-//   "/items(.*)",
-//   "/onboarding(.*)",
-//   "/api/customers(.*)",
-//   "/api/invoices(.*)",
-//   "/api/analytics(.*)",
-//   "/api/compliance(.*)",
-//   "/api/advisor(.*)",
-//   "/api/items(.*)",
-//   "/api/business(.*)",
-//   "/api/transactions(.*)",
-//   "/api/dashboard(.*)",
-//   "/api/erp(.*)",
-//   "/api/loans(.*)",
-// ]);
-
+// Public routes — never require authentication
 const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
-  "/api/webhooks(.*)",   // Clerk webhooks must be unauthenticated
+  "/api/webhooks(.*)",
 ]);
 
+// All role-based routing (CA vs CUSTOMER vs ADMIN) is handled by the
+// individual layout files which read from the database — a single source
+// of truth. Doing it here from Clerk JWT creates a sync-lag loop.
 export default clerkMiddleware(async (auth, req) => {
   if (!isPublicRoute(req)) {
     await auth.protect();
   }
 });
-
-// export default clerkMiddleware(async (auth, req) => {
-//   if (isProtectedRoute(req)) {
-//     await auth.protect();
-//   }
-// });
 
 export const config = {
   matcher: [
@@ -48,4 +23,3 @@ export const config = {
     "/(api|trpc)(.*)",
   ],
 };
-

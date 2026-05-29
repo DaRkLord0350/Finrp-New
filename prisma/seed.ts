@@ -7,7 +7,7 @@ import {
   TransactionType,
   LoanStatus,
   PaymentStatus,
-  ComplianceCategory,
+  TaskCategory,
   TaskStatus,
   AccountType,
   CustomerType,
