@@ -24,6 +24,9 @@ export default async function DashboardLayout({
     redirect("/sign-in");
   }
 
+  // New users haven't selected a role yet → show role selection
+  if (!user.userRole) redirect("/onboarding/role");
+
   // Route each role to its own portal
   if (user.userRole === "ADMIN") redirect("/admin");
   if (user.userRole === "CA_FIRM_ADMIN") redirect("/firm");
@@ -32,7 +35,7 @@ export default async function DashboardLayout({
   // Guard: redirect users who haven't completed onboarding
   const done = await isOnboardingComplete(user.organizationId);
   if (!done) {
-    redirect("/onboarding");
+    redirect("/onboarding/customer");
   }
 
   return <DashboardShell>{children}</DashboardShell>;

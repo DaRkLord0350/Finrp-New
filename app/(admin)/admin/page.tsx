@@ -223,13 +223,13 @@ export default async function AdminDashboardPage() {
                     width: 28,
                     height: 28,
                     borderRadius: "50%",
-                    background: `${roleColor[u.userRole] ?? "#94a3b8"}20`,
+                    background: `${roleColor[u.userRole ?? "CUSTOMER"] ?? "#94a3b8"}20`,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     fontSize: 11,
                     fontWeight: 700,
-                    color: roleColor[u.userRole] ?? "#94a3b8",
+                    color: roleColor[u.userRole ?? "CUSTOMER"] ?? "#94a3b8",
                     flexShrink: 0,
                   }}
                 >
@@ -246,14 +246,14 @@ export default async function AdminDashboardPage() {
                 <span
                   className="badge"
                   style={{
-                    background: `${roleColor[u.userRole] ?? "#94a3b8"}18`,
-                    color: roleColor[u.userRole] ?? "#94a3b8",
-                    borderColor: `${roleColor[u.userRole] ?? "#94a3b8"}30`,
+                    background: `${roleColor[u.userRole ?? "CUSTOMER"] ?? "#94a3b8"}18`,
+                    color: roleColor[u.userRole ?? "CUSTOMER"] ?? "#94a3b8",
+                    borderColor: `${roleColor[u.userRole ?? "CUSTOMER"] ?? "#94a3b8"}30`,
                     fontSize: 9,
                     flexShrink: 0,
                   }}
                 >
-                  {u.userRole.replace("_", " ")}
+                  {(u.userRole ?? "—").replace("_", " ")}
                 </span>
               </div>
             ))}

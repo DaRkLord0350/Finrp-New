@@ -83,13 +83,13 @@ export default async function FirmTeamPage() {
                     width: 44,
                     height: 44,
                     borderRadius: "50%",
-                    background: `${roleColor[member.userRole] ?? "#94a3b8"}20`,
+                    background: `${roleColor[member.userRole ?? "CUSTOMER"] ?? "#94a3b8"}20`,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     fontSize: 18,
                     fontWeight: 700,
-                    color: roleColor[member.userRole] ?? "#94a3b8",
+                    color: roleColor[member.userRole ?? "CUSTOMER"] ?? "#94a3b8",
                     flexShrink: 0,
                   }}
                 >
@@ -106,13 +106,13 @@ export default async function FirmTeamPage() {
                 <span
                   className="badge"
                   style={{
-                    background: `${roleColor[member.userRole] ?? "#94a3b8"}18`,
-                    color: roleColor[member.userRole] ?? "#94a3b8",
-                    borderColor: `${roleColor[member.userRole] ?? "#94a3b8"}30`,
+                    background: `${roleColor[member.userRole ?? "CUSTOMER"] ?? "#94a3b8"}18`,
+                    color: roleColor[member.userRole ?? "CUSTOMER"] ?? "#94a3b8",
+                    borderColor: `${roleColor[member.userRole ?? "CUSTOMER"] ?? "#94a3b8"}30`,
                     flexShrink: 0,
                   }}
                 >
-                  {member.userRole.replace("_", " ")}
+                  {(member.userRole ?? "—").replace("_", " ")}
                 </span>
               </div>
 

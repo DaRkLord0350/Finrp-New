@@ -7,7 +7,7 @@ async function getFirmUser() {
   const { userId } = await auth();
   if (!userId) return null;
   const user = await prisma.user.findUnique({ where: { clerkId: userId } });
-  if (!user || !["CA_FIRM_ADMIN", "CA"].includes(user.userRole)) return null;
+  if (!user || !["CA_FIRM_ADMIN", "CA"].includes(user.userRole ?? "")) return null;
   return user;
 }
 

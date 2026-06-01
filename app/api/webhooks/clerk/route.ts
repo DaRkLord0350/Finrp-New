@@ -165,10 +165,18 @@ async function handleUserCreated(
       },
     });
 
-    // 2. Create the User as OWNER with CUSTOMER platform role
+    // 2. Create the User as OWNER.
+    //    userRole is only set if Clerk publicMetadata explicitly carries one
+    //    (e.g., a CA invited by a firm admin). Regular sign-ups get null,
+    //    which triggers the /onboarding/role selection screen on first login.
     const rawUserRole = data.public_metadata?.userRole;
-    const userRole =
-      rawUserRole === "CA" || rawUserRole === "ADMIN" ? rawUserRole : "CUSTOMER";
+    const VALID_ROLES = ["CA", "CA_FIRM_ADMIN", "ADMIN", "CUSTOMER"] as const;
+    type ValidRole = (typeof VALID_ROLES)[number];
+    const userRole: ValidRole | null = VALID_ROLES.includes(
+      rawUserRole as ValidRole
+    )
+      ? (rawUserRole as ValidRole)
+      : null;
 
     const user = await tx.user.create({
       data: {
@@ -176,7 +184,7 @@ async function handleUserCreated(
         email,
         name,
         role: "OWNER",
-        userRole,
+        ...(userRole !== null ? { userRole } : {}),
         avatarUrl: data.image_url ?? null,
         phone: data.phone_numbers?.[0]?.phone_number ?? null,
         isActive: true,
@@ -224,12 +232,15 @@ async function handleUserUpdated(
   const email = data.email_addresses[0]?.email_address ?? "";
   const name = [data.first_name, data.last_name].filter(Boolean).join(" ") || undefined;
 
-  // Sync userRole from Clerk publicMetadata (set by admin in Clerk Dashboard)
+  // Sync userRole from Clerk publicMetadata (set by admin or role selection action)
   const rawUserRole = data.public_metadata?.userRole;
-  const userRole =
-    rawUserRole === "CA" || rawUserRole === "ADMIN" || rawUserRole === "CUSTOMER"
-      ? (rawUserRole as "CA" | "ADMIN" | "CUSTOMER")
-      : undefined;
+  const VALID_ROLES_UPDATE = ["CA", "CA_FIRM_ADMIN", "ADMIN", "CUSTOMER"] as const;
+  type ValidRoleUpdate = (typeof VALID_ROLES_UPDATE)[number];
+  const userRole: ValidRoleUpdate | undefined = VALID_ROLES_UPDATE.includes(
+    rawUserRole as ValidRoleUpdate
+  )
+    ? (rawUserRole as ValidRoleUpdate)
+    : undefined;
 
   await prisma.user.updateMany({
     where: { clerkId },

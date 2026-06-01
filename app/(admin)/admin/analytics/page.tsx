@@ -77,26 +77,29 @@ export default async function AdminAnalyticsPage() {
             <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Users by Role</h3>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {data.usersByRole.map((item) => (
-              <div key={item.userRole} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {data.usersByRole.map((item) => {
+              const role = item.userRole ?? "UNKNOWN";
+              return (
+              <div key={role} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 11, color: "var(--text-muted)", width: 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {item.userRole.replace("_", " ")}
+                  {role.replace("_", " ")}
                 </span>
                 <div style={{ flex: 1, height: 8, borderRadius: 99, background: "var(--bg-elevated)", overflow: "hidden" }}>
                   <div
                     style={{
                       height: "100%",
                       width: `${Math.min((item._count._all / 100) * 100, 100)}%`,
-                      background: roleColor[item.userRole] ?? "#94a3b8",
+                      background: roleColor[role] ?? "#94a3b8",
                       borderRadius: 99,
                     }}
                   />
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 700, color: roleColor[item.userRole] ?? "#94a3b8", width: 32, textAlign: "right" }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: roleColor[role] ?? "#94a3b8", width: 32, textAlign: "right" }}>
                   {item._count._all}
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

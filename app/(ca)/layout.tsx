@@ -21,6 +21,9 @@ export default async function CALayout({
     redirect("/sign-in");
   }
 
+  // New users haven't selected a role yet → show role selection
+  if (!user.userRole) redirect("/onboarding/role");
+
   // Route non-CA users to their correct portal
   if (user.userRole === "ADMIN") redirect("/admin");
   if (user.userRole === "CA_FIRM_ADMIN") redirect("/firm");

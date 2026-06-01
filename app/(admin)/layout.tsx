@@ -14,6 +14,9 @@ export default async function AdminLayout({
     redirect("/sign-in");
   }
 
+  // New users haven't selected a role yet → show role selection
+  if (!user.userRole) redirect("/onboarding/role");
+
   if (user.userRole !== "ADMIN") {
     if (user.userRole === "CA_FIRM_ADMIN") redirect("/firm");
     if (user.userRole === "CA") redirect("/ca");

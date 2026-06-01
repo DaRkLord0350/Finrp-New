@@ -83,13 +83,13 @@ export default async function AdminUsersPage() {
                           width: 30,
                           height: 30,
                           borderRadius: "50%",
-                          background: `${roleColor[u.userRole] ?? "#94a3b8"}20`,
+                          background: `${roleColor[u.userRole ?? "CUSTOMER"] ?? "#94a3b8"}20`,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           fontSize: 12,
                           fontWeight: 700,
-                          color: roleColor[u.userRole] ?? "#94a3b8",
+                          color: roleColor[u.userRole ?? "CUSTOMER"] ?? "#94a3b8",
                           flexShrink: 0,
                         }}
                       >
@@ -105,12 +105,12 @@ export default async function AdminUsersPage() {
                     <span
                       className="badge"
                       style={{
-                        background: `${roleColor[u.userRole]}18`,
-                        color: roleColor[u.userRole],
-                        borderColor: `${roleColor[u.userRole]}30`,
+                        background: `${roleColor[u.userRole ?? "CUSTOMER"]}18`,
+                        color: roleColor[u.userRole ?? "CUSTOMER"],
+                        borderColor: `${roleColor[u.userRole ?? "CUSTOMER"]}30`,
                       }}
                     >
-                      {u.userRole.replace("_", " ")}
+                      {(u.userRole ?? "—").replace("_", " ")}
                     </span>
                   </td>
                   <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>

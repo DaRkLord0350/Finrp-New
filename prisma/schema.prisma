@@ -100,7 +100,7 @@ model User {
   name                   String?
   phone                  String?
   role                   Role     @default(STAFF)
-  userRole               UserRole @default(CUSTOMER)
+  userRole               UserRole? // null = new user, hasn't selected role yet
   department             String?
   designation            String?
   lastActiveAt           DateTime?
@@ -2549,15 +2549,20 @@ model CAMessage {
 // FIRM (CA Practice Firm entity)
 // ============================================================
 model Firm {
-  id        String   @id @default(cuid())
-  name      String
-  email     String?
-  phone     String?
-  address   String?
-  website   String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  name               String
+  registrationNumber String?  // ICAI registration number
+  email              String?
+  phone              String?
+  address            String?
+  city               String?
+  state              String?
+  country            String?
+  website            String?
+  ownerId            String?  // CA_FIRM_ADMIN userId who created this firm
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   users         User[]       @relation("FirmUsers")
   customers     Customer[]   @relation("FirmCustomers")
