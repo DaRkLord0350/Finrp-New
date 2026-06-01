@@ -69,6 +69,8 @@ model Organization {
   orgDocuments     OrganizationDocument[]
   apiTokens        ApiToken[]
   caClients        CAClient[] @relation("CAManagedOrgs")
+  tredsIntegration TredsIntegration?
+  tredsInvoices    TredsInvoice[]
 
   @@index([slug])
   @@map("organizations")
@@ -2263,6 +2265,179 @@ model ApiToken {
 
   @@index([organizationId])
   @@map("api_tokens")
+}
+
+// ============================================================
+// =================== TREDS MODULE ===========================
+// ============================================================
+
+enum TredsIntegrationStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  PENDING
+}
+
+enum TredsInvoiceStatus {
+  DRAFT
+  READY
+  SUBMITTED
+  BUYER_APPROVED
+  UNDER_BIDDING
+  DISCOUNTED
+  SETTLED
+  REJECTED
+}
+
+enum TredsBidStatus {
+  ACTIVE
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum TredsSettlementStatus {
+  SCHEDULED
+  PROCESSING
+  PAID
+  FAILED
+}
+
+enum TredsNotificationType {
+  INVOICE_SUBMITTED
+  BUYER_APPROVED
+  BID_RECEIVED
+  FUNDING_APPROVED
+  SETTLEMENT_COMPLETED
+  PAYMENT_RECEIVED
+  INVOICE_REJECTED
+}
+
+model TredsIntegration {
+  id                    String                 @id @default(cuid())
+  organizationId        String                 @unique
+  provider              String                 @default("M1XCHANGE")
+  clientId              String
+  encryptedClientSecret String
+  apiEndpoint           String?
+  status                TredsIntegrationStatus @default(INACTIVE)
+  lastSyncAt            DateTime?
+  syncFrequencyMins     Int                    @default(60)
+  webhookUrl            String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices      TredsInvoice[]
+  notifications TredsNotification[]
+
+  @@index([organizationId])
+  @@map("treds_integrations")
+}
+
+model TredsInvoice {
+  id              String             @id @default(cuid())
+  organizationId  String
+  integrationId   String
+  invoiceId       String?
+  m1ReferenceId   String?
+  invoiceNumber   String
+  buyerName       String
+  buyerGstin      String?
+  invoiceAmount   Decimal            @db.Decimal(16, 2)
+  dueDate         DateTime
+  status          TredsInvoiceStatus @default(DRAFT)
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  fundedAt        DateTime?
+  settlementDate  DateTime?
+  financingRate   Decimal?           @db.Decimal(5, 3)
+  financierName   String?
+  fundingAmount   Decimal?           @db.Decimal(16, 2)
+  rejectionReason String?
+  documents       String[]           @default([])
+  notes           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integration  TredsIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  bids         TredsBid[]
+  settlement   TredsSettlement?
+  activityLogs TredsActivityLog[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, dueDate])
+  @@index([integrationId])
+  @@map("treds_invoices")
+}
+
+model TredsBid {
+  id             String         @id @default(cuid())
+  tredsInvoiceId String
+  financierName  String
+  interestRate   Decimal        @db.Decimal(5, 3)
+  bidAmount      Decimal        @db.Decimal(16, 2)
+  expiryTime     DateTime
+  status         TredsBidStatus @default(ACTIVE)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  tredsInvoice TredsInvoice @relation(fields: [tredsInvoiceId], references: [id], onDelete: Cascade)
+
+  @@index([tredsInvoiceId])
+  @@map("treds_bids")
+}
+
+model TredsSettlement {
+  id             String                @id @default(cuid())
+  tredsInvoiceId String                @unique
+  organizationId String
+  amount         Decimal               @db.Decimal(16, 2)
+  settlementDate DateTime
+  status         TredsSettlementStatus @default(SCHEDULED)
+  utr            String?
+  notes          String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  tredsInvoice TredsInvoice @relation(fields: [tredsInvoiceId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("treds_settlements")
+}
+
+model TredsNotification {
+  id             String                @id @default(cuid())
+  organizationId String
+  integrationId  String?
+  type           TredsNotificationType
+  title          String
+  description    String
+  read           Boolean               @default(false)
+  metadata       Json?
+  createdAt      DateTime              @default(now())
+
+  integration TredsIntegration? @relation(fields: [integrationId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, read])
+  @@map("treds_notifications")
+}
+
+model TredsActivityLog {
+  id             String   @id @default(cuid())
+  tredsInvoiceId String
+  action         String
+  description    String
+  performedById  String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  tredsInvoice TredsInvoice @relation(fields: [tredsInvoiceId], references: [id], onDelete: Cascade)
+
+  @@index([tredsInvoiceId])
+  @@map("treds_activity_logs")
 }
 
 // ============================================================
