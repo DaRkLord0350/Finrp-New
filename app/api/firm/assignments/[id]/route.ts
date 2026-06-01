@@ -30,7 +30,7 @@ export async function DELETE(
 
   await prisma.customerAssignment.update({
     where: { id },
-    data: { isActive: false },
+    data: { isActive: false, unassignedAt: new Date() },
   });
 
   return NextResponse.json({ success: true });

@@ -51,10 +51,10 @@ export async function POST(req: NextRequest) {
   });
   if (!ca) return NextResponse.json({ error: "CA user not found" }, { status: 404 });
 
-  // Upsert: deactivate old assignment for this customer, create new
+  // Deactivate old assignments and stamp unassignedAt
   await prisma.customerAssignment.updateMany({
     where: { customerId, isActive: true },
-    data: { isActive: false },
+    data: { isActive: false, unassignedAt: new Date() },
   });
 
   const assignment = await prisma.customerAssignment.create({
@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
       caId,
       assignedById: admin.id,
       isActive: true,
+      assignedAt: new Date(),
     },
   });
 

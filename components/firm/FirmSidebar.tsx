@@ -13,17 +13,36 @@ import {
   Settings,
   X,
   Briefcase,
+  FileText,
+  Activity,
+  TrendingUp,
+  PenLine,
+  Palette,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { label: "Dashboard",   href: "/firm",              icon: LayoutDashboard, exact: true },
-  { label: "Customers",   href: "/firm/customers",    icon: Users },
-  { label: "Team",        href: "/firm/team",         icon: UserCog },
-  { label: "Assignments", href: "/firm/assignments",  icon: UserPlus },
-  { label: "Tasks",       href: "/firm/tasks",        icon: ClipboardList },
-  { label: "Documents",   href: "/firm/documents",    icon: FolderOpen },
+const practiceItems = [
+  { label: "Dashboard",    href: "/firm",              icon: LayoutDashboard, exact: true },
+  { label: "Customers",    href: "/firm/customers",    icon: Users },
+  { label: "Team",         href: "/firm/team",         icon: UserCog },
+  { label: "Assignments",  href: "/firm/assignments",  icon: UserPlus },
+  { label: "Tasks",        href: "/firm/tasks",        icon: ClipboardList },
+  { label: "Templates",    href: "/firm/templates",    icon: FileText },
+  { label: "Documents",    href: "/firm/documents",    icon: FolderOpen },
+];
+
+const operationsItems = [
+  { label: "Workload",     href: "/firm/workload",     icon: Activity },
+  { label: "Analytics",   href: "/firm/analytics",    icon: TrendingUp },
   { label: "Reports",     href: "/firm/reports",      icon: BarChart3 },
+  { label: "E-Sign",      href: "/firm/esign",        icon: PenLine },
+];
+
+const settingsItems = [
+  { label: "Branding",    href: "/firm/branding",     icon: Palette },
+  { label: "Notifications", href: "/firm/settings/notifications", icon: Bell },
+  { label: "Settings",    href: "/firm/settings",     icon: Settings, exact: true },
 ];
 
 interface FirmSidebarProps {
@@ -37,6 +56,23 @@ export default function FirmSidebar({ open = false, onClose }: FirmSidebarProps)
   const isActive = (item: { href: string; exact?: boolean }) =>
     item.exact ? pathname === item.href : pathname.startsWith(item.href);
 
+  const renderItems = (items: typeof practiceItems) =>
+    items.map((item) => {
+      const active = isActive(item);
+      const Icon = item.icon;
+      return (
+        <Link
+          key={item.href}
+          href={item.href}
+          className={cn("sidebar-nav-item", active && "active")}
+          onClick={onClose}
+        >
+          <Icon size={16} strokeWidth={1.75} />
+          <span>{item.label}</span>
+        </Link>
+      );
+    });
+
   return (
     <>
       {open && (
@@ -45,7 +81,7 @@ export default function FirmSidebar({ open = false, onClose }: FirmSidebarProps)
 
       <aside className={cn("sidebar", open && "sidebar--open")}>
         {/* Logo */}
-        <div className="flex items-center gap-2 px-2 mb-8">
+        <div className="flex items-center gap-2 px-2 mb-6">
           <div
             style={{
               width: 32,
@@ -73,7 +109,7 @@ export default function FirmSidebar({ open = false, onClose }: FirmSidebarProps)
               FinRP Firm
             </span>
             <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 0 }}>
-              Firm Management
+              Practice Management
             </p>
           </div>
           <button className="sidebar-close-btn" onClick={onClose} aria-label="Close">
@@ -82,57 +118,33 @@ export default function FirmSidebar({ open = false, onClose }: FirmSidebarProps)
         </div>
 
         {/* Navigation */}
-        <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-          <p
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--text-muted)",
-              padding: "0 12px",
-              marginBottom: 6,
-            }}
-          >
+        <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
+          <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)", padding: "0 12px", marginBottom: 4 }}>
             Practice
           </p>
+          {renderItems(practiceItems)}
 
-          {navItems.map((item) => {
-            const active = isActive(item);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn("sidebar-nav-item", active && "active")}
-                onClick={onClose}
-              >
-                <Icon size={16} strokeWidth={1.75} />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
+          <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)", padding: "8px 12px 4px" }}>
+            Operations
+          </p>
+          {renderItems(operationsItems)}
         </nav>
 
         {/* Bottom */}
         <div
           style={{
             borderTop: "1px solid var(--border)",
-            paddingTop: 12,
-            marginTop: 12,
+            paddingTop: 10,
+            marginTop: 8,
             display: "flex",
             flexDirection: "column",
             gap: 2,
           }}
         >
-          <Link
-            href="/firm/settings"
-            className={cn("sidebar-nav-item", pathname.startsWith("/firm/settings") && "active")}
-            onClick={onClose}
-          >
-            <Settings size={16} strokeWidth={1.75} />
-            <span>Settings</span>
-          </Link>
+          <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)", padding: "0 12px", marginBottom: 4 }}>
+            Configure
+          </p>
+          {renderItems(settingsItems)}
 
           <div
             style={{
@@ -155,12 +167,8 @@ export default function FirmSidebar({ open = false, onClose }: FirmSidebarProps)
                 }}
               />
               <div>
-                <p style={{ fontSize: 11, fontWeight: 600, color: "#34d399" }}>
-                  CA Firm Portal
-                </p>
-                <p style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                  Practice Management
-                </p>
+                <p style={{ fontSize: 11, fontWeight: 600, color: "#34d399" }}>CA Firm Portal</p>
+                <p style={{ fontSize: 10, color: "var(--text-muted)" }}>Phase 2 Active</p>
               </div>
             </div>
           </div>

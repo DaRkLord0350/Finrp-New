@@ -73,6 +73,11 @@ model Organization {
   tredsInvoices    TredsInvoice[]
   firmTasks        FirmTask[]
   messages         Message[]
+  signatureRequests SignatureRequest[]
+  notificationQueue NotificationQueue[]
+  complianceTemplates ComplianceTemplate[]
+  firmBranding     FirmBranding?
+  firmNotifSettings FirmNotificationSettings?
 
   @@index([slug])
   @@map("organizations")
@@ -129,6 +134,7 @@ model User {
   firmTasksCreated  FirmTask[]           @relation("FirmTaskCreatedBy")
   sentMessages      Message[]            @relation("MessageSender")
   receivedMessages  Message[]            @relation("MessageReceiver")
+  templateAssignmentsMade TemplateAssignment[] @relation("TemplateAssignmentCreatedBy")
 
   @@index([organizationId])
   @@index([userRole])
@@ -229,6 +235,7 @@ model Customer {
   convertedLeads      Lead[]                @relation("LeadConversion")
   customerAssignments CustomerAssignment[]  @relation("CustomerAssignments")
   firmTasks           FirmTask[]            @relation("CustomerFirmTasks")
+  templateAssignments TemplateAssignment[]  @relation("CustomerTemplateAssignments")
 
   @@unique([organizationId, customerCode])
   @@index([organizationId, customerType])
@@ -2016,6 +2023,7 @@ model ComplianceDocument {
 
   organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   submission   ComplianceSubmission?  @relation(fields: [submissionId], references: [id])
+  versions     DocumentVersion[]
 
   @@index([organizationId])
   @@index([submissionId])
@@ -2551,8 +2559,11 @@ model Firm {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users     User[]     @relation("FirmUsers")
-  customers Customer[] @relation("FirmCustomers")
+  users         User[]       @relation("FirmUsers")
+  customers     Customer[]   @relation("FirmCustomers")
+  templates     ComplianceTemplate[] @relation("FirmTemplates")
+  branding      FirmBranding?        @relation("FirmBranding")
+  notifSettings FirmNotificationSettings? @relation("FirmNotifSettings")
 
   @@map("firms")
 }
@@ -2561,22 +2572,25 @@ model Firm {
 // CUSTOMER ASSIGNMENT (CA ↔ Customer CRM record mapping)
 // ============================================================
 model CustomerAssignment {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   customerId   String
   caId         String
   assignedById String
   notes        String?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  reason       String?
+  isActive     Boolean   @default(true)
+  assignedAt   DateTime  @default(now())
+  unassignedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   customer   Customer @relation("CustomerAssignments", fields: [customerId], references: [id])
   ca         User     @relation("CAAssignments", fields: [caId], references: [id])
   assignedBy User     @relation("AssignmentCreatedBy", fields: [assignedById], references: [id])
 
-  @@unique([customerId, caId])
   @@index([caId])
   @@index([customerId])
+  @@index([customerId, isActive])
   @@map("customer_assignments")
 }
 
@@ -2604,6 +2618,8 @@ model FirmTask {
   organizationId String
   notes          String?
   completedAt    DateTime?
+  templateId     String?
+  templateTaskId String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -2615,6 +2631,7 @@ model FirmTask {
   @@index([customerId])
   @@index([assignedCaId])
   @@index([organizationId])
+  @@index([templateId])
   @@map("firm_tasks")
 }
 
@@ -2643,4 +2660,255 @@ model Message {
   @@index([organizationId])
   @@index([parentId])
   @@map("messages")
+}
+
+// ============================================================
+// =================== PHASE 2 MODELS ========================
+// ============================================================
+
+// ============================================================
+// COMPLIANCE TEMPLATE ENGINE
+// ============================================================
+
+enum TemplateFrequency {
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+  CUSTOM
+}
+
+model ComplianceTemplate {
+  id             String            @id @default(cuid())
+  organizationId String
+  firmId         String?
+  name           String
+  description    String?
+  frequency      TemplateFrequency
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  firm         Firm?                @relation("FirmTemplates", fields: [firmId], references: [id])
+  tasks        TemplateTask[]
+  assignments  TemplateAssignment[]
+
+  @@index([organizationId])
+  @@index([firmId])
+  @@map("compliance_templates")
+}
+
+model TemplateTask {
+  id            String @id @default(cuid())
+  templateId    String
+  title         String
+  description   String?
+  daysBeforeDue Int
+  sortOrder     Int    @default(0)
+
+  template ComplianceTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@map("template_tasks")
+}
+
+model TemplateAssignment {
+  id           String   @id @default(cuid())
+  templateId   String
+  customerId   String
+  assignedById String
+  assignedAt   DateTime @default(now())
+  isActive     Boolean  @default(true)
+
+  template   ComplianceTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  customer   Customer           @relation("CustomerTemplateAssignments", fields: [customerId], references: [id])
+  assignedBy User               @relation("TemplateAssignmentCreatedBy", fields: [assignedById], references: [id])
+
+  @@unique([templateId, customerId])
+  @@index([templateId])
+  @@index([customerId])
+  @@map("template_assignments")
+}
+
+// ============================================================
+// DOCUMENT VERSIONING
+// ============================================================
+
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  versionNumber Int
+  fileUrl       String
+  fileName      String
+  fileSize      Int      @default(0)
+  uploadedById  String?
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  document ComplianceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("document_versions")
+}
+
+// ============================================================
+// NOTIFICATION QUEUE (email / WhatsApp)
+// ============================================================
+
+enum NotificationChannel {
+  EMAIL
+  WHATSAPP
+  IN_APP
+}
+
+enum NotificationQueueStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+model NotificationQueue {
+  id             String                  @id @default(cuid())
+  organizationId String
+  recipientEmail String?
+  recipientPhone String?
+  channel        NotificationChannel
+  subject        String?
+  body           String
+  status         NotificationQueueStatus @default(PENDING)
+  sentAt         DateTime?
+  retryCount     Int                     @default(0)
+  lastError      String?
+  scheduledFor   DateTime?
+  metadata       Json?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([status, scheduledFor])
+  @@index([organizationId])
+  @@map("notification_queue")
+}
+
+// ============================================================
+// FIRM NOTIFICATION SETTINGS
+// ============================================================
+
+model FirmNotificationSettings {
+  id                 String   @id @default(cuid())
+  organizationId     String   @unique
+  firmId             String?  @unique
+
+  emailEnabled       Boolean  @default(true)
+  whatsappEnabled    Boolean  @default(false)
+  reminderDays1      Boolean  @default(true)
+  reminderDays3      Boolean  @default(true)
+  reminderDays7      Boolean  @default(false)
+  notifyAssignment   Boolean  @default(true)
+  notifyTaskCreated  Boolean  @default(true)
+  notifyTaskDue      Boolean  @default(true)
+  notifyTaskOverdue  Boolean  @default(true)
+  notifyDocApproved  Boolean  @default(true)
+  notifyDocRejected  Boolean  @default(true)
+  notifyMessage      Boolean  @default(true)
+
+  resendApiKey       String?
+  twilioAccountSid   String?
+  twilioAuthToken    String?
+  twilioWhatsappFrom String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  firm         Firm?        @relation("FirmNotifSettings", fields: [firmId], references: [id])
+
+  @@map("firm_notification_settings")
+}
+
+// ============================================================
+// E-SIGNATURES
+// ============================================================
+
+enum SignatureStatus {
+  PENDING
+  SENT
+  VIEWED
+  SIGNED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+model SignatureRequest {
+  id              String          @id @default(cuid())
+  organizationId  String
+  title           String
+  description     String?
+  documentUrl     String
+  signerEmail     String
+  signerName      String?
+  caEmail         String?
+  caId            String?
+  status          SignatureStatus @default(PENDING)
+  externalId      String?
+  provider        String?
+  signedDocUrl    String?
+  sentAt          DateTime?
+  viewedAt        DateTime?
+  signedAt        DateTime?
+  rejectedAt      DateTime?
+  expiresAt       DateTime?
+  rejectionReason String?
+  createdById     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  events       SignatureEvent[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([signerEmail])
+  @@map("signature_requests")
+}
+
+model SignatureEvent {
+  id                 String   @id @default(cuid())
+  signatureRequestId String
+  event              String
+  description        String?
+  metadata           Json?
+  createdAt          DateTime @default(now())
+
+  signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id], onDelete: Cascade)
+
+  @@index([signatureRequestId])
+  @@map("signature_events")
+}
+
+// ============================================================
+// CLIENT PORTAL BRANDING
+// ============================================================
+
+model FirmBranding {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  firmId         String?  @unique
+  logoUrl        String?
+  primaryColor   String?
+  secondaryColor String?
+  supportEmail   String?
+  supportPhone   String?
+  footerText     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  firm         Firm?        @relation("FirmBranding", fields: [firmId], references: [id])
+
+  @@map("firm_branding")
 }
