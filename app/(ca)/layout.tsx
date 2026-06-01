@@ -21,10 +21,10 @@ export default async function CALayout({
     redirect("/sign-in");
   }
 
-  // Only CA and ADMIN can access the CA portal
-  if (user.userRole === "CUSTOMER") {
-    redirect("/dashboard");
-  }
+  // Route non-CA users to their correct portal
+  if (user.userRole === "ADMIN") redirect("/admin");
+  if (user.userRole === "CA_FIRM_ADMIN") redirect("/firm");
+  if (user.userRole === "CUSTOMER") redirect("/dashboard");
 
   return <CAShell>{children}</CAShell>;
 }

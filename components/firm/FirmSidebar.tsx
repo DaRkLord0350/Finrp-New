@@ -5,12 +5,11 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
-  ShieldCheck,
-  CheckSquare,
+  UserCog,
+  UserPlus,
   ClipboardList,
-  Calendar,
-  MessageSquare,
-  Bell,
+  FolderOpen,
+  BarChart3,
   Settings,
   X,
   Briefcase,
@@ -18,24 +17,21 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Dashboard",          href: "/ca",               icon: LayoutDashboard, exact: true },
-  { label: "My Customers",       href: "/ca/customers",     icon: Users },
-  { label: "My Tasks",           href: "/ca/tasks",         icon: ClipboardList },
-  { label: "Clients (Orgs)",     href: "/ca/clients",       icon: Users },
-  { label: "Compliance Center",  href: "/ca/compliance",    icon: ShieldCheck },
-  { label: "Documents",          href: "/ca/documents",     icon: CheckSquare },
-  { label: "Verification",       href: "/ca/verification",  icon: CheckSquare },
-  { label: "Deadlines",          href: "/ca/deadlines",     icon: Calendar },
-  { label: "Messages",           href: "/ca/messages",      icon: MessageSquare },
-  { label: "Notifications",      href: "/ca/notifications", icon: Bell },
+  { label: "Dashboard",   href: "/firm",              icon: LayoutDashboard, exact: true },
+  { label: "Customers",   href: "/firm/customers",    icon: Users },
+  { label: "Team",        href: "/firm/team",         icon: UserCog },
+  { label: "Assignments", href: "/firm/assignments",  icon: UserPlus },
+  { label: "Tasks",       href: "/firm/tasks",        icon: ClipboardList },
+  { label: "Documents",   href: "/firm/documents",    icon: FolderOpen },
+  { label: "Reports",     href: "/firm/reports",      icon: BarChart3 },
 ];
 
-interface CASidebarProps {
+interface FirmSidebarProps {
   open?: boolean;
   onClose?: () => void;
 }
 
-export default function CASidebar({ open = false, onClose }: CASidebarProps) {
+export default function FirmSidebar({ open = false, onClose }: FirmSidebarProps) {
   const pathname = usePathname();
 
   const isActive = (item: { href: string; exact?: boolean }) =>
@@ -54,7 +50,7 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
             style={{
               width: 32,
               height: 32,
-              background: "linear-gradient(135deg, #0ea5e9, #6366f1)",
+              background: "linear-gradient(135deg, #10b981, #0ea5e9)",
               borderRadius: 8,
               display: "flex",
               alignItems: "center",
@@ -69,15 +65,15 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
               style={{
                 fontSize: 16,
                 fontWeight: 700,
-                background: "linear-gradient(135deg, #38bdf8, #818cf8)",
+                background: "linear-gradient(135deg, #34d399, #38bdf8)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
               }}
             >
-              FinRP CA
+              FinRP Firm
             </span>
             <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 0 }}>
-              Practice Portal
+              Firm Management
             </p>
           </div>
           <button className="sidebar-close-btn" onClick={onClose} aria-label="Close">
@@ -98,7 +94,7 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
               marginBottom: 6,
             }}
           >
-            Workspace
+            Practice
           </p>
 
           {navItems.map((item) => {
@@ -130,8 +126,8 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
           }}
         >
           <Link
-            href="/ca/settings"
-            className={cn("sidebar-nav-item", pathname.startsWith("/ca/settings") && "active")}
+            href="/firm/settings"
+            className={cn("sidebar-nav-item", pathname.startsWith("/firm/settings") && "active")}
             onClick={onClose}
           >
             <Settings size={16} strokeWidth={1.75} />
@@ -142,8 +138,8 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
             style={{
               margin: "8px 4px 0",
               padding: "10px 12px",
-              background: "rgba(14, 165, 233, 0.08)",
-              border: "1px solid rgba(14, 165, 233, 0.2)",
+              background: "rgba(16,185,129,0.08)",
+              border: "1px solid rgba(16,185,129,0.2)",
               borderRadius: 10,
             }}
           >
@@ -153,17 +149,17 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
                   width: 8,
                   height: 8,
                   borderRadius: "50%",
-                  background: "#0ea5e9",
+                  background: "#10b981",
                   flexShrink: 0,
                   animation: "pulse 2s infinite",
                 }}
               />
               <div>
-                <p style={{ fontSize: 11, fontWeight: 600, color: "#38bdf8" }}>
-                  CA Practice Portal
+                <p style={{ fontSize: 11, fontWeight: 600, color: "#34d399" }}>
+                  CA Firm Portal
                 </p>
                 <p style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                  Compliance Workspace
+                  Practice Management
                 </p>
               </div>
             </div>

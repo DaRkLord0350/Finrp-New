@@ -4,38 +4,32 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  Building2,
   Users,
   ShieldCheck,
-  CheckSquare,
-  ClipboardList,
-  Calendar,
-  MessageSquare,
-  Bell,
+  BarChart3,
   Settings,
   X,
-  Briefcase,
+  Shield,
+  UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Dashboard",          href: "/ca",               icon: LayoutDashboard, exact: true },
-  { label: "My Customers",       href: "/ca/customers",     icon: Users },
-  { label: "My Tasks",           href: "/ca/tasks",         icon: ClipboardList },
-  { label: "Clients (Orgs)",     href: "/ca/clients",       icon: Users },
-  { label: "Compliance Center",  href: "/ca/compliance",    icon: ShieldCheck },
-  { label: "Documents",          href: "/ca/documents",     icon: CheckSquare },
-  { label: "Verification",       href: "/ca/verification",  icon: CheckSquare },
-  { label: "Deadlines",          href: "/ca/deadlines",     icon: Calendar },
-  { label: "Messages",           href: "/ca/messages",      icon: MessageSquare },
-  { label: "Notifications",      href: "/ca/notifications", icon: Bell },
+  { label: "Dashboard",   href: "/admin",            icon: LayoutDashboard, exact: true },
+  { label: "Firms",       href: "/admin/firms",       icon: Building2 },
+  { label: "Customers",   href: "/admin/customers",   icon: Users },
+  { label: "Users",       href: "/admin/users",       icon: UserCog },
+  { label: "Compliance",  href: "/admin/compliance",  icon: ShieldCheck },
+  { label: "Analytics",   href: "/admin/analytics",   icon: BarChart3 },
 ];
 
-interface CASidebarProps {
+interface AdminSidebarProps {
   open?: boolean;
   onClose?: () => void;
 }
 
-export default function CASidebar({ open = false, onClose }: CASidebarProps) {
+export default function AdminSidebar({ open = false, onClose }: AdminSidebarProps) {
   const pathname = usePathname();
 
   const isActive = (item: { href: string; exact?: boolean }) =>
@@ -54,7 +48,7 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
             style={{
               width: 32,
               height: 32,
-              background: "linear-gradient(135deg, #0ea5e9, #6366f1)",
+              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
               borderRadius: 8,
               display: "flex",
               alignItems: "center",
@@ -62,22 +56,22 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
               flexShrink: 0,
             }}
           >
-            <Briefcase size={16} color="white" />
+            <Shield size={16} color="white" />
           </div>
           <div>
             <span
               style={{
                 fontSize: 16,
                 fontWeight: 700,
-                background: "linear-gradient(135deg, #38bdf8, #818cf8)",
+                background: "linear-gradient(135deg, #818cf8, #a78bfa)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
               }}
             >
-              FinRP CA
+              FinRP Admin
             </span>
             <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 0 }}>
-              Practice Portal
+              Platform Control
             </p>
           </div>
           <button className="sidebar-close-btn" onClick={onClose} aria-label="Close">
@@ -98,7 +92,7 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
               marginBottom: 6,
             }}
           >
-            Workspace
+            Platform
           </p>
 
           {navItems.map((item) => {
@@ -130,8 +124,8 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
           }}
         >
           <Link
-            href="/ca/settings"
-            className={cn("sidebar-nav-item", pathname.startsWith("/ca/settings") && "active")}
+            href="/admin/settings"
+            className={cn("sidebar-nav-item", pathname.startsWith("/admin/settings") && "active")}
             onClick={onClose}
           >
             <Settings size={16} strokeWidth={1.75} />
@@ -142,8 +136,8 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
             style={{
               margin: "8px 4px 0",
               padding: "10px 12px",
-              background: "rgba(14, 165, 233, 0.08)",
-              border: "1px solid rgba(14, 165, 233, 0.2)",
+              background: "rgba(99,102,241,0.08)",
+              border: "1px solid rgba(99,102,241,0.2)",
               borderRadius: 10,
             }}
           >
@@ -153,17 +147,17 @@ export default function CASidebar({ open = false, onClose }: CASidebarProps) {
                   width: 8,
                   height: 8,
                   borderRadius: "50%",
-                  background: "#0ea5e9",
+                  background: "#6366f1",
                   flexShrink: 0,
                   animation: "pulse 2s infinite",
                 }}
               />
               <div>
-                <p style={{ fontSize: 11, fontWeight: 600, color: "#38bdf8" }}>
-                  CA Practice Portal
+                <p style={{ fontSize: 11, fontWeight: 600, color: "#818cf8" }}>
+                  Admin Portal
                 </p>
                 <p style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                  Compliance Workspace
+                  Full Platform Access
                 </p>
               </div>
             </div>

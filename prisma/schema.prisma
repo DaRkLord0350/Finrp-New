@@ -71,6 +71,8 @@ model Organization {
   caClients        CAClient[] @relation("CAManagedOrgs")
   tredsIntegration TredsIntegration?
   tredsInvoices    TredsInvoice[]
+  firmTasks        FirmTask[]
+  messages         Message[]
 
   @@index([slug])
   @@map("organizations")
@@ -102,23 +104,31 @@ model User {
   isActive               Boolean  @default(true)
   lastLoginAt            DateTime?
   organizationId         String
+  firmId                 String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  auditLogs      AuditLog[]
-  notifications  Notification[]
-  memberships    Membership[]
-  complianceTasks ComplianceTask[] @relation("AssignedTo")
-  invoices       Invoice[]        @relation("InvoiceCreatedBy")
-  payments       Payment[]        @relation("PaymentCreatedBy")
-  sales          Sale[]           @relation("SaleCreatedBy")
-  purchases      Purchase[]       @relation("PurchaseCreatedBy")
-  expenses       Expense[]        @relation("ExpenseCreatedBy")
-  journalEntries JournalEntry[]   @relation("JournalEntryCreatedBy")
-  leads          Lead[]           @relation("LeadAssignedTo")
-  caClients      CAClient[]       @relation("CAManagedClients")
-  caMessages     CAMessage[]      @relation("CASentMessages")
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  firm              Firm?                @relation("FirmUsers", fields: [firmId], references: [id])
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  memberships       Membership[]
+  complianceTasks   ComplianceTask[]     @relation("AssignedTo")
+  invoices          Invoice[]            @relation("InvoiceCreatedBy")
+  payments          Payment[]            @relation("PaymentCreatedBy")
+  sales             Sale[]               @relation("SaleCreatedBy")
+  purchases         Purchase[]           @relation("PurchaseCreatedBy")
+  expenses          Expense[]            @relation("ExpenseCreatedBy")
+  journalEntries    JournalEntry[]       @relation("JournalEntryCreatedBy")
+  leads             Lead[]               @relation("LeadAssignedTo")
+  caClients         CAClient[]           @relation("CAManagedClients")
+  caMessages        CAMessage[]          @relation("CASentMessages")
+  customerAssignments CustomerAssignment[] @relation("CAAssignments")
+  assignmentsMade   CustomerAssignment[] @relation("AssignmentCreatedBy")
+  firmTasksAsCa     FirmTask[]           @relation("CATasks")
+  firmTasksCreated  FirmTask[]           @relation("FirmTaskCreatedBy")
+  sentMessages      Message[]            @relation("MessageSender")
+  receivedMessages  Message[]            @relation("MessageReceiver")
 
   @@index([organizationId])
   @@index([userRole])
@@ -137,6 +147,7 @@ enum Role {
 enum UserRole {
   CUSTOMER
   CA
+  CA_FIRM_ADMIN
   ADMIN
 }
 
@@ -205,15 +216,19 @@ model Customer {
   notes             String?
   isActive          Boolean      @default(true)
   organizationId    String
+  firmId            String?
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
   deletedAt         DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  invoices     Invoice[]
-  sales        Sale[]
-  recurringInvoices RecurringInvoice[]
-  convertedLeads Lead[] @relation("LeadConversion")
+  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  firm                Firm?                 @relation("FirmCustomers", fields: [firmId], references: [id])
+  invoices            Invoice[]
+  sales               Sale[]
+  recurringInvoices   RecurringInvoice[]
+  convertedLeads      Lead[]                @relation("LeadConversion")
+  customerAssignments CustomerAssignment[]  @relation("CustomerAssignments")
+  firmTasks           FirmTask[]            @relation("CustomerFirmTasks")
 
   @@unique([organizationId, customerCode])
   @@index([organizationId, customerType])
@@ -917,6 +932,12 @@ enum NotificationType {
   LOW_STOCK
   PAYMENT_RECEIVED
   TASK_ASSIGNED
+  DOCUMENT_UPLOADED
+  DOCUMENT_APPROVED
+  DOCUMENT_REJECTED
+  MESSAGE_RECEIVED
+  ASSIGNMENT_CREATED
+  TASK_DUE
   SYSTEM
 }
 
@@ -2514,4 +2535,112 @@ model CAMessage {
   @@index([caUserId])
   @@index([organizationId])
   @@map("ca_messages")
+}
+
+// ============================================================
+// FIRM (CA Practice Firm entity)
+// ============================================================
+model Firm {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  website   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users     User[]     @relation("FirmUsers")
+  customers Customer[] @relation("FirmCustomers")
+
+  @@map("firms")
+}
+
+// ============================================================
+// CUSTOMER ASSIGNMENT (CA ↔ Customer CRM record mapping)
+// ============================================================
+model CustomerAssignment {
+  id           String   @id @default(cuid())
+  customerId   String
+  caId         String
+  assignedById String
+  notes        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customer   Customer @relation("CustomerAssignments", fields: [customerId], references: [id])
+  ca         User     @relation("CAAssignments", fields: [caId], references: [id])
+  assignedBy User     @relation("AssignmentCreatedBy", fields: [assignedById], references: [id])
+
+  @@unique([customerId, caId])
+  @@index([caId])
+  @@index([customerId])
+  @@map("customer_assignments")
+}
+
+// ============================================================
+// FIRM TASK (Compliance task created by CA firm for a customer)
+// ============================================================
+enum FirmTaskStatus {
+  PENDING
+  IN_PROGRESS
+  WAITING_CLIENT
+  REVIEW
+  COMPLETED
+}
+
+model FirmTask {
+  id             String         @id @default(cuid())
+  title          String
+  description    String?
+  customerId     String
+  assignedCaId   String
+  dueDate        DateTime
+  status         FirmTaskStatus @default(PENDING)
+  priority       PriorityLevel  @default(MEDIUM)
+  createdById    String
+  organizationId String
+  notes          String?
+  completedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  customer     Customer     @relation("CustomerFirmTasks", fields: [customerId], references: [id])
+  assignedCa   User         @relation("CATasks", fields: [assignedCaId], references: [id])
+  createdBy    User         @relation("FirmTaskCreatedBy", fields: [createdById], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([assignedCaId])
+  @@index([organizationId])
+  @@map("firm_tasks")
+}
+
+// ============================================================
+// MESSAGE (Customer ↔ CA direct messaging)
+// ============================================================
+model Message {
+  id             String    @id @default(cuid())
+  senderId       String
+  receiverId     String
+  organizationId String
+  subject        String?
+  content        String
+  isRead         Boolean   @default(false)
+  readAt         DateTime?
+  parentId       String?
+  createdAt      DateTime  @default(now())
+
+  sender       User         @relation("MessageSender", fields: [senderId], references: [id])
+  receiver     User         @relation("MessageReceiver", fields: [receiverId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       Message?     @relation("MessageThread", fields: [parentId], references: [id])
+  replies      Message[]    @relation("MessageThread")
+
+  @@index([senderId, receiverId])
+  @@index([organizationId])
+  @@index([parentId])
+  @@map("messages")
 }
