@@ -12,7 +12,7 @@
 //  4. Return the correct redirect path for the caller
 // ============================================================
 
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentUser, invalidateUserCache } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { clerkClient } from "@clerk/nextjs/server";
 import { UserRole } from "@prisma/client";
@@ -54,6 +54,9 @@ export async function actionSelectRole(
     await client.users.updateUser(user.clerkId, {
       publicMetadata: { userRole: selectedRole },
     });
+
+    // 3. Bust session cache — next layout render re-reads from DB
+    await invalidateUserCache(user.clerkId);
 
     const redirectTo =
       selectedRole === "CA_FIRM_ADMIN"

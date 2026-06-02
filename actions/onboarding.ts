@@ -5,7 +5,8 @@
 // All actions verify auth + org scope before any DB write.
 // ============================================================
 
-import { getCurrentUser } from "@/lib/auth/session";
+import { auth } from "@clerk/nextjs/server";
+import { getCurrentUser, invalidateUserCache } from "@/lib/auth/session";
 import {
   saveOrganizationDetails,
   saveModuleSelection,
@@ -165,6 +166,8 @@ export async function actionSavePreferences(prefs: {
 
 // ---------------------------------------------------------------------------
 // Action: Complete Onboarding (Step 8)
+// After persisting, bust the user + tenant cache so the layout re-reads
+// from DB on the next request and sees onboardingCompleted = true.
 // ---------------------------------------------------------------------------
 export async function actionCompleteOnboarding(): Promise<OnboardingActionResult> {
   try {
@@ -180,6 +183,10 @@ export async function actionCompleteOnboarding(): Promise<OnboardingActionResult
       entityId: organizationId,
       description: "Completed onboarding wizard",
     });
+
+    // Bust cache so layout sees onboardingCompleted = true immediately
+    const { userId } = await auth();
+    if (userId) await invalidateUserCache(userId);
 
     return { success: true };
   } catch (err) {

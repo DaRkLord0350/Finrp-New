@@ -2,6 +2,11 @@
 // lib/auth/middleware.ts
 // Reusable API route guards.
 //
+// requireAuth()          — provision-or-read; safe for all routes
+// requireAuthReadOnly()  — read-only; throws 401 if user not provisioned yet
+//                          Use in high-traffic routes where provisioning
+//                          must not be triggered (analytics, dashboards, etc.)
+//
 // Usage:
 //   const { user, organizationId } = await requireAuth();
 //   await requirePermission("invoices.write");
@@ -9,18 +14,36 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "./session";
+import { getCurrentUser, readCurrentUser } from "./session";
 import { rolePermissions } from "./permissions";
 import { Role } from "@prisma/client";
 
 // ---------------------------------------------------------------------------
 // requireAuth
 // Returns the current user + their organizationId.
+// Auto-provisions if the user is not yet in DB (race-safe).
 // Throws a 401 NextResponse if not authenticated.
 // ---------------------------------------------------------------------------
 export async function requireAuth() {
   try {
     const user = await getCurrentUser();
+    return { user, organizationId: user.organizationId };
+  } catch {
+    throw NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// requireAuthReadOnly
+// Read-only variant — never creates data.
+// Use in layouts, high-throughput API routes, and analytics endpoints
+// where triggering provisioning would be unexpected or wasteful.
+// Returns 401 if the user is not yet in DB (they must complete onboarding).
+// ---------------------------------------------------------------------------
+export async function requireAuthReadOnly() {
+  try {
+    const user = await readCurrentUser();
+    if (!user) throw new Error("not provisioned");
     return { user, organizationId: user.organizationId };
   } catch {
     throw NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -71,11 +94,10 @@ export async function requireRole(roles: Role[]) {
 //
 // Usage:
 //   export const GET = withAuth(async (req, { user, organizationId }) => {
-//     ...
 //     return NextResponse.json({ ... });
 //   }, "invoices.read");
 // ---------------------------------------------------------------------------
-type AuthContext = { user: Awaited<ReturnType<typeof getCurrentUser>>; organizationId: string };
+type AuthContext  = { user: Awaited<ReturnType<typeof getCurrentUser>>; organizationId: string };
 type AuthHandler = (req: Request, ctx: AuthContext) => Promise<NextResponse>;
 
 export function withAuth(handler: AuthHandler, permission?: string) {
