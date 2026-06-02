@@ -9,13 +9,12 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const metadata = {
-  title: "FinRP — AI Financial Operations Platform",
+  title: "FinRP — CA Practice Management & Financial Operations Platform",
   description:
-    "FinRP unifies customer management, billing, compliance, inventory, and AI-powered analytics into one intelligent platform for modern businesses.",
+    "FinRP gives CA firms a complete practice management suite — client onboarding, compliance automation, document collection, and team workflows. Businesses get real-time visibility into filings, finances, and obligations.",
 };
 
 export default async function HomePage() {
-  // If already signed in, send to dashboard
   const { userId } = await auth();
   if (userId) {
     redirect("/dashboard");
@@ -48,7 +47,7 @@ export default async function HomePage() {
         }}
       >
         {/* Logo */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <div
             style={{
               width: 30,
@@ -77,31 +76,44 @@ export default async function HomePage() {
         </div>
 
         {/* Nav links */}
-        <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "clamp(12px, 2vw, 28px)" }}>
           <a
             href="#features"
             style={{
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: 500,
               color: "var(--text-secondary)",
               textDecoration: "none",
-              transition: "color 0.2s",
+              whiteSpace: "nowrap",
             }}
           >
             Features
           </a>
-          <Link
-            href="/sign-in"
+          <a
+            href="#workflow"
             style={{
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: 500,
               color: "var(--text-secondary)",
               textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            How It Works
+          </a>
+          <Link
+            href="/sign-in"
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              color: "var(--text-secondary)",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
             }}
           >
             Sign In
           </Link>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <ThemeToggle />
             <Link
               href="/sign-up"
@@ -116,6 +128,7 @@ export default async function HomePage() {
                 fontSize: 13,
                 fontWeight: 600,
                 textDecoration: "none",
+                whiteSpace: "nowrap",
               }}
             >
               Get Started
@@ -164,7 +177,7 @@ export default async function HomePage() {
           </span>
         </div>
         <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          © 2026 FinRP. All rights reserved.
+          © 2026 FinRP. CA Practice Management & Financial Operations.
         </p>
         <div style={{ display: "flex", gap: 20 }}>
           {["Privacy", "Terms", "Contact"].map((label) => (
