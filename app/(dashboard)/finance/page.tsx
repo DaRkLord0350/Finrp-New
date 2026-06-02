@@ -1,35 +1,31 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from "recharts";
 import { TrendingUp, DollarSign, Users, FileText, RefreshCw, ArrowRight } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 
-const CustomTooltip = ({ active, payload, label }: {
-  active?: boolean;
-  payload?: { name: string; value: number; color: string }[];
-  label?: string;
-}) => {
-  if (active && payload && payload.length) {
-    return (
-      <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-strong)", borderRadius: 10, padding: "10px 14px", boxShadow: "var(--shadow-md)" }}>
-        <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</p>
-        {payload.map((p, i) => (
-          <p key={i} style={{ fontSize: 13, fontWeight: 600, color: p.color || "var(--text-primary)", marginBottom: 2 }}>
-            {p.name}: ${Number(p.value).toLocaleString()}
-          </p>
-        ))}
-      </div>
-    );
-  }
-  return null;
-};
+const ChartPlaceholder = ({ height = 200 }: { height?: number }) => (
+  <div style={{ height, background: "var(--bg-elevated)", borderRadius: 10, animation: "skeletonPulse 1.5s ease-in-out infinite" }} />
+);
+
+const DynamicRevenueTrend = dynamic(
+  () => import("./FinanceCharts").then((m) => ({ default: m.RevenueTrendChart })),
+  { loading: () => <ChartPlaceholder height={240} />, ssr: false }
+);
+
+const DynamicInvoiceStatus = dynamic(
+  () => import("./FinanceCharts").then((m) => ({ default: m.InvoiceStatusChart })),
+  { loading: () => <ChartPlaceholder height={180} />, ssr: false }
+);
+
+const DynamicNetProfit = dynamic(
+  () => import("./FinanceCharts").then((m) => ({ default: m.NetProfitChart })),
+  { loading: () => <ChartPlaceholder height={200} />, ssr: false }
+);
 
 export default function FinancePage() {
   const router = useRouter();
@@ -106,21 +102,7 @@ export default function FinancePage() {
             <p className="section-subtitle">Monthly revenue for the last 7 months</p>
           </div>
           {(monthlyRevenue?.length ?? 0) > 0 ? (
-            <ResponsiveContainer width="100%" height={isMobile ? 180 : 240}>
-              <AreaChart data={netProfit}>
-                <defs>
-                  <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} width={40} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#6366f1" strokeWidth={2} fill="url(#revGrad)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <DynamicRevenueTrend data={netProfit} isMobile={isMobile} />
           ) : (
             <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>No invoice data yet</div>
           )}
@@ -131,16 +113,7 @@ export default function FinancePage() {
             <h3 className="section-title">Invoice Status</h3>
             <p className="section-subtitle">Payment distribution</p>
           </div>
-          <ResponsiveContainer width="100%" height={isMobile ? 140 : 180}>
-            <PieChart>
-              <Pie data={displayPaymentMix} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
-                {displayPaymentMix.map((entry, i) => (
-                  <Cell key={i} fill={entry.color} stroke="transparent" />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value) => [`${value}%`, ""]} contentStyle={{ background: "var(--bg-elevated)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--text-primary)", fontSize: 13 }} />
-            </PieChart>
-          </ResponsiveContainer>
+          <DynamicInvoiceStatus data={displayPaymentMix} isMobile={isMobile} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             {displayPaymentMix.map((d) => (
               <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -161,15 +134,7 @@ export default function FinancePage() {
             <p className="section-subtitle">Monthly profitability</p>
           </div>
           {netProfit.length > 0 ? (
-            <ResponsiveContainer width="100%" height={isMobile ? 160 : 200}>
-              <BarChart data={netProfit}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} width={40} />
-                <Tooltip formatter={(v) => [`$${Number(v).toLocaleString()}`, "Revenue"]} contentStyle={{ background: "var(--bg-elevated)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--text-primary)", fontSize: 13 }} />
-                <Bar dataKey="revenue" name="Revenue" fill="#10b981" radius={[5, 5, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <DynamicNetProfit data={netProfit} isMobile={isMobile} />
           ) : (
             <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>No data yet</div>
           )}
@@ -210,7 +175,10 @@ export default function FinancePage() {
         </motion.div>
       </div>
 
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes skeletonPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+      `}</style>
     </div>
   );
 }

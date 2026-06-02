@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import {
   DollarSign,
@@ -12,14 +13,19 @@ import {
   Clock,
   Package,
   RefreshCw,
-  TrendingUp,
-  TrendingDown,
 } from "lucide-react";
 import Link from "next/link";
 import StatCard from "@/components/StatCard";
-import RevenueChart from "@/components/RevenueChart";
 import { useDashboard } from "@/hooks/useDashboard";
 import { format } from "date-fns";
+
+// Lazy-load the chart — keeps recharts out of the dashboard initial bundle
+const RevenueChart = dynamic(() => import("@/components/RevenueChart"), {
+  loading: () => (
+    <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, minHeight: 310, animation: "skeletonPulse 1.5s ease-in-out infinite" }} />
+  ),
+  ssr: false,
+});
 
 const statusColors: Record<string, string> = {
   PAID: "bg-emerald-500/20 text-emerald-400",
@@ -47,7 +53,7 @@ function Skeleton({ width = "100%", height = 20 }: { width?: string | number; he
         height,
         borderRadius: 6,
         background: "var(--bg-elevated)",
-        animation: "pulse 1.5s ease-in-out infinite",
+        animation: "skeletonPulse 1.5s ease-in-out infinite",
       }}
     />
   );
@@ -474,12 +480,7 @@ export default function DashboardPage() {
         </motion.div>
       </div>
 
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-      `}</style>
+      {/* skeletonPulse and spin are defined in globals.css */}
     </div>
   );
 }

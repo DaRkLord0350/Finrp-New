@@ -1,10 +1,6 @@
 "use client";
 
-// ============================================================
-// useAnalytics — Fetch aggregated analytics from /api/analytics
-// ============================================================
-
-import { useState, useEffect, useCallback } from "react";
+import { useQuery, useQueryClient } from "@/lib/queryCache";
 
 export interface AnalyticsData {
   totalRevenue: number;
@@ -15,40 +11,33 @@ export interface AnalyticsData {
   totalCustomers: number;
   avgDealSize: number;
   monthlyRevenue: { month: string; revenue: number; invoices: number }[];
+  paymentMix?: { name: string; value: number; color: string }[];
+  topCustomers?: { name: string; revenue: number }[];
 }
 
-const DEFAULT_ANALYTICS: AnalyticsData = {
-  totalRevenue: 0,
-  revenueGrowth: 0,
-  totalInvoices: 0,
-  paidInvoices: 0,
-  overdueInvoices: 0,
-  totalCustomers: 0,
-  avgDealSize: 0,
-  monthlyRevenue: [],
+const DEFAULT: AnalyticsData = {
+  totalRevenue: 0, revenueGrowth: 0, totalInvoices: 0, paidInvoices: 0,
+  overdueInvoices: 0, totalCustomers: 0, avgDealSize: 0, monthlyRevenue: [],
 };
 
+async function fetchAnalytics(): Promise<AnalyticsData> {
+  const res = await fetch("/api/analytics");
+  if (!res.ok) throw new Error("Failed to fetch analytics");
+  return res.json();
+}
+
 export function useAnalytics() {
-  const [data, setData] = useState<AnalyticsData>(DEFAULT_ANALYTICS);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery<AnalyticsData>(
+    ["analytics"],
+    fetchAnalytics,
+    { staleTime: 5 * 60_000 }
+  );
 
-  const fetchAnalytics = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch("/api/analytics");
-      if (!res.ok) throw new Error("Failed to fetch analytics");
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
-
-  return { ...data, loading, error, refetch: fetchAnalytics };
+  return {
+    ...(data ?? DEFAULT),
+    loading: isLoading,
+    error: null as string | null,
+    refetch: () => qc.invalidate(["analytics"]),
+  };
 }

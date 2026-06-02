@@ -308,6 +308,7 @@ model Invoice {
   @@index([organizationId, status])
   @@index([organizationId, dueDate])
   @@index([organizationId, issueDate])
+  @@index([organizationId, createdAt])
   @@index([organizationId])
   @@index([customerId])
   @@map("invoices")
@@ -2108,6 +2109,8 @@ model ComplianceSubmission {
   @@index([organizationId, dueDate])
   @@index([organizationId, expiryDate])
   @@index([organizationId, deletedAt])
+  @@index([organizationId, deletedAt, status, dueDate])
+  @@index([organizationId, deletedAt, status, expiryDate])
   @@map("compliance_submissions")
 }
 
@@ -2163,6 +2166,7 @@ model ComplianceReminder {
 
   @@index([organizationId])
   @@index([reminderDate, isTriggered, isActive])
+  @@index([organizationId, isActive, isTriggered, reminderDate])
   @@map("compliance_reminders")
 }
 
@@ -2192,6 +2196,7 @@ model ComplianceDeadline {
 
   @@index([organizationId])
   @@index([deadlineDate, isCompleted])
+  @@index([organizationId, isCompleted, deadlineDate])
   @@map("compliance_deadlines")
 }
 

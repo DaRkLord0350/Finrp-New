@@ -10,15 +10,16 @@ const nextConfig: NextConfig = {
 
   // ── Experimental ──────────────────────────────────────────────────────────
   experimental: {
-    // Package-level tree-shaking for large icon libs and heavy Radix primitives.
-    // Reduces JS sent to the browser without any code changes.
+    // Package-level tree-shaking — reduces JS sent to the browser
     optimizePackageImports: [
       "lucide-react",
       "@radix-ui/react-icons",
       "framer-motion",
       "recharts",
       "date-fns",
+      "@tanstack/react-query",
     ],
+
   },
 
   // ── Server-side only packages (never bundle into client JS) ────────────────
