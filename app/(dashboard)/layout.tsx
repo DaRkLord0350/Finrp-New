@@ -24,15 +24,18 @@ export default async function DashboardLayout({
     redirect("/sign-in");
   }
 
-  // CA and ADMIN users belong in the CA portal
-  if (user.userRole === "CA" || user.userRole === "ADMIN") {
-    redirect("/ca");
-  }
+  // New users haven't selected a role yet → show role selection
+  if (!user.userRole) redirect("/onboarding/role");
+
+  // Route each role to its own portal
+  if (user.userRole === "ADMIN") redirect("/admin");
+  if (user.userRole === "CA_FIRM_ADMIN") redirect("/firm");
+  if (user.userRole === "CA") redirect("/ca");
 
   // Guard: redirect users who haven't completed onboarding
   const done = await isOnboardingComplete(user.organizationId);
   if (!done) {
-    redirect("/onboarding");
+    redirect("/onboarding/customer");
   }
 
   return <DashboardShell>{children}</DashboardShell>;

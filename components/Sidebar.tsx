@@ -13,8 +13,14 @@ import {
   Boxes,
   Zap,
   ChevronRight,
+  ChevronDown,
   X,
+  Landmark,
+  Scale,
+  Wallet,
+  Plug,
 } from "lucide-react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -27,6 +33,15 @@ const navItems = [
   { label: "AI Advisor", href: "/advisor", icon: Bot },
 ];
 
+const tredsSubItems = [
+  { label: "Dashboard",   href: "/customer/treds/dashboard",   icon: LayoutDashboard },
+  { label: "Invoices",    href: "/customer/treds/invoices",    icon: FileText },
+  { label: "Bids",        href: "/customer/treds/bids",        icon: Scale },
+  { label: "Settlements", href: "/customer/treds/settlements", icon: Wallet },
+  { label: "Reports",     href: "/customer/treds/reports",     icon: BarChart3 },
+  { label: "Integration", href: "/customer/treds/integration", icon: Plug },
+];
+
 interface SidebarProps {
   open?: boolean;
   onClose?: () => void;
@@ -34,6 +49,8 @@ interface SidebarProps {
 
 export default function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const inTreds = pathname.startsWith("/customer/treds");
+  const [tredsOpen, setTredsOpen] = useState(inTreds);
 
   return (
     <>
@@ -85,7 +102,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps) {
         </div>
 
         {/* Navigation */}
-        <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+        <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
           <p
             style={{
               fontSize: 10,
@@ -122,6 +139,87 @@ export default function Sidebar({ open = false, onClose }: SidebarProps) {
               </Link>
             );
           })}
+
+          {/* ── TReDS Section ────────────────────────── */}
+          <div style={{ marginTop: 4 }}>
+            <p
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "var(--text-muted)",
+                padding: "8px 12px 4px",
+              }}
+            >
+              Finance
+            </p>
+
+            {/* TReDS parent toggle */}
+            <button
+              className={cn("sidebar-nav-item", inTreds && "active")}
+              onClick={() => setTredsOpen((v) => !v)}
+              style={{ width: "100%", textAlign: "left" }}
+            >
+              <Landmark size={16} strokeWidth={1.75} />
+              <span>TReDS</span>
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
+                <span
+                  style={{
+                    fontSize: 9,
+                    background: "rgba(16,185,129,0.15)",
+                    color: "#10b981",
+                    padding: "1px 5px",
+                    borderRadius: 4,
+                    fontWeight: 700,
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  M1X
+                </span>
+                <ChevronDown
+                  size={12}
+                  style={{
+                    transform: tredsOpen ? "rotate(180deg)" : "rotate(0deg)",
+                    transition: "transform 0.2s ease",
+                    opacity: 0.6,
+                  }}
+                />
+              </div>
+            </button>
+
+            {/* TReDS sub-items */}
+            {tredsOpen && (
+              <div
+                style={{
+                  paddingLeft: 24,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1,
+                  marginTop: 2,
+                  borderLeft: "1px solid var(--border)",
+                  marginLeft: 20,
+                }}
+              >
+                {tredsSubItems.map((item) => {
+                  const active = pathname.startsWith(item.href);
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn("sidebar-nav-item", active && "active")}
+                      onClick={onClose}
+                      style={{ fontSize: 13, padding: "7px 10px" }}
+                    >
+                      <Icon size={13} strokeWidth={1.75} />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </nav>
 
         {/* Bottom */}

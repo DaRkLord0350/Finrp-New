@@ -18,14 +18,16 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Dashboard",          href: "/ca",             icon: LayoutDashboard, exact: true },
-  { label: "Clients",            href: "/ca/clients",     icon: Users },
-  { label: "Compliance Center",  href: "/ca/compliance",  icon: ShieldCheck },
-  { label: "Verification",       href: "/ca/verification",icon: CheckSquare },
-  { label: "Filing Queue",       href: "/ca/filings",     icon: ClipboardList },
-  { label: "Deadlines",          href: "/ca/deadlines",   icon: Calendar },
-  { label: "Messages",           href: "/ca/messages",    icon: MessageSquare },
-  { label: "Notifications",      href: "/ca/notifications",icon: Bell },
+  { label: "Dashboard",          href: "/ca",               icon: LayoutDashboard, exact: true },
+  { label: "My Customers",       href: "/ca/customers",     icon: Users },
+  { label: "My Tasks",           href: "/ca/tasks",         icon: ClipboardList },
+  { label: "Clients (Orgs)",     href: "/ca/clients",       icon: Users },
+  { label: "Compliance Center",  href: "/ca/compliance",    icon: ShieldCheck },
+  { label: "Documents",          href: "/ca/documents",     icon: CheckSquare },
+  { label: "Verification",       href: "/ca/verification",  icon: CheckSquare },
+  { label: "Deadlines",          href: "/ca/deadlines",     icon: Calendar },
+  { label: "Messages",           href: "/ca/messages",      icon: MessageSquare },
+  { label: "Notifications",      href: "/ca/notifications", icon: Bell },
 ];
 
 interface CASidebarProps {
