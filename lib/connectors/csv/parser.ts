@@ -137,20 +137,47 @@ function inferColumnType(values: string[]): ColumnStats["inferredType"] {
 // Suggest field mappings based on header name similarity
 // ---------------------------------------------------------------------------
 const FIELD_SYNONYMS: Record<string, string[]> = {
-  name: ["name", "full_name", "fullname", "customer_name", "company_name", "contact_name", "client_name"],
+  // Common
+  name: ["name", "full_name", "fullname", "customer_name", "company_name", "contact_name", "client_name", "firm_name"],
   email: ["email", "email_address", "e-mail", "mail"],
   phone: ["phone", "mobile", "contact", "phone_number", "mobile_number", "cell"],
   address: ["address", "street", "street_address", "billing_address"],
   city: ["city", "town", "locality"],
   state: ["state", "province", "region"],
   country: ["country", "nation"],
+  // Financial / Customer
   gstin: ["gstin", "gst", "gst_number", "gstn", "tax_id", "taxid"],
+  pan: ["pan", "pan_number", "permanent_account"],
+  company: ["company", "organization", "org_name", "business_name"],
+  customerCode: ["customer_code", "customer_id", "cust_code", "cust_id", "client_code"],
+  customerType: ["customer_type", "type", "business_type", "client_type"],
+  notes: ["notes", "remarks", "comment", "description", "narration"],
+  tags: ["tags", "labels", "categories", "category"],
+  // Invoice
   invoiceNumber: ["invoice_no", "invoice_number", "inv_no", "invoice#", "bill_no"],
+  issueDate: ["issue_date", "invoice_date", "date", "bill_date"],
   dueDate: ["due_date", "payment_due", "due", "paymentdue"],
-  amount: ["amount", "total", "grand_total", "net_amount"],
-  sku: ["sku", "item_code", "product_code", "part_no"],
+  total: ["amount", "total", "grand_total", "net_amount", "invoice_total"],
+  subtotal: ["subtotal", "sub_total", "net", "net_amount"],
+  taxAmount: ["tax", "tax_amount", "gst_amount", "vat"],
+  currency: ["currency", "currency_code"],
+  // Product
+  sku: ["sku", "item_code", "product_code", "part_no", "hsn"],
   quantity: ["qty", "quantity", "units"],
-  price: ["price", "unit_price", "rate", "cost", "selling_price"],
+  sellingPrice: ["price", "unit_price", "rate", "selling_price", "mrp"],
+  costPrice: ["cost", "cost_price", "purchase_price"],
+  // CA-specific
+  caEmail: ["ca_email", "assigned_ca", "ca_email_address", "accountant_email"],
+  assignedCaEmail: ["assigned_ca_email", "ca_email", "accountant_email", "advisor_email"],
+  icaiNumber: ["icai_number", "icai_reg", "registration_number", "icai", "ca_reg_no"],
+  firmRegistrationNumber: ["firm_registration_number", "firm_reg", "firm_registration", "icai_firm_no"],
+  registrationNumber: ["registration_number", "reg_no", "firm_reg_no", "icai_number"],
+  designation: ["designation", "title", "job_title", "position", "role"],
+  specialization: ["specialization", "expertise", "services", "area_of_practice"],
+  serviceType: ["service_type", "service", "filing_type", "work_type"],
+  startDate: ["start_date", "from_date", "engagement_start"],
+  endDate: ["end_date", "to_date", "engagement_end"],
+  priority: ["priority", "urgency", "importance"],
 };
 
 export function suggestMappings(headers: string[]): Record<string, string> {

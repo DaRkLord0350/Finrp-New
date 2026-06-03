@@ -1729,6 +1729,10 @@ model ImportJob {
   duplicateRows  Int          @default(0)
   startedAt      DateTime?
   completedAt    DateTime?
+  queuedAt       DateTime?    // set when BullMQ job is confirmed in Redis
+  failedAt       DateTime?    // set when status → FAILED
+  lastHeartbeatAt DateTime?   // worker updates this every 10 s — detect crashes
+  retryCount     Int          @default(0)
   uploadedById   String
   fieldMapping   Json?        // saved column → field mappings
   options        Json?        // { skipDuplicates, updateExisting, dryRun }
@@ -1745,6 +1749,9 @@ model ImportJob {
 
   @@index([organizationId, status])
   @@index([organizationId, entity])
+  @@index([status])
+  @@index([bullmqJobId])
+  @@index([createdAt])
   @@map("import_jobs")
 }
 
@@ -1764,10 +1771,15 @@ enum ImportEntity {
   EXPENSES
   PAYMENTS
   LEADS
+  CA_USERS
+  FIRMS
+  ASSIGNMENTS
+  MASTER_IMPORT
 }
 
 enum ImportStatus {
   PENDING
+  QUEUED
   MAPPING
   VALIDATING
   PROCESSING

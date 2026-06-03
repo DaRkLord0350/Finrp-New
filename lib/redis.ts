@@ -24,6 +24,7 @@ const isTLS     = REDIS_URL.startsWith("rediss://");
 function parseUrl(url: string): {
   host: string;
   port: number;
+  username?: string;
   password?: string;
   db?: number;
 } {
@@ -32,6 +33,10 @@ function parseUrl(url: string): {
     return {
       host:     u.hostname || "localhost",
       port:     parseInt(u.port || (isTLS ? "6380" : "6379"), 10),
+      // username is required for Redis 6 ACL auth (Upstash, Railway, etc.)
+      // Without it, BullMQ sends `AUTH password` instead of `AUTH username password`
+      // and some providers reject the password-only form.
+      ...(u.username ? { username: u.username } : {}),
       password: u.password || undefined,
       db:       u.pathname && u.pathname !== "/"
         ? parseInt(u.pathname.slice(1), 10) || undefined

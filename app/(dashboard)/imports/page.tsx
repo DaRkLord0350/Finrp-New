@@ -40,6 +40,7 @@ function statusBadge(status: ImportStatus) {
     PARTIAL: { icon: AlertCircle, className: "text-amber-600 border-amber-200 bg-amber-50", label: "Partial" },
     FAILED: { icon: XCircle, className: "text-destructive border-destructive/30", label: "Failed" },
     PROCESSING: { icon: RefreshCw, className: "text-blue-600 border-blue-200 bg-blue-50", label: "Processing" },
+    QUEUED: { icon: Clock, className: "text-indigo-600 border-indigo-200 bg-indigo-50", label: "Queued" },
     PENDING: { icon: Clock, className: "text-muted-foreground", label: "Pending" },
     MAPPING: { icon: Clock, className: "text-purple-600 border-purple-200 bg-purple-50", label: "Awaiting Mapping" },
     VALIDATING: { icon: RefreshCw, className: "text-blue-600 border-blue-200 bg-blue-50", label: "Validating" },

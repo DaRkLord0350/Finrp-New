@@ -61,7 +61,7 @@ function makePrismaClient(): PrismaClient {
     adapter: new PrismaPg(getPool()),
     log:
       process.env.NODE_ENV === "development"
-        ? ["query", "error", "warn"]
+        ? ["error", "warn"]
         : ["error"],
   });
 
