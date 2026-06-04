@@ -1,0 +1,20 @@
+customer_code,customer_name,email,phone,gst_number,pan_number,address,city,state,country,pincode,industry,status
+CUS001,ABC Industries,contact@abc.com,9876543210,29ABCDE1234F1Z5,ABCDE1234F,MG Road,Bangalore,Karnataka,India,560001,Manufacturing,Active
+CUS002,Amit Kumar,amit.kumar@gmail.com,9822222222,,,HSR Layout,Bangalore,Karnataka,India,560102,Individual,Deactive
+CUS003,TechStart Pvt Ltd,hello@techstart.in,9833333333,27ABCDE5678G1Z3,ABCDE5678G,Bandra Kurla Complex,Mumbai,Maharashtra,India,400051,Technology,Active
+CUS001,ABC Industries,contact@abc.com,9876543210,29ABCDE1234F1Z5,ABCDE1234F,MG Road,Bangalore,Karnataka,India,560001,Manufacturing,Deactive
+CUS004,Global Traders Pvt Ltd,info@globaltraders.com,9844444444,07AABCG1234H1Z2,AABCG1234H,Connaught Place,New Delhi,Delhi,India,110001,Trading,Active
+CUS005,Sunrise Retail,sales@sunriseretail.in,9855555555,24AAACS5678J1Z4,AAACS5678J,CG Road,Ahmedabad,Gujarat,India,380009,Retail,Active
+CUS006,GreenLeaf Organics,contact@greenleaf.in,9866666666,32AACCG7890K1Z5,AACCG7890K,Kakkanad,Kochi,Kerala,India,682030,Agriculture,Deactive
+CUS007,BlueWave Solutions,admin@bluewave.com,9877777777,19AACCB4567L1Z6,AACCB4567L,Salt Lake,Kolkata,West Bengal,India,700091,IT Services,Active
+CUS008,Royal Constructions,projects@royalconstructions.in,9888888888,36AACCR2345M1Z7,AACCR2345M,Banjara Hills,Hyderabad,Telangana,India,500034,Construction,Active
+CUS009,Prime Logistics,operations@primelogistics.com,9899999999,29AACCP6789N1Z8,AACCP6789N,Whitefield,Bangalore,Karnataka,India,560066,Logistics,Deactive
+CUS010,Ocean Exports,exports@oceanexports.in,9811111111,33AACCO3456P1Z9,AACCO3456P,Anna Nagar,Chennai,Tamil Nadu,India,600040,Export,Active
+CUS011,Nexa Healthcare,care@nexahealth.com,9821212121,27AACCN9876Q1Z1,AACCN9876Q,Hinjewadi,Pune,Maharashtra,India,411057,Healthcare,Active
+CUS012,Elite Foods Pvt Ltd,orders@elitefoods.in,9831313131,06AACCE6543R1Z2,AACCE6543R,Sector 17,Gurugram,Haryana,India,122001,Food Processing,Active
+CUS013,Vertex Engineering,info@vertexengg.com,9841414141,23AACCV3210S1Z3,AACCV3210S,Vijay Nagar,Indore,Madhya Pradesh,India,452010,Engineering,Deactive
+CUS014,Spark Digital Media,hello@sparkdigital.in,9851515151,29AACCS7891T1Z4,AACCS7891T,Indiranagar,Bangalore,Karnataka,India,560038,Marketing,Active
+CUS015,Horizon Education Services,support@horizonedu.com,9861616161,09AACCH4562U1Z5,AACCH4562U,Gomti Nagar,Lucknow,Uttar Pradesh,India,226010,Education,Active
+CUS016,Metro Automobiles,sales@metroauto.in,9871717171,24AACCM1233V1Z6,AACCM1233V,Satellite,Ahmedabad,Gujarat,India,380015,Automobile,Deactive
+CUS017,FinEdge Consultants,contact@finedge.in,9881818181,27AACCF5674W1Z7,AACCF5674W,Viman Nagar,Pune,Maharashtra,India,411014,Consulting,Active
+CUS018,NorthStar Energy,info@northstarenergy.com,9891919191,03AACCN8905X1Z8,AACCN8905X,Industrial Area,Chandigarh,Chandigarh,India,160002,Energy,Active

@@ -236,12 +236,17 @@ export default function ZohoIntegrationPage() {
     if (selectedModules.length === 0) return;
     setIsConnecting(true);
 
+    // Build ?crm=true&books=true&... from selected module types (ZOHO_CRM → crm)
+    const moduleQuery = selectedModules
+      .map((m) => `${m.replace("ZOHO_", "").toLowerCase()}=true`)
+      .join("&");
+
     try {
       const moduleType = selectedModules[0];
       const existing = existingIntegrations.find((i) => i.type === moduleType);
 
       if (existing) {
-        window.location.href = `/api/oauth/zoho?integrationId=${existing.id}&dataCenter=${dataCenter}`;
+        window.location.href = `/api/oauth/zoho?integrationId=${existing.id}&dataCenter=${dataCenter}&${moduleQuery}`;
         return;
       }
 
@@ -261,7 +266,7 @@ export default function ZohoIntegrationPage() {
           const all = await fetch("/api/integrations").then((r) => r.json()) as ZohoIntegration[];
           const found = all.find((i: ZohoIntegration) => i.type === moduleType);
           if (found) {
-            window.location.href = `/api/oauth/zoho?integrationId=${found.id}&dataCenter=${dataCenter}`;
+            window.location.href = `/api/oauth/zoho?integrationId=${found.id}&dataCenter=${dataCenter}&${moduleQuery}`;
             return;
           }
         }
@@ -269,7 +274,7 @@ export default function ZohoIntegrationPage() {
       }
 
       const integration = await res.json() as ZohoIntegration;
-      window.location.href = `/api/oauth/zoho?integrationId=${integration.id}&dataCenter=${dataCenter}`;
+      window.location.href = `/api/oauth/zoho?integrationId=${integration.id}&dataCenter=${dataCenter}&${moduleQuery}`;
     } catch (err) {
       console.error("Connect failed:", err);
     } finally {

@@ -15,8 +15,9 @@
 
 import IORedis from "ioredis";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
-const isTLS     = REDIS_URL.startsWith("rediss://");
+const REDIS_URL = process.env.REDIS_URL;
+const effectiveRedisUrl = REDIS_URL || "redis://localhost:6379";
+const isTLS     = effectiveRedisUrl.startsWith("rediss://");
 
 // ---------------------------------------------------------------------------
 // Parse URL → plain options (needed for BullMQ which won't accept a URL string)
@@ -47,7 +48,7 @@ function parseUrl(url: string): {
   }
 }
 
-const parsed = parseUrl(REDIS_URL);
+const parsed = parseUrl(effectiveRedisUrl);
 
 // ---------------------------------------------------------------------------
 // BullMQ connection options — plain object, no ioredis instance.
@@ -114,7 +115,7 @@ let _cacheClient: IORedis | null = null;
 export function getCacheClient(): IORedis {
   if (_cacheClient) return _cacheClient;
 
-  _cacheClient = new IORedis(REDIS_URL, {
+  _cacheClient = new IORedis(effectiveRedisUrl, {
     // ── Fail-fast settings ──────────────────────────────────────────────────
     maxRetriesPerRequest: 0,      // never retry a command; throw immediately
     enableReadyCheck:     false,  // don't wait for READYCHECK handshake

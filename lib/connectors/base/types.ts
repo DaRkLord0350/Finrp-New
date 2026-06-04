@@ -156,6 +156,11 @@ export interface ZohoConfig {
   clientId: string;
   clientSecret: string;
   accountId?: string;
+  modules?: {
+    crm: boolean;
+    books: boolean;
+    inventory: boolean;
+  };
 }
 
 export interface OdooConfig {

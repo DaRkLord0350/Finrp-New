@@ -88,12 +88,19 @@ export async function fetchCRMContacts(params: {
 }): Promise<{ contacts: ZohoCRMContact[]; hasMore: boolean; nextPage: number }> {
   const { integrationId, dataCenter, page = 1, perPage = 200, modifiedAfter } = params;
 
+  console.log("[ZOHO] fetchCRMContacts called");
+  console.log("[ZOHO] fetchCRMContacts", {
+    page,
+    perPage,
+    modifiedAfter,
+  });
   const queryParams: Record<string, string | number> = {
     page,
     per_page: perPage,
     sort_by: "Modified_Time",
     sort_order: "asc",
-  };
+    fields:"id,First_Name,Last_Name,Email,Phone,Account_Name,Mailing_Street,Mailing_City,Mailing_State,Mailing_Country,Modified_Time,Created_Time",
+};
 
   if (modifiedAfter) {
     queryParams.if_modified_since = modifiedAfter;
@@ -105,6 +112,10 @@ export async function fetchCRMContacts(params: {
     path: "/crm/v7/Contacts",
     params: queryParams,
   });
+  console.log("[ZOHO] CRM response", {
+      records: resp.data?.length ?? 0,
+      hasMore: resp.info?.more_records,
+    });
 
   return {
     contacts: resp.data ?? [],
@@ -123,14 +134,19 @@ export async function fetchAllCRMContacts(params: {
   const all: ZohoCRMContact[] = [];
   let page = 1;
   let hasMore = true;
-
+  
   while (hasMore) {
     const result = await fetchCRMContacts({ ...params, page });
     all.push(...result.contacts);
     params.onPage?.(result.contacts, page);
     hasMore = result.hasMore;
     page = result.nextPage;
-
+    console.log("[ZOHO] Page fetched", {
+      page,
+      contacts: result.contacts.length,
+    });
+    
+    
     if (!hasMore) break;
     await delay(200); // Rate limit: 200ms between pages
   }
@@ -228,7 +244,10 @@ export async function fetchBooksInvoices(params: {
   status?: string;
 }): Promise<{ invoices: ZohoBooksInvoice[]; hasMore: boolean }> {
   const { integrationId, dataCenter, accountId, page = 1, modifiedAfter, status } = params;
-
+  console.log({
+    accountId,
+    endpoint: "/books/v3/invoices",
+  });
   const queryParams: Record<string, string | number> = {
     organization_id: accountId,
     page,
@@ -279,7 +298,10 @@ export async function fetchInventoryItems(params: {
   modifiedAfter?: string;
 }): Promise<{ items: ZohoInventoryItem[]; hasMore: boolean }> {
   const { integrationId, dataCenter, accountId, page = 1, modifiedAfter } = params;
-
+  console.log({
+    accountId,
+    endpoint: "/inventory/v1/items",
+  });
   const queryParams: Record<string, string | number> = {
     organization_id: accountId,
     page,
@@ -316,6 +338,8 @@ export async function testZohoConnection(params: {
       dataCenter: params.dataCenter,
       path: "/crm/v7/org",
     });
+    console.log("[ZOHO] contacts returned", resp.data?.length);
+    console.log("[ZOHO] raw response", JSON.stringify(resp).slice(0, 1000));
 
     const latencyMs = Date.now() - start;
     const orgData = resp as unknown as { org?: Array<{ company_name?: string }> };
