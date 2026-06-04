@@ -50,7 +50,7 @@ async function recoverStuckQueued(): Promise<void> {
   // for pre-migration records).
   const stuck = await (prisma as any).importJob.findMany({
     where: {
-      status: "Pending",
+      status: "PENDING",
       updatedAt: { lt: cutoff },
     },
     select: {
