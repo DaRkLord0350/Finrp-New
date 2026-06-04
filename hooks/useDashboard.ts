@@ -1,10 +1,6 @@
 "use client";
 
-// ============================================================
-// useDashboard — Fetch aggregated dashboard stats from DB
-// ============================================================
-
-import { useState, useEffect, useCallback } from "react";
+import { useQuery, useQueryClient } from "@/lib/queryCache";
 
 export interface DashboardStats {
   totalRevenue: number;
@@ -53,46 +49,32 @@ export interface DashboardData {
 }
 
 const DEFAULT_STATS: DashboardStats = {
-  totalRevenue: 0,
-  revenueGrowth: 0,
-  activeCustomers: 0,
-  invoicesSentThisMonth: 0,
-  overdueInvoices: 0,
-  totalInvoices: 0,
+  totalRevenue: 0, revenueGrowth: 0, activeCustomers: 0,
+  invoicesSentThisMonth: 0, overdueInvoices: 0, totalInvoices: 0,
 };
 
+async function fetchDashboard(): Promise<DashboardData> {
+  const res = await fetch("/api/dashboard");
+  if (!res.ok) throw new Error("Failed to load dashboard data");
+  return res.json();
+}
+
 export function useDashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchDashboard = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch("/api/dashboard");
-      if (!res.ok) throw new Error("Failed to load dashboard data");
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchDashboard();
-  }, [fetchDashboard]);
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery<DashboardData>(
+    ["dashboard"],
+    fetchDashboard,
+    { staleTime: 60_000 }
+  );
 
   return {
-    stats: data?.stats ?? DEFAULT_STATS,
-    recentInvoices: data?.recentInvoices ?? [],
+    stats:           data?.stats           ?? DEFAULT_STATS,
+    recentInvoices:  data?.recentInvoices  ?? [],
     complianceTasks: data?.complianceTasks ?? [],
-    lowStockItems: data?.lowStockItems ?? [],
-    monthlyRevenue: data?.monthlyRevenue ?? [],
-    loading,
-    error,
-    refetch: fetchDashboard,
+    lowStockItems:   data?.lowStockItems   ?? [],
+    monthlyRevenue:  data?.monthlyRevenue  ?? [],
+    loading:         isLoading,
+    error:           null as string | null,
+    refetch:         () => qc.invalidate(["dashboard"]),
   };
 }

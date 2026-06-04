@@ -26,6 +26,10 @@ import {
   CUSTOMER_TARGET_FIELDS,
   INVOICE_TARGET_FIELDS,
   PRODUCT_TARGET_FIELDS,
+  CA_USER_TARGET_FIELDS,
+  FIRM_TARGET_FIELDS,
+  ASSIGNMENT_TARGET_FIELDS,
+  MASTER_IMPORT_TARGET_FIELDS,
   buildDefaultRules,
 } from "@/lib/mapping/engine";
 
@@ -40,6 +44,10 @@ const ENTITY_TARGET_FIELDS: Record<string, TargetField[]> = {
   VENDORS: CUSTOMER_TARGET_FIELDS,
   INVOICES: INVOICE_TARGET_FIELDS,
   PRODUCTS: PRODUCT_TARGET_FIELDS,
+  CA_USERS: CA_USER_TARGET_FIELDS,
+  FIRMS: FIRM_TARGET_FIELDS,
+  ASSIGNMENTS: ASSIGNMENT_TARGET_FIELDS,
+  MASTER_IMPORT: MASTER_IMPORT_TARGET_FIELDS,
   EMPLOYEES: [
     { field: "name", label: "Full Name", required: true },
     { field: "email", label: "Work Email", required: false },
@@ -291,6 +299,12 @@ export function ColumnMapper({
                   sourceHeaders.filter((h) => mapping[h]),
                   targetFieldOptions,
                   mapping
+                );
+                console.log(
+                  "[COLUMNMAPPER] rules",
+                  rules,
+                  Array.isArray(rules),
+                  rules?.length
                 );
                 onSave(rules);
               }}

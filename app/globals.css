@@ -393,6 +393,16 @@ body {
   0%, 100% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.1); }
   50% { box-shadow: 0 0 40px rgba(99, 102, 241, 0.25); }
 }
+/* Shared skeleton pulse — used by every loading.tsx */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+/* Shared spin — used across pages */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 .animate-fade-in {
   animation: fadeIn 0.4s ease forwards;

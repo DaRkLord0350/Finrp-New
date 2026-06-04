@@ -33,7 +33,7 @@ export async function GET(request: Request) {
 
   const where = {
     organizationId: user.organizationId,
-    ...(status && { status: status as "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "PARTIAL" }),
+    ...(status && { status: status as "PENDING" | "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED" | "PARTIAL" | "MAPPING" }),
     ...(entity && { entity: entity as ImportEntity }),
   };
 
@@ -98,6 +98,7 @@ export async function POST(request: Request) {
   const validEntities: ImportEntity[] = [
     "CUSTOMERS", "VENDORS", "INVOICES", "PRODUCTS",
     "EMPLOYEES", "EXPENSES", "PAYMENTS", "LEADS",
+    "CA_USERS", "FIRMS", "ASSIGNMENTS", "MASTER_IMPORT",
   ];
   const entity = entityRaw.toUpperCase() as ImportEntity;
 
@@ -182,9 +183,12 @@ export async function POST(request: Request) {
       options: { skipDuplicates: true, updateExisting: true, dryRun: false },
     });
 
+    // Persist the BullMQ job ID AND advance status to QUEUED.
+    // Without status: "QUEUED", the job stays PENDING indefinitely even though
+    // it is already in the Redis queue and the worker may start at any moment.
     await (prisma as any).importJob.update({
       where: { id: importJob.id },
-      data: { bullmqJobId },
+      data: { bullmqJobId, status: "QUEUED" },
     });
   }
 

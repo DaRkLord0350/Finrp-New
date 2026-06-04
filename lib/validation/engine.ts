@@ -21,7 +21,7 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}.*)?$/;
 // Entity-specific schemas
 // ---------------------------------------------------------------------------
 
-type Entity = "customer" | "invoice" | "product" | "employee";
+type Entity = "customer" | "invoice" | "product" | "employee" | "ca_user" | "firm" | "assignment" | "master_import";
 
 interface FieldRule {
   field: string;
@@ -193,11 +193,94 @@ const EMPLOYEE_RULES: FieldRule[] = [
   },
 ];
 
+const CA_USER_RULES: FieldRule[] = [
+  { field: "name", required: true, minLength: 2, maxLength: 200 },
+  {
+    field: "email",
+    required: true,
+    pattern: EMAIL_RE,
+    patternMessage: "Invalid email format",
+  },
+  {
+    field: "phone",
+    pattern: PHONE_RE,
+    patternMessage: "Invalid phone number format",
+  },
+];
+
+const FIRM_RULES: FieldRule[] = [
+  { field: "name", required: true, minLength: 2, maxLength: 200 },
+  {
+    field: "email",
+    pattern: EMAIL_RE,
+    patternMessage: "Invalid email format",
+  },
+];
+
+const ASSIGNMENT_RULES: FieldRule[] = [
+  {
+    field: "caEmail",
+    required: true,
+    pattern: EMAIL_RE,
+    patternMessage: "CA Email must be a valid email",
+  },
+  {
+    field: "customerEmail",
+    pattern: EMAIL_RE,
+    patternMessage: "Customer Email must be a valid email",
+    validate: (val, record) => {
+      if (!val && !record["customerCode"]) {
+        return error("customerEmail", "CUSTOMER_REF_MISSING", "Either customer_email or customer_code must be provided", val);
+      }
+      return null;
+    },
+  },
+  {
+    field: "startDate",
+    isDate: true,
+  },
+];
+
+const MASTER_IMPORT_RULES: FieldRule[] = [
+  { field: "name", required: true, minLength: 2, maxLength: 200 },
+  {
+    field: "email",
+    pattern: EMAIL_RE,
+    patternMessage: "Invalid email format",
+    warnIfMissing: true,
+  },
+  {
+    field: "gstin",
+    pattern: GSTIN_RE,
+    patternMessage: "Invalid GSTIN format",
+    validate: (val) => {
+      if (!val) return null;
+      const str = String(val).toUpperCase().trim();
+      if (!GSTIN_RE.test(str)) {
+        return error("gstin", "INVALID_GSTIN", `GSTIN "${str}" is not valid`, val);
+      }
+      if (!validateGstinChecksum(str)) {
+        return error("gstin", "GSTIN_CHECKSUM_FAIL", `GSTIN "${str}" failed checksum validation`, val);
+      }
+      return null;
+    },
+  },
+  {
+    field: "assignedCaEmail",
+    pattern: EMAIL_RE,
+    patternMessage: "Assigned CA email must be a valid email address",
+  },
+];
+
 const ENTITY_RULES: Record<Entity, FieldRule[]> = {
   customer: CUSTOMER_RULES,
   invoice: INVOICE_RULES,
   product: PRODUCT_RULES,
   employee: EMPLOYEE_RULES,
+  ca_user: CA_USER_RULES,
+  firm: FIRM_RULES,
+  assignment: ASSIGNMENT_RULES,
+  master_import: MASTER_IMPORT_RULES,
 };
 
 // ---------------------------------------------------------------------------
@@ -283,7 +366,7 @@ export class ValidationEngine {
     }
 
     // Entity-level suggestions
-    if (entity === "customer") {
+    if (entity === "customer" || entity === "master_import") {
       if (!record["email"] && !record["phone"]) {
         suggestions.push("Consider providing at least an email or phone for contact purposes");
       }
@@ -295,6 +378,18 @@ export class ValidationEngine {
     if (entity === "invoice") {
       if (!record["lineItems"] || (record["lineItems"] as unknown[]).length === 0) {
         suggestions.push("Invoice has no line items — consider adding product/service details");
+      }
+    }
+
+    if (entity === "ca_user") {
+      if (!record["icaiNumber"]) {
+        suggestions.push("Consider providing the ICAI registration number for CA users");
+      }
+    }
+
+    if (entity === "assignment") {
+      if (!record["serviceType"]) {
+        suggestions.push("Specify a service type (e.g. GST Filing, ITR, Audit) for better tracking");
       }
     }
 
@@ -422,9 +517,27 @@ function getDeduplicationKey(
         null
       );
     case "employee":
+    case "ca_user":
       return (
         (record["email"] as string | undefined)?.toLowerCase().trim() ||
-        (record["externalId"] as string | undefined)?.trim() ||
+        null
+      );
+    case "firm":
+      return (
+        (record["registrationNumber"] as string | undefined)?.toUpperCase().trim() ||
+        (record["name"] as string | undefined)?.toLowerCase().trim() ||
+        null
+      );
+    case "assignment":
+      return [
+        (record["caEmail"] as string | undefined)?.toLowerCase().trim() ?? "",
+        (record["customerEmail"] as string | undefined)?.toLowerCase().trim() ??
+          (record["customerCode"] as string | undefined)?.trim() ?? "",
+      ].join("|") || null;
+    case "master_import":
+      return (
+        (record["email"] as string | undefined)?.toLowerCase().trim() ||
+        (record["customerCode"] as string | undefined)?.trim() ||
         null
       );
     default:
@@ -434,10 +547,14 @@ function getDeduplicationKey(
 
 function getDeduplicationField(entity: Entity): string {
   switch (entity) {
-    case "customer": return "email";
+    case "customer":
+    case "master_import": return "email";
     case "invoice": return "invoiceNumber";
     case "product": return "sku";
-    case "employee": return "email";
+    case "employee":
+    case "ca_user": return "email";
+    case "firm": return "registrationNumber";
+    case "assignment": return "caEmail";
     default: return "id";
   }
 }

@@ -1,6 +1,13 @@
 // ============================================================
 // GET /api/imports/[id]/progress — SSE real-time progress stream
-// Uses Server-Sent Events to push job progress updates.
+//
+// Dead-job detection (closes stream + emits "stuck" event):
+//   MAPPING    > 90 s  → "Import never entered the queue"
+//   QUEUED     > 5 min → "Worker never picked up the job"
+//   PROCESSING with stale heartbeat (>5 min) → "Worker heartbeat missing"
+//
+// The stream has a 10-minute hard cap. On terminal status it closes
+// after 600 ms to let the client read the final event.
 // ============================================================
 
 import { auth } from "@clerk/nextjs/server";
@@ -10,110 +17,191 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const TERMINAL_STATUSES      = new Set(["COMPLETED", "FAILED", "PARTIAL", "CANCELLED"]);
+const MAPPING_STUCK_MS       = 90_000;          // 90 s
+const QUEUED_STUCK_MS        = 5  * 60 * 1000;  // 5 min
+const PROCESSING_STUCK_MS    = 5  * 60 * 1000;  // 5 min heartbeat gap
+const HARD_LIMIT_MS          = 10 * 60 * 1000;  // 10 min absolute max
+const POLL_INTERVAL_MS       = 1_500;
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   const { userId } = await auth();
+
   if (!userId) {
     return new Response("Unauthorized", { status: 401 });
   }
 
   const user = await getCurrentUser();
 
-  // Verify the import job belongs to this org
-  const importJob = await (prisma as any).importJob.findFirst({
+  const initial = await (prisma as any).importJob.findFirst({
     where: { id, organizationId: user.organizationId },
+    select: { id: true },
   });
 
-  if (!importJob) {
-    return new Response("Not found", { status: 404 });
+  if (!initial) {
+    return new Response("Import job not found", { status: 404 });
   }
 
-  // Set up SSE stream
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
       const send = (data: Record<string, unknown>) => {
-        const payload = `data: ${JSON.stringify(data)}\n\n`;
         try {
-          controller.enqueue(encoder.encode(payload));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         } catch {
-          // Client disconnected
+          // Client disconnected — next poll will detect closed controller
         }
       };
 
-      // Send initial state
-      send(await buildProgressPayload(id, user.organizationId));
+      // Emit initial state immediately
+      send(await buildPayload(id, user.organizationId));
 
-      // Poll every 1.5 seconds until done
-      const maxDuration = 5 * 60 * 1000; // 5 minutes
       const startTime = Date.now();
-      const interval = 1500;
 
       const poll = async () => {
-        if (Date.now() - startTime > maxDuration) {
-          send({ type: "timeout", message: "Polling timed out" });
-          controller.close();
+        if (Date.now() - startTime > HARD_LIMIT_MS) {
+          send({
+            type: "timeout",
+            message: "Progress stream closed after 10 minutes. Reload the page to reconnect.",
+          });
+          safeClose(controller);
           return;
         }
 
-        const payload = await buildProgressPayload(id, user.organizationId);
+        const payload = await buildPayload(id, user.organizationId);
         send(payload);
 
-        if (["COMPLETED", "FAILED", "PARTIAL", "CANCELLED"].includes(payload.status as string)) {
-          // Final state — close stream
-          setTimeout(() => {
-            try { controller.close(); } catch { /* already closed */ }
-          }, 600);
+        const status = payload.status as string;
+
+        // Terminal — close after brief delay so client reads the event
+        if (TERMINAL_STATUSES.has(status)) {
+          setTimeout(() => safeClose(controller), 600);
           return;
         }
 
-        setTimeout(poll, interval);
+        // ── Dead-job detection ──────────────────────────────────────────────
+
+        const now = Date.now();
+
+        if (status === "MAPPING") {
+          const updatedAt = payload.updatedAt as string | null;
+          const stuckMs = updatedAt ? now - new Date(updatedAt).getTime() : 0;
+          if (stuckMs > MAPPING_STUCK_MS) {
+            send({
+              type: "stuck",
+              status,
+              stuckForMs: stuckMs,
+              reason: "Import never entered the queue",
+              message:
+                `Import has been in MAPPING for ${Math.round(stuckMs / 1000)}s. ` +
+                `The mapping POST likely failed silently or Redis was unavailable. ` +
+                `Go back to the Map step and resubmit.`,
+              action: "retry_mapping",
+            });
+            safeClose(controller);
+            return;
+          }
+        }
+
+        if (status === "QUEUED" || status === "PENDING") {
+          const queuedAt = payload.queuedAt as string | null;
+          const updatedAt = payload.updatedAt as string | null;
+          const ref = queuedAt ?? updatedAt;
+          const stuckMs = ref ? now - new Date(ref).getTime() : 0;
+          if (stuckMs > QUEUED_STUCK_MS) {
+            send({
+              type: "stuck",
+              status,
+              stuckForMs: stuckMs,
+              reason: "Worker never picked up the job",
+              message:
+                `Import has been queued for ${Math.round(stuckMs / 60_000)} min. ` +
+                `The worker process may be down or Redis is disconnected. ` +
+                `Check /api/imports/queue-health for diagnostics.`,
+              action: "check_worker",
+            });
+            safeClose(controller);
+            return;
+          }
+        }
+
+        if (status === "PROCESSING") {
+          const lastHeartbeat = payload.lastHeartbeatAt as string | null;
+          const startedAt = payload.startedAt as string | null;
+          const ref = lastHeartbeat ?? startedAt;
+          const stuckMs = ref ? now - new Date(ref).getTime() : 0;
+          if (stuckMs > PROCESSING_STUCK_MS) {
+            send({
+              type: "stuck",
+              status,
+              stuckForMs: stuckMs,
+              reason: "Worker heartbeat missing",
+              message:
+                `Worker heartbeat is ${Math.round(stuckMs / 60_000)} min stale. ` +
+                `The import worker may have crashed mid-processing. ` +
+                `The stuck-job checker will auto-fail this in <5 min.`,
+              action: "wait_or_contact_support",
+            });
+            safeClose(controller);
+            return;
+          }
+        }
+
+        setTimeout(poll, POLL_INTERVAL_MS);
       };
 
-      setTimeout(poll, interval);
+      setTimeout(poll, POLL_INTERVAL_MS);
     },
   });
 
   return new Response(stream, {
     headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      "Connection": "keep-alive",
+      "Content-Type":    "text/event-stream",
+      "Cache-Control":   "no-cache, no-transform",
+      "Connection":      "keep-alive",
       "X-Accel-Buffering": "no",
     },
   });
 }
 
 // ---------------------------------------------------------------------------
-// Build progress payload from DB
+// Build the SSE payload from the DB record
 // ---------------------------------------------------------------------------
 
-async function buildProgressPayload(
+async function buildPayload(
   importJobId: string,
   organizationId: string
 ): Promise<Record<string, unknown>> {
   const job = await (prisma as any).importJob.findFirst({
     where: { id: importJobId, organizationId },
     select: {
-      id: true,
-      status: true,
-      totalRows: true,
-      processedRows: true,
-      successRows: true,
-      failedRows: true,
-      skippedRows: true,
-      duplicateRows: true,
-      startedAt: true,
-      completedAt: true,
+      id:               true,
+      status:           true,
+      entity:           true,
+      totalRows:        true,
+      processedRows:    true,
+      successRows:      true,
+      failedRows:       true,
+      skippedRows:      true,
+      duplicateRows:    true,
+      startedAt:        true,
+      completedAt:      true,
+      queuedAt:         true,
+      failedAt:         true,
+      lastHeartbeatAt:  true,
+      updatedAt:        true,
+      bullmqJobId:      true,
+      error:            true,
     },
   });
 
   if (!job) {
-    return { type: "error", message: "Import job not found" };
+    return { type: "error", message: "Import job not found or access denied" };
   }
 
   const percent =
@@ -122,16 +210,30 @@ async function buildProgressPayload(
       : 0;
 
   return {
-    type: "progress",
-    status: job.status,
-    progress: percent,
-    totalRows: job.totalRows,
-    processedRows: job.processedRows,
-    successRows: job.successRows,
-    failedRows: job.failedRows,
-    skippedRows: job.skippedRows,
-    duplicateRows: job.duplicateRows,
-    startedAt: job.startedAt,
-    completedAt: job.completedAt,
+    type:            "progress",
+    status:          job.status,
+    progress:        percent,
+    totalRows:       job.totalRows,
+    processedRows:   job.processedRows,
+    successRows:     job.successRows,
+    failedRows:      job.failedRows,
+    skippedRows:     job.skippedRows,
+    duplicateRows:   job.duplicateRows,
+    startedAt:       job.startedAt,
+    completedAt:     job.completedAt,
+    queuedAt:        job.queuedAt,
+    failedAt:        job.failedAt,
+    lastHeartbeatAt: job.lastHeartbeatAt,
+    updatedAt:       job.updatedAt,
+    bullmqJobId:     job.bullmqJobId,
+    error:           job.error,
   };
+}
+
+function safeClose(controller: ReadableStreamDefaultController) {
+  try {
+    controller.close();
+  } catch {
+    // Already closed by client disconnect
+  }
 }

@@ -1,0 +1,4 @@
+customer_code,customer_name,email,phone,gst_number,pan_number,address,city,state,country,pincode,industry,status
+CUS001,ABC Industries,contact@abc.com,9876543210,29ABCDE1234F1Z5,ABCDE1234F,MG Road,Bangalore,Karnataka,India,560001,Manufacturing,Active
+CUS002,Amit Kumar,amit.kumar@gmail.com,9822222222,,,HSR Layout,Bangalore,Karnataka,India,560102,Individual,Active
+CUS003,TechStart Pvt Ltd,hello@techstart.in,9833333333,27ABCDE5678G1Z3,ABCDE5678G,Bandra Kurla Complex,Mumbai,Maharashtra,India,400051,Technology,Active

@@ -7,6 +7,8 @@ export const complianceDashboardService = {
     const thirtyDaysOut = new Date(now);
     thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
 
+    // All queries run in parallel — including the overdueFiling count and
+    // category lookup that were previously sequential after the Promise.all.
     const [
       statusCounts,
       categoryDistribution,
@@ -15,6 +17,8 @@ export const complianceDashboardService = {
       pendingReminders,
       expiringItems,
       monthlyRaw,
+      overdueFilingCount,
+      allCategories,
     ] = await Promise.all([
       prisma.complianceSubmission.groupBy({
         by: ["status"],
@@ -141,18 +145,9 @@ export const complianceDashboardService = {
         GROUP BY DATE_TRUNC('month', "createdAt"), status
         ORDER BY DATE_TRUNC('month', "createdAt") ASC
       `,
-    ]);
 
-    const countByStatus = Object.fromEntries(
-      statusCounts.map((r) => [r.status, r._count])
-    );
-
-    const stats = {
-      totalSubmissions:
-        Object.values(countByStatus).reduce((a, b) => a + b, 0),
-      pendingApprovals: (countByStatus["SUBMITTED"] ?? 0) + (countByStatus["UNDER_REVIEW"] ?? 0),
-      expiringSoon: expiringItems.length,
-      overdueFiling: await prisma.complianceSubmission.count({
+      // Previously sequential — now parallel
+      prisma.complianceSubmission.count({
         where: {
           organizationId,
           deletedAt: null,
@@ -160,6 +155,23 @@ export const complianceDashboardService = {
           dueDate: { lt: now },
         },
       }),
+
+      // Previously sequential — now parallel
+      prisma.complianceCategory.findMany({
+        where: { organizationId },
+        select: { id: true, name: true, code: true, color: true },
+      }),
+    ]);
+
+    const countByStatus = Object.fromEntries(
+      statusCounts.map((r) => [r.status, r._count])
+    );
+
+    const stats = {
+      totalSubmissions: Object.values(countByStatus).reduce((a, b) => a + b, 0),
+      pendingApprovals: (countByStatus["SUBMITTED"] ?? 0) + (countByStatus["UNDER_REVIEW"] ?? 0),
+      expiringSoon: expiringItems.length,
+      overdueFiling: overdueFilingCount,
       rejectedItems: countByStatus["REJECTED"] ?? 0,
       approvedItems: countByStatus["APPROVED"] ?? 0,
       draftItems: countByStatus["DRAFT"] ?? 0,
@@ -170,13 +182,7 @@ export const complianceDashboardService = {
     const monthlyMap = new Map<string, ComplianceMonthlyTrend>();
     for (const row of monthlyRaw) {
       if (!monthlyMap.has(row.month)) {
-        monthlyMap.set(row.month, {
-          month: row.month,
-          submitted: 0,
-          approved: 0,
-          rejected: 0,
-          expired: 0,
-        });
+        monthlyMap.set(row.month, { month: row.month, submitted: 0, approved: 0, rejected: 0, expired: 0 });
       }
       const entry = monthlyMap.get(row.month)!;
       const count = Number(row.count);
@@ -187,13 +193,7 @@ export const complianceDashboardService = {
     }
     const monthlyTrend = Array.from(monthlyMap.values());
 
-    // Fetch category names for distribution
-    const catIds = [...new Set(categoryDistribution.map((r) => r.categoryId))];
-    const categories = await prisma.complianceCategory.findMany({
-      where: { id: { in: catIds } },
-      select: { id: true, name: true, code: true, color: true },
-    });
-    const catMap = new Map(categories.map((c) => [c.id, c]));
+    const catMap = new Map(allCategories.map((c) => [c.id, c]));
 
     const categoryDist = categoryDistribution.map((r) => {
       const cat = catMap.get(r.categoryId);

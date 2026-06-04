@@ -11,6 +11,8 @@ import {
   Bell,
   Shield,
   ChevronRight,
+  Plug,
+  FileSpreadsheet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,8 +35,15 @@ const settingsNav = [
   {
     group: "Data",
     items: [
-      { label: "Imports", href: "/settings/imports", icon: Upload, description: "Import & sync data" },
+      { label: "Import Center", href: "/settings/imports", icon: Upload, description: "Bulk import CSV & Excel" },
       { label: "Compliance Docs", href: "/settings/compliance", icon: FileCheck, description: "Document center" },
+    ],
+  },
+  {
+    group: "Integrations",
+    items: [
+      { label: "All Integrations", href: "/integrations", icon: Plug, description: "Connect external systems" },
+      { label: "CSV Import", href: "/integrations/csv", icon: FileSpreadsheet, description: "Import from spreadsheets" },
     ],
   },
 ];

@@ -1,10 +1,7 @@
 "use client";
 
-// ============================================================
-// useCustomers — CRUD hook for CRM customers
-// ============================================================
-
 import { useState, useEffect, useCallback } from "react";
+import { useQuery, useQueryClient } from "@/lib/queryCache";
 
 export interface Customer {
   id: string;
@@ -24,40 +21,37 @@ export interface Customer {
   createdAt: string;
   updatedAt: string;
   _count?: { invoices: number };
-  // stats derived from invoices
   totalRevenue?: number;
   outstandingRevenue?: number;
 }
 
+interface PaginatedCustomers {
+  data: Customer[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+async function fetchCustomers(): Promise<Customer[]> {
+  const res = await fetch("/api/customers?take=50");
+  if (!res.ok) throw new Error("Failed to fetch customers");
+  const json = await res.json() as PaginatedCustomers | Customer[];
+  // Handle both paginated and legacy array responses
+  if (Array.isArray(json)) return json;
+  return (json as PaginatedCustomers).data ?? [];
+}
+
 export function useCustomers() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const qc = useQueryClient();
+  const { data: customers = [], isLoading } = useQuery<Customer[]>(
+    ["customers"],
+    fetchCustomers,
+    { staleTime: 2 * 60_000 }
+  );
   const [error, setError] = useState<string | null>(null);
 
-  const fetchCustomers = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch("/api/customers");
-      if (!res.ok) throw new Error("Failed to fetch customers");
-      const data = await res.json();
-      setCustomers(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
-
-  const createCustomer = async (input: {
-    name: string;
-    email?: string;
-    phone?: string;
-    company?: string;
-    address?: string;
-    notes?: string;
+  const createCustomer = useCallback(async (input: {
+    name: string; email?: string; phone?: string;
+    company?: string; address?: string; notes?: string;
   }): Promise<Customer> => {
     const res = await fetch("/api/customers", {
       method: "POST",
@@ -69,18 +63,26 @@ export function useCustomers() {
       throw new Error(err.error ?? "Failed to create customer");
     }
     const customer = await res.json() as Customer;
-    setCustomers((prev) => [customer, ...prev]);
+    // Optimistic prepend
+    qc.setData<Customer[]>(["customers"], (prev = []) => [customer, ...prev]);
     return customer;
-  };
+  }, [qc]);
 
-  const deleteCustomer = async (id: string): Promise<void> => {
+  const deleteCustomer = useCallback(async (id: string): Promise<void> => {
     const res = await fetch(`/api/customers/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error ?? "Failed to delete customer");
     }
-    setCustomers((prev) => prev.filter((c) => c.id !== id));
-  };
+    qc.setData<Customer[]>(["customers"], (prev = []) => prev.filter((c) => c.id !== id));
+  }, [qc]);
 
-  return { customers, loading, error, refetch: fetchCustomers, createCustomer, deleteCustomer };
+  return {
+    customers,
+    loading: isLoading,
+    error,
+    refetch: () => qc.invalidate(["customers"]),
+    createCustomer,
+    deleteCustomer,
+  };
 }

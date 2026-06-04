@@ -11,9 +11,12 @@ import { getRedisConnection } from "@/lib/redis";
 // Queue names
 // ---------------------------------------------------------------------------
 export const QUEUE_NAMES = {
-  IMPORT: "finrp:import",
-  SYNC: "finrp:sync",
-  WEBHOOK: "finrp:webhook",
+  // IMPORT: "finrp:import",
+  // SYNC: "finrp:sync",
+  // WEBHOOK: "finrp:webhook",
+  IMPORT: "finrp-import",
+  SYNC: "finrp-sync",
+  WEBHOOK: "finrp-webhook",
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -114,17 +117,44 @@ export function getWebhookQueue(): Queue<WebhookJobData> {
 // ---------------------------------------------------------------------------
 
 export async function enqueueImport(data: ImportJobData): Promise<string> {
+  console.log("[QUEUE] enqueue start", data.importJobId);
+
   const q = getImportQueue();
+
+  // Log queue depth — lets us detect Redis connectivity issues or backlogs.
+  const counts = await q.getJobCounts("waiting", "active", "completed", "failed");
+  console.log("[QUEUE COUNTS]", counts);
+
+  const bullmqJobId = `import_${data.importJobId}`;
+
   const job = await q.add("process-import", data, {
-    jobId: `import:${data.importJobId}`, // deterministic id — safe to deduplicate
+    jobId: bullmqJobId, // deterministic — safe to call twice without duplicating
   });
-  return job.id ?? data.importJobId;
+
+  // BullMQ returns job.id === undefined when the job already exists in the queue
+  // (deduplication). Fall back to the constructed ID we intended to use, NOT the
+  // raw importJobId — the BullMQ key prefix matters for cross-referencing in Redis.
+  const resolvedId = job.id ?? bullmqJobId;
+
+  if (!job.id) {
+    console.warn(
+      `[QUEUE] Job already exists in queue for importJobId=${data.importJobId}. ` +
+      `Using existing bullmqJobId=${resolvedId}`
+    );
+  }
+
+  console.log("[QUEUE] enqueue success", {
+    importJobId: data.importJobId,
+    bullmqJobId: resolvedId,
+  });
+
+  return resolvedId;
 }
 
 export async function enqueueSync(data: SyncJobData, delayMs = 0): Promise<string> {
   const q = getSyncQueue();
   const job = await q.add("run-sync", data, {
-    jobId: `sync:${data.syncJobId}`,
+    jobId: `sync_${data.syncJobId}`,
     delay: delayMs,
   });
   return job.id ?? data.syncJobId;
@@ -146,7 +176,7 @@ export async function scheduleRepeatingSync(
   intervalMinutes: number
 ): Promise<void> {
   const q = getSyncQueue();
-  const cronJobId = `cron:sync:${integrationId}`;
+  const cronJobId = `cron_sync:${integrationId}`;
 
   // Remove old repeat if it exists
   await q.removeRepeatable("run-sync", {

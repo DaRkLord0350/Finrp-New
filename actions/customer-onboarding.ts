@@ -6,7 +6,8 @@
 // New actions cover customer-specific steps.
 // ============================================================
 
-import { getCurrentUser } from "@/lib/auth/session";
+import { auth } from "@clerk/nextjs/server";
+import { getCurrentUser, invalidateUserCache } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { completeOnboarding } from "@/services/onboardingService";
 import { createAuditLog } from "@/lib/audit";
@@ -202,6 +203,10 @@ export async function actionCompleteCustomerOnboarding(): Promise<OnboardingActi
       entityId: organizationId,
       description: "Completed customer onboarding",
     });
+
+    // Bust cache so the layout sees onboardingCompleted = true immediately
+    const { userId: clerkId } = await auth();
+    if (clerkId) await invalidateUserCache(clerkId);
 
     return { success: true };
   } catch (err) {

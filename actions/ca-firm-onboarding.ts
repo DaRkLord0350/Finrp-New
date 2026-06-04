@@ -6,7 +6,8 @@
 // The Firm record is created on final completion.
 // ============================================================
 
-import { getCurrentUser } from "@/lib/auth/session";
+import { auth } from "@clerk/nextjs/server";
+import { getCurrentUser, invalidateUserCache } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import type { OnboardingActionResult } from "@/types/onboarding";
@@ -309,6 +310,10 @@ export async function actionCompleteFirmOnboarding(): Promise<OnboardingActionRe
       entityId: firmId,
       description: `Completed CA firm onboarding — created firm "${firmName}"`,
     });
+
+    // Bust session cache so the layout redirects correctly on next render
+    const { userId: clerkId } = await auth();
+    if (clerkId) await invalidateUserCache(clerkId);
 
     return { success: true };
   } catch (err) {

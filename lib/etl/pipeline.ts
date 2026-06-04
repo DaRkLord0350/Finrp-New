@@ -18,10 +18,12 @@ import type { MappingRule } from "@/lib/connectors/base/types";
 // Pipeline configuration
 // ---------------------------------------------------------------------------
 
+export type PipelineEntity = "customer" | "invoice" | "product" | "employee" | "ca_user" | "firm" | "assignment" | "master_import";
+
 export interface PipelineConfig {
   importJobId: string;
   organizationId: string;
-  entity: "customer" | "invoice" | "product" | "employee";
+  entity: PipelineEntity;
   rules: MappingRule[];
   /** Called on each chunk to report progress (0-100) */
   onProgress?: (progress: number, message?: string) => Promise<void> | void;
@@ -173,7 +175,7 @@ export class ETLPipeline {
       try {
         const success = await this.commitRow(
           row.mappedData as Record<string, unknown>,
-          job.entity as "customer" | "invoice" | "product" | "employee",
+          mapEntityToInternal(job.entity) as PipelineEntity,
           organizationId
         );
 
@@ -270,7 +272,7 @@ export class ETLPipeline {
   // ---------------------------------------------------------------------------
   private async commitRow(
     data: Record<string, unknown>,
-    entity: "customer" | "invoice" | "product" | "employee",
+    entity: PipelineEntity,
     organizationId: string
   ): Promise<boolean> {
     switch (entity) {
@@ -282,6 +284,14 @@ export class ETLPipeline {
         return this.upsertProduct(data, organizationId);
       case "employee":
         return this.upsertEmployee(data, organizationId);
+      case "ca_user":
+        return this.upsertCAUserInvitation(data, organizationId);
+      case "firm":
+        return this.upsertFirm(data, organizationId);
+      case "assignment":
+        return this.upsertAssignment(data, organizationId);
+      case "master_import":
+        return this.processMasterImportRow(data, organizationId);
       default:
         return false;
     }
@@ -479,6 +489,175 @@ export class ETLPipeline {
   }
 
   // ---------------------------------------------------------------------------
+  // CA User invitation handler
+  // Creates an Invitation record so the CA receives an email link.
+  // If a User with this email already exists in the org, it's a no-op.
+  // ---------------------------------------------------------------------------
+  private async upsertCAUserInvitation(
+    data: Record<string, unknown>,
+    organizationId: string
+  ): Promise<boolean> {
+    const email = String(data["email"] ?? "").trim().toLowerCase();
+    if (!email) return false;
+
+    const existing = await prisma.user.findFirst({
+      where: { email, organizationId },
+      select: { id: true },
+    });
+    if (existing) return true; // Already in org — skip
+
+    // Check if pending invitation already exists
+    const pendingInvite = await prisma.invitation.findFirst({
+      where: { email, organizationId, acceptedAt: null },
+      select: { id: true },
+    });
+    if (pendingInvite) return true; // Already invited — skip
+
+    // Create invitation (7-day expiry)
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await prisma.invitation.create({
+      data: {
+        organizationId,
+        email,
+        role: "STAFF",
+        expiresAt,
+      },
+    });
+
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Firm upsert handler
+  // ---------------------------------------------------------------------------
+  private async upsertFirm(
+    data: Record<string, unknown>,
+    organizationId: string
+  ): Promise<boolean> {
+    const name = String(data["name"] ?? "").trim();
+    if (!name) return false;
+
+    const registrationNumber = data["registrationNumber"]
+      ? String(data["registrationNumber"]).trim()
+      : null;
+
+    const existing = registrationNumber
+      ? await prisma.firm.findFirst({
+          where: { registrationNumber, users: { some: { organizationId } } },
+        })
+      : await prisma.firm.findFirst({
+          where: { name, users: { some: { organizationId } } },
+        });
+
+    const payload = {
+      name,
+      registrationNumber: registrationNumber ?? undefined,
+      email: data["email"] ? String(data["email"]).trim() : null,
+      phone: data["phone"] ? String(data["phone"]).trim() : null,
+      address: data["address"] ? String(data["address"]).trim() : null,
+      city: data["city"] ? String(data["city"]).trim() : null,
+      state: data["state"] ? String(data["state"]).trim() : null,
+      country: data["country"] ? String(data["country"]).trim() : null,
+      website: data["website"] ? String(data["website"]).trim() : null,
+    };
+
+    if (existing) {
+      await prisma.firm.update({ where: { id: existing.id }, data: payload });
+    } else {
+      await prisma.firm.create({ data: { ...payload, isActive: true } });
+    }
+
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Assignment upsert handler
+  // Maps Customer → CA User creating CustomerAssignment.
+  // Requires both customer and CA to already exist in the org.
+  // ---------------------------------------------------------------------------
+  private async upsertAssignment(
+    data: Record<string, unknown>,
+    organizationId: string
+  ): Promise<boolean> {
+    const caEmail = String(data["caEmail"] ?? "").trim().toLowerCase();
+    if (!caEmail) return false;
+
+    const customerEmail = data["customerEmail"] ? String(data["customerEmail"]).trim().toLowerCase() : null;
+    const customerCode = data["customerCode"] ? String(data["customerCode"]).trim() : null;
+
+    // Find CA user
+    const caUser = await prisma.user.findFirst({
+      where: { email: caEmail, organizationId },
+      select: { id: true },
+    });
+    if (!caUser) return false;
+
+    // Find customer
+    const customer = await prisma.customer.findFirst({
+      where: {
+        organizationId,
+        ...(customerEmail ? { email: customerEmail } : {}),
+        ...(customerCode && !customerEmail ? { customerCode } : {}),
+      },
+      select: { id: true },
+    });
+    if (!customer) return false;
+
+    // Check for existing active assignment
+    const existing = await prisma.customerAssignment.findFirst({
+      where: { customerId: customer.id, caId: caUser.id, isActive: true },
+      select: { id: true },
+    });
+    if (existing) return true;
+
+    // Find the org owner to set assignedById
+    const orgOwner = await prisma.user.findFirst({
+      where: { organizationId, role: "OWNER" },
+      select: { id: true },
+    });
+
+    await prisma.customerAssignment.create({
+      data: {
+        customerId: customer.id,
+        caId: caUser.id,
+        assignedById: orgOwner?.id ?? caUser.id,
+        notes: data["notes"] ? String(data["notes"]).trim() : null,
+        isActive: true,
+      },
+    });
+
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Master import row handler
+  // Creates Customer + Assignment in a single row.
+  // ---------------------------------------------------------------------------
+  private async processMasterImportRow(
+    data: Record<string, unknown>,
+    organizationId: string
+  ): Promise<boolean> {
+    // 1. Upsert customer
+    const customerCreated = await this.upsertCustomer(data, organizationId);
+    if (!customerCreated) return false;
+
+    // 2. If assigned_ca_email provided, create assignment
+    const assignedCaEmail = data["assignedCaEmail"]
+      ? String(data["assignedCaEmail"]).trim().toLowerCase()
+      : null;
+
+    if (assignedCaEmail) {
+      const email = String(data["email"] ?? "").trim().toLowerCase();
+      await this.upsertAssignment(
+        { caEmail: assignedCaEmail, customerEmail: email || null },
+        organizationId
+      );
+    }
+
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
   // Mark import job as complete
   // ---------------------------------------------------------------------------
   private async markJobComplete(
@@ -502,6 +681,7 @@ export class ETLPipeline {
       data: {
         status,
         completedAt: new Date(),
+        ...(status === "FAILED" ? { failedAt: new Date() } : {}),
         processedRows: result.staged,
         successRows: result.committed,
         failedRows: result.failed,
@@ -515,6 +695,21 @@ export class ETLPipeline {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function mapEntityToInternal(entity: string): PipelineEntity {
+  const map: Record<string, PipelineEntity> = {
+    CUSTOMERS: "customer",
+    VENDORS: "customer",
+    INVOICES: "invoice",
+    PRODUCTS: "product",
+    EMPLOYEES: "employee",
+    CA_USERS: "ca_user",
+    FIRMS: "firm",
+    ASSIGNMENTS: "assignment",
+    MASTER_IMPORT: "master_import",
+  };
+  return map[entity?.toUpperCase()] ?? "customer";
+}
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const chunks: T[][] = [];

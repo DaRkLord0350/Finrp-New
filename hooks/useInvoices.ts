@@ -1,10 +1,6 @@
 "use client";
 
-// ============================================================
-// useInvoices — CRUD hook for invoices + billing data
-// ============================================================
-
-import { useState, useEffect, useCallback } from "react";
+import { useQuery, useQueryClient } from "@/lib/queryCache";
 
 export interface Invoice {
   id: string;
@@ -24,48 +20,38 @@ export interface Invoice {
   customer?: { name: string; email?: string | null } | null;
 }
 
+async function fetchInvoices(): Promise<Invoice[]> {
+  const res = await fetch("/api/invoices");
+  if (!res.ok) throw new Error("Failed to fetch invoices");
+  const data = await res.json();
+  if (Array.isArray(data)) return data;
+  return data.invoices ?? [];
+}
+
 export function useInvoices() {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const { data: invoices = [], isLoading } = useQuery<Invoice[]>(
+    ["invoices"],
+    fetchInvoices,
+    { staleTime: 60_000 }
+  );
 
-  const fetchInvoices = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch("/api/invoices");
-      if (!res.ok) throw new Error("Failed to fetch invoices");
-      const data = await res.json();
-      setInvoices(Array.isArray(data) ? data : (data.invoices ?? []));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
-
-  // Derived stats
-  const paid = invoices.filter((i) => i.status === "PAID");
+  const paid        = invoices.filter((i) => i.status === "PAID");
   const outstanding = invoices.filter((i) => i.status === "SENT" || i.status === "OVERDUE");
-  const overdue = invoices.filter((i) => i.status === "OVERDUE");
-
-  const totalRevenue = paid.reduce((s, i) => s + Number(i.total), 0);
-  const totalOutstanding = outstanding.reduce((s, i) => s + Number(i.total), 0);
+  const overdue     = invoices.filter((i) => i.status === "OVERDUE");
 
   return {
     invoices,
-    loading,
-    error,
-    refetch: fetchInvoices,
+    loading: isLoading,
+    error: null as string | null,
+    refetch: () => qc.invalidate(["invoices"]),
     stats: {
-      total: invoices.length,
-      paid: paid.length,
-      outstanding: outstanding.length,
-      overdue: overdue.length,
-      totalRevenue,
-      totalOutstanding,
+      total:            invoices.length,
+      paid:             paid.length,
+      outstanding:      outstanding.length,
+      overdue:          overdue.length,
+      totalRevenue:     paid.reduce((s, i) => s + Number(i.total), 0),
+      totalOutstanding: outstanding.reduce((s, i) => s + Number(i.total), 0),
     },
   };
 }

@@ -78,6 +78,10 @@ model Organization {
   complianceTemplates ComplianceTemplate[]
   firmBranding     FirmBranding?
   firmNotifSettings FirmNotificationSettings?
+  dashboardSnapshots DashboardSnapshot[]
+  monthlyRevenueStats MonthlyRevenueStat[]
+  firmSnapshots    FirmSnapshot[]
+  complianceStats  ComplianceStat[]
 
   @@index([slug])
   @@map("organizations")
@@ -304,6 +308,7 @@ model Invoice {
   @@index([organizationId, status])
   @@index([organizationId, dueDate])
   @@index([organizationId, issueDate])
+  @@index([organizationId, createdAt])
   @@index([organizationId])
   @@index([customerId])
   @@map("invoices")
@@ -409,6 +414,7 @@ model ComplianceTask {
   assignedTo   User?        @relation("AssignedTo", fields: [assignedToId], references: [id])
 
   @@index([organizationId])
+  @@index([organizationId, status, dueDate])
   @@map("compliance_tasks")
 }
 
@@ -929,6 +935,8 @@ model Notification {
 
   @@index([organizationId])
   @@index([userId])
+  @@index([userId, isRead])
+  @@index([organizationId, isRead])
   @@map("notifications")
 }
 
@@ -969,6 +977,7 @@ model AuditLog {
   user         User?        @relation(fields: [userId], references: [id])
 
   @@index([organizationId])
+  @@index([organizationId, createdAt])
   @@index([entity])
   @@map("audit_logs")
 }
@@ -1097,6 +1106,8 @@ model Transaction {
 
   @@index([itemId])
   @@index([organizationId])
+  @@index([organizationId, type])
+  @@index([organizationId, createdAt])
   @@map("transactions")
 }
 
@@ -1151,6 +1162,7 @@ model Loan {
 
   @@unique([organizationId, loanNumber])
   @@index([organizationId])
+  @@index([organizationId, status])
   @@map("loans")
 }
 
@@ -1422,6 +1434,7 @@ model Employee {
 
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
+  @@index([organizationId, isActive])
   @@map("employees")
 }
 
@@ -1478,6 +1491,7 @@ model Payroll {
   employee     Employee?    @relation(fields: [employeeId], references: [id])
 
   @@index([organizationId])
+  @@index([organizationId, payPeriod])
   @@map("payroll")
 }
 
@@ -1670,6 +1684,7 @@ model SyncLog {
   syncJob SyncJob @relation(fields: [syncJobId], references: [id], onDelete: Cascade)
 
   @@index([syncJobId])
+  @@index([syncJobId, status])
   @@index([entityType, entityId])
   @@map("sync_logs")
 }
@@ -1714,6 +1729,10 @@ model ImportJob {
   duplicateRows  Int          @default(0)
   startedAt      DateTime?
   completedAt    DateTime?
+  queuedAt       DateTime?    // set when BullMQ job is confirmed in Redis
+  failedAt       DateTime?    // set when status → FAILED
+  lastHeartbeatAt DateTime?   // worker updates this every 10 s — detect crashes
+  retryCount     Int          @default(0)
   uploadedById   String
   fieldMapping   Json?        // saved column → field mappings
   options        Json?        // { skipDuplicates, updateExisting, dryRun }
@@ -1730,6 +1749,9 @@ model ImportJob {
 
   @@index([organizationId, status])
   @@index([organizationId, entity])
+  @@index([status])
+  @@index([bullmqJobId])
+  @@index([createdAt])
   @@map("import_jobs")
 }
 
@@ -1749,10 +1771,15 @@ enum ImportEntity {
   EXPENSES
   PAYMENTS
   LEADS
+  CA_USERS
+  FIRMS
+  ASSIGNMENTS
+  MASTER_IMPORT
 }
 
 enum ImportStatus {
   PENDING
+  QUEUED
   MAPPING
   VALIDATING
   PROCESSING
@@ -2094,6 +2121,8 @@ model ComplianceSubmission {
   @@index([organizationId, dueDate])
   @@index([organizationId, expiryDate])
   @@index([organizationId, deletedAt])
+  @@index([organizationId, deletedAt, status, dueDate])
+  @@index([organizationId, deletedAt, status, expiryDate])
   @@map("compliance_submissions")
 }
 
@@ -2149,6 +2178,7 @@ model ComplianceReminder {
 
   @@index([organizationId])
   @@index([reminderDate, isTriggered, isActive])
+  @@index([organizationId, isActive, isTriggered, reminderDate])
   @@map("compliance_reminders")
 }
 
@@ -2178,6 +2208,7 @@ model ComplianceDeadline {
 
   @@index([organizationId])
   @@index([deadlineDate, isCompleted])
+  @@index([organizationId, isCompleted, deadlineDate])
   @@map("compliance_deadlines")
 }
 
@@ -2570,6 +2601,7 @@ model Firm {
   branding      FirmBranding?        @relation("FirmBranding")
   notifSettings FirmNotificationSettings? @relation("FirmNotifSettings")
 
+  @@index([ownerId])
   @@map("firms")
 }
 
@@ -2664,6 +2696,7 @@ model Message {
   @@index([senderId, receiverId])
   @@index([organizationId])
   @@index([parentId])
+  @@index([receiverId, isRead])
   @@map("messages")
 }
 
@@ -2916,4 +2949,106 @@ model FirmBranding {
   firm         Firm?        @relation("FirmBranding", fields: [firmId], references: [id])
 
   @@map("firm_branding")
+}
+
+// ============================================================
+// =================== ANALYTICS SNAPSHOTS ====================
+// Pre-computed by BullMQ workers — dashboards read from here,
+// not from live aggregate queries.
+// ============================================================
+
+// Daily/weekly/monthly KPI snapshot per organization
+model DashboardSnapshot {
+  id              String   @id @default(cuid())
+  organizationId  String
+  snapshotDate    DateTime @db.Date
+  period          String   // "daily" | "weekly" | "monthly"
+
+  totalRevenue    Decimal  @default(0) @db.Decimal(16, 2)
+  totalCustomers  Int      @default(0)
+  totalInvoices   Int      @default(0)
+  overdueInvoices Int      @default(0)
+  paidInvoices    Int      @default(0)
+  revenueGrowth   Decimal  @default(0) @db.Decimal(7, 2)
+  newCustomers    Int      @default(0)
+  activeLoans     Int      @default(0)
+  complianceDue   Int      @default(0)
+  metadata        Json?
+
+  computedAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, snapshotDate, period])
+  @@index([organizationId, snapshotDate])
+  @@index([organizationId, period])
+  @@map("dashboard_snapshots")
+}
+
+// Monthly revenue breakdown — one row per org per month
+model MonthlyRevenueStat {
+  id             String   @id @default(cuid())
+  organizationId String
+  year           Int
+  month          Int      // 1–12
+  revenue        Decimal  @default(0) @db.Decimal(16, 2)
+  invoiceCount   Int      @default(0)
+  paidCount      Int      @default(0)
+  overdueCount   Int      @default(0)
+  newCustomers   Int      @default(0)
+  expenseTotal   Decimal  @default(0) @db.Decimal(16, 2)
+  computedAt     DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, year, month])
+  @@index([organizationId, year])
+  @@map("monthly_revenue_stats")
+}
+
+// Firm-level aggregate (CA firm view)
+model FirmSnapshot {
+  id              String   @id @default(cuid())
+  organizationId  String
+  snapshotDate    DateTime @db.Date
+
+  totalClients    Int      @default(0)
+  activeTasks     Int      @default(0)
+  overdueTasks    Int      @default(0)
+  completedTasks  Int      @default(0)
+  pendingDocs     Int      @default(0)
+  unreadMessages  Int      @default(0)
+
+  computedAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, snapshotDate])
+  @@index([organizationId, snapshotDate])
+  @@map("firm_snapshots")
+}
+
+// Organization-level compliance summary
+model ComplianceStat {
+  id             String   @id @default(cuid())
+  organizationId String
+  snapshotDate   DateTime @db.Date
+
+  totalSubmissions   Int @default(0)
+  draftCount         Int @default(0)
+  submittedCount     Int @default(0)
+  approvedCount      Int @default(0)
+  rejectedCount      Int @default(0)
+  expiredCount       Int @default(0)
+  dueSoon7d          Int @default(0)  // expiring within 7 days
+  dueSoon30d         Int @default(0)  // expiring within 30 days
+
+  computedAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, snapshotDate])
+  @@index([organizationId, snapshotDate])
+  @@map("compliance_stats")
 }

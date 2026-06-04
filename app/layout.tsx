@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
-import { Inter, Geist } from "next/font/google";
+import { Geist } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
+// Single font — removed redundant Inter load (was causing 2× font requests)
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 
 export const metadata: Metadata = {
   title: {
@@ -31,7 +27,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning className={cn("font-sans", geist.variable)}>
-        <body className={`${inter.variable} font-sans antialiased`}>
+        <body className="font-sans antialiased">
           <ThemeProvider
             attribute="class"
             defaultTheme="dark"

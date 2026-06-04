@@ -323,6 +323,60 @@ function isRequiredField(targetField: string): boolean {
 // Export available target fields per entity (for UI dropdowns)
 // ---------------------------------------------------------------------------
 
+export const CA_USER_TARGET_FIELDS = [
+  { field: "name", label: "Full Name", required: true },
+  { field: "email", label: "Email", required: true },
+  { field: "phone", label: "Phone", required: false },
+  { field: "designation", label: "Designation / Title", required: false },
+  { field: "icaiNumber", label: "ICAI Number", required: false },
+  { field: "specialization", label: "Specialization", required: false },
+  { field: "firmRegistrationNumber", label: "Firm Registration Number", required: false },
+  { field: "department", label: "Department", required: false },
+];
+
+export const FIRM_TARGET_FIELDS = [
+  { field: "name", label: "Firm Name", required: true },
+  { field: "registrationNumber", label: "Registration Number", required: false },
+  { field: "email", label: "Email", required: false },
+  { field: "phone", label: "Phone", required: false },
+  { field: "address", label: "Address", required: false },
+  { field: "city", label: "City", required: false },
+  { field: "state", label: "State", required: false },
+  { field: "country", label: "Country", required: false },
+  { field: "specialization", label: "Specialization", required: false },
+  { field: "website", label: "Website", required: false },
+];
+
+export const ASSIGNMENT_TARGET_FIELDS = [
+  { field: "customerEmail", label: "Customer Email", required: false },
+  { field: "customerCode", label: "Customer Code", required: false },
+  { field: "caEmail", label: "CA Email", required: true },
+  { field: "serviceType", label: "Service Type", required: false },
+  { field: "startDate", label: "Start Date", required: false },
+  { field: "endDate", label: "End Date", required: false },
+  { field: "notes", label: "Notes", required: false },
+  { field: "priority", label: "Priority", required: false },
+];
+
+export const MASTER_IMPORT_TARGET_FIELDS = [
+  { field: "customerCode", label: "Customer Code", required: false },
+  { field: "name", label: "Customer Name", required: true },
+  { field: "email", label: "Email", required: false },
+  { field: "phone", label: "Phone", required: false },
+  { field: "company", label: "Company Name", required: false },
+  { field: "gstin", label: "GSTIN", required: false },
+  { field: "pan", label: "PAN", required: false },
+  { field: "address", label: "Address", required: false },
+  { field: "city", label: "City", required: false },
+  { field: "state", label: "State", required: false },
+  { field: "country", label: "Country", required: false },
+  { field: "customerType", label: "Customer Type", required: false },
+  { field: "assignedCaEmail", label: "Assigned CA Email", required: false },
+  { field: "firmRegistrationNumber", label: "Firm Registration Number", required: false },
+  { field: "tags", label: "Tags (semicolon-separated)", required: false },
+  { field: "notes", label: "Notes", required: false },
+];
+
 export const CUSTOMER_TARGET_FIELDS = [
   { field: "name", label: "Customer Name", required: true },
   { field: "email", label: "Email", required: false },

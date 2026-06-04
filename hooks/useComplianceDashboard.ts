@@ -1,31 +1,26 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useQuery, useQueryClient } from "@/lib/queryCache";
 import type { ComplianceDashboardData } from "@/types/compliance";
 
+async function fetchComplianceDashboard(): Promise<ComplianceDashboardData> {
+  const res = await fetch("/api/compliance/dashboard");
+  if (!res.ok) throw new Error("Failed to fetch compliance dashboard");
+  return res.json();
+}
+
 export function useComplianceDashboard() {
-  const [data, setData] = useState<ComplianceDashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery<ComplianceDashboardData>(
+    ["compliance", "dashboard"],
+    fetchComplianceDashboard,
+    { staleTime: 2 * 60_000 }
+  );
 
-  const fetchDashboard = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch("/api/compliance/dashboard");
-      if (!res.ok) throw new Error("Failed to fetch compliance dashboard");
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchDashboard();
-  }, [fetchDashboard]);
-
-  return { data, loading, error, refetch: fetchDashboard };
+  return {
+    data: data ?? null,
+    loading: isLoading,
+    error: null as string | null,
+    refetch: () => qc.invalidate(["compliance", "dashboard"]),
+  };
 }

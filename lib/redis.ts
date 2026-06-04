@@ -1,61 +1,66 @@
 // ============================================================
-// FinRP — Redis Connection
+// FinRP — Redis Client
 //
-// BullMQ bundles its own ioredis copy internally, so passing
-// an ioredis instance from the top-level package causes a
-// structural type mismatch at compile time. Instead we:
+// Design principles:
+//   1. maxRetriesPerRequest: 0  — fail fast, never block a request
+//   2. enableOfflineQueue: false — reject commands immediately when disconnected
+//   3. lazyConnect: true        — don't connect at import time
+//   4. Circuit breaker          — after 5 failures, bypass Redis for 30s
+//   5. TLS auto-detect          — rediss:// activates tls config
 //
-//   1. Export plain ConnectionOptions for BullMQ (Queue/Worker)
-//      so BullMQ creates its own internal connection.
-//   2. Keep a direct ioredis singleton for non-BullMQ operations
-//      (caching, token storage, rate-limit counters, etc.)
+// BullMQ uses a separate plain-options connection because it manages
+// its own internal ioredis instance; passing our IORedis instance
+// causes a structural type mismatch.
 // ============================================================
 
 import IORedis from "ioredis";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
+const isTLS     = REDIS_URL.startsWith("rediss://");
 
 // ---------------------------------------------------------------------------
-// Parse Redis URL → plain options object
-// Supports: redis://[:password@]host[:port][/db]
+// Parse URL → plain options (needed for BullMQ which won't accept a URL string)
 // ---------------------------------------------------------------------------
-function parseRedisUrl(url: string): {
+function parseUrl(url: string): {
   host: string;
   port: number;
+  username?: string;
   password?: string;
   db?: number;
 } {
   try {
-    const parsed = new URL(url);
+    const u = new URL(url);
     return {
-      host: parsed.hostname || "localhost",
-      port: parseInt(parsed.port || "6379", 10),
-      password: parsed.password || undefined,
-      db: parsed.pathname && parsed.pathname !== "/" ? parseInt(parsed.pathname.slice(1), 10) || 0 : undefined,
+      host:     u.hostname || "localhost",
+      port:     parseInt(u.port || (isTLS ? "6380" : "6379"), 10),
+      // username is required for Redis 6 ACL auth (Upstash, Railway, etc.)
+      // Without it, BullMQ sends `AUTH password` instead of `AUTH username password`
+      // and some providers reject the password-only form.
+      ...(u.username ? { username: u.username } : {}),
+      password: u.password || undefined,
+      db:       u.pathname && u.pathname !== "/"
+        ? parseInt(u.pathname.slice(1), 10) || undefined
+        : undefined,
     };
   } catch {
     return { host: "localhost", port: 6379 };
   }
 }
 
-const baseUrl = parseRedisUrl(REDIS_URL);
+const parsed = parseUrl(REDIS_URL);
 
 // ---------------------------------------------------------------------------
-// BullMQ-compatible connection options (plain object — no ioredis instance)
-// BullMQ Queue / Worker / QueueEvents accept this directly.
+// BullMQ connection options — plain object, no ioredis instance.
+// BullMQ Queue / Worker / QueueEvents accept this directly and
+// create their own internal connections.
 // ---------------------------------------------------------------------------
 export const BULLMQ_CONNECTION = {
-  ...baseUrl,
-  maxRetriesPerRequest: null as null, // required by BullMQ
-  enableReadyCheck: false,            // required by BullMQ
+  ...parsed,
+  maxRetriesPerRequest: null as null,   // required by BullMQ
+  enableReadyCheck:     false,           // required by BullMQ
+  ...(isTLS ? { tls: { rejectUnauthorized: false } } : {}),
 };
 
-/**
- * Returns BullMQ-compatible connection options.
- * Use this everywhere you pass `connection:` to Queue / Worker / QueueEvents.
- * The `_role` parameter is kept for backwards compat — it has no effect since
- * each BullMQ primitive creates its own internal ioredis connection.
- */
 export function getRedisConnection(
   _role: "queue" | "worker" | "events" | "cache" = "queue"
 ): typeof BULLMQ_CONNECTION {
@@ -63,52 +68,205 @@ export function getRedisConnection(
 }
 
 // ---------------------------------------------------------------------------
-// Direct ioredis client — for NON-BullMQ use (cache, token storage, etc.)
+// Circuit breaker
+// After THRESHOLD consecutive failures the circuit opens for RESET_MS.
+// While open, all cache operations return null/void immediately so the
+// app runs on DB alone without burning retries or blocking requests.
+// ---------------------------------------------------------------------------
+const CIRCUIT_THRESHOLD = 5;
+const CIRCUIT_RESET_MS  = 30_000; // 30 s
+
+let _failures  = 0;
+let _openUntil = 0;
+
+function circuitIsOpen(): boolean {
+  if (_openUntil > 0 && _openUntil <= Date.now()) {
+    _failures  = 0;
+    _openUntil = 0;
+    console.log("[Redis] circuit HALF-OPEN — testing connection");
+  }
+  return Date.now() < _openUntil;
+}
+
+function recordRedisSuccess(): void {
+  if (_failures > 0) {
+    _failures  = 0;
+    _openUntil = 0;
+    console.log("[Redis] circuit CLOSED — connection restored");
+  }
+}
+
+function recordRedisFailure(): void {
+  _failures++;
+  if (_failures >= CIRCUIT_THRESHOLD && _openUntil === 0) {
+    _openUntil = Date.now() + CIRCUIT_RESET_MS;
+    console.warn(
+      `[Redis] circuit OPEN — ${_failures} consecutive failures, bypassing Redis for ${CIRCUIT_RESET_MS / 1_000}s`
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Singleton cache client (ioredis — for non-BullMQ use)
 // ---------------------------------------------------------------------------
 let _cacheClient: IORedis | null = null;
 
 export function getCacheClient(): IORedis {
-  if (!_cacheClient) {
-    _cacheClient = new IORedis(REDIS_URL, {
-      maxRetriesPerRequest: 3,
-      enableReadyCheck: true,
-      lazyConnect: false,
-      retryStrategy: (times: number) => Math.min(times * 500, 5_000),
-      reconnectOnError: (err: Error) => err.message.includes("READONLY"),
-    });
+  if (_cacheClient) return _cacheClient;
 
-    _cacheClient.on("error", (err: Error) => {
-      console.error("[Redis:cache] error:", err.message);
-    });
-  }
+  _cacheClient = new IORedis(REDIS_URL, {
+    // ── Fail-fast settings ──────────────────────────────────────────────────
+    maxRetriesPerRequest: 0,      // never retry a command; throw immediately
+    enableReadyCheck:     false,  // don't wait for READYCHECK handshake
+    lazyConnect:          true,   // don't connect at construction time
+    enableOfflineQueue:   false,  // reject commands when not connected (no queuing)
+
+    // ── Connection settings ─────────────────────────────────────────────────
+    connectTimeout:  3_000,  // 3 s to establish TCP connection
+    keepAlive:       10_000, // TCP keepalive every 10 s
+
+    // ── Reconnect backoff ──────────────────────────────────────────────────
+    // Exponential backoff capped at 5 s; give up after 20 attempts (~100 s total)
+    retryStrategy: (times: number) =>
+      times > 20 ? null : Math.min(times * 200, 5_000),
+
+    // ── TLS for Upstash / Railway Redis ────────────────────────────────────
+    ...(isTLS ? { tls: { rejectUnauthorized: false } } : {}),
+
+    reconnectOnError: (err: Error) => err.message.includes("READONLY"),
+  });
+
+  _cacheClient.on("error", (err: Error) => {
+    recordRedisFailure();
+    // Only log the first two failures per circuit-open window to avoid log spam
+    if (_failures <= 2) {
+      console.error(`[Redis] ${err.message}`);
+    }
+  });
+
+  _cacheClient.on("connect", () => {
+    recordRedisSuccess();
+    console.log("[Redis] connected");
+  });
+
+  _cacheClient.on("reconnecting", () => {
+    console.log("[Redis] reconnecting…");
+  });
+
   return _cacheClient;
 }
 
 // ---------------------------------------------------------------------------
-// Simple get/set/del helpers (use direct ioredis client, not BullMQ)
+// get / set / del — circuit breaker guarded
+// All errors are caught here so a Redis outage NEVER surfaces as a 500.
 // ---------------------------------------------------------------------------
 export async function redisGet(key: string): Promise<string | null> {
-  return getCacheClient().get(key);
+  if (circuitIsOpen()) return null;
+  try {
+    const v = await getCacheClient().get(key);
+    if (v !== null) recordRedisSuccess();
+    return v;
+  } catch {
+    recordRedisFailure();
+    return null;
+  }
 }
 
-export async function redisSet(key: string, value: string, ttlSeconds?: number): Promise<void> {
-  const conn = getCacheClient();
-  if (ttlSeconds) {
-    await conn.setex(key, ttlSeconds, value);
-  } else {
-    await conn.set(key, value);
+export async function redisSet(
+  key: string,
+  value: string,
+  ttlSeconds?: number
+): Promise<void> {
+  if (circuitIsOpen()) return;
+  try {
+    const c = getCacheClient();
+    if (ttlSeconds) {
+      await c.setex(key, ttlSeconds, value);
+    } else {
+      await c.set(key, value);
+    }
+    recordRedisSuccess();
+  } catch {
+    recordRedisFailure();
   }
 }
 
 export async function redisDel(key: string): Promise<void> {
-  await getCacheClient().del(key);
+  if (circuitIsOpen()) return;
+  try {
+    await getCacheClient().del(key);
+    recordRedisSuccess();
+  } catch {
+    recordRedisFailure();
+  }
 }
 
-/** Graceful shutdown — call before process.exit() */
+// ---------------------------------------------------------------------------
+// Distributed lock (SETNX pattern)
+// Used by provisionUser() to serialize concurrent signups for the same clerkId.
+// Returns true if the lock was acquired, false otherwise (Redis down or
+// another instance holds the lock).
+// ---------------------------------------------------------------------------
+export async function acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
+  if (circuitIsOpen()) return false;
+  try {
+    const result = await getCacheClient().set(key, "1", "EX", ttlSeconds, "NX");
+    return result === "OK";
+  } catch {
+    return false;
+  }
+}
+
+export async function releaseLock(key: string): Promise<void> {
+  if (circuitIsOpen()) return;
+  try {
+    await getCacheClient().del(key);
+  } catch {
+    // best-effort; TTL will expire the lock automatically
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Health check — used by /api/health route
+// ---------------------------------------------------------------------------
+export async function redisHealthCheck(): Promise<{
+  healthy: boolean;
+  latencyMs?: number;
+  circuitOpen: boolean;
+  failures: number;
+  error?: string;
+}> {
+  const circuitOpen = circuitIsOpen();
+  if (circuitOpen) {
+    return { healthy: false, circuitOpen: true, failures: _failures };
+  }
+
+  const start = Date.now();
+  try {
+    await getCacheClient().ping();
+    return {
+      healthy:     true,
+      latencyMs:   Date.now() - start,
+      circuitOpen: false,
+      failures:    0,
+    };
+  } catch (err) {
+    return {
+      healthy:     false,
+      circuitOpen: false,
+      failures:    _failures,
+      error:       (err as Error).message,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown — call before process.exit()
+// ---------------------------------------------------------------------------
 export async function closeAllRedisConnections(): Promise<void> {
   if (_cacheClient) {
     await _cacheClient.quit();
     _cacheClient = null;
-    console.log("[Redis:cache] closed");
+    console.log("[Redis] connection closed");
   }
 }

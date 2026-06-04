@@ -9,20 +9,46 @@ export async function GET(req: Request) {
     if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get("status");
-    const customerId = searchParams.get("customerId");
+    const status       = searchParams.get("status");
+    const customerId   = searchParams.get("customerId");
+    const includeItems = searchParams.get("items") === "true";
+    // Pagination
+    const take   = Math.min(parseInt(searchParams.get("take") ?? "100", 10), 200);
+    const cursor = searchParams.get("cursor") ?? undefined;
 
     const where: Record<string, unknown> = { organizationId: tenantId };
-    if (status) where.status = status;
+    if (status)     where.status     = status;
     if (customerId) where.customerId = customerId;
 
-    const invoices = await prisma.invoice.findMany({
+    const baseOpts = {
       where,
-      include: { customer: { select: { name: true, email: true } }, items: true },
-      orderBy: { createdAt: "desc" },
-    });
+      take: take + 1,
+      orderBy: { createdAt: "desc" } as const,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 as const } : {}),
+    };
 
-    return NextResponse.json(invoices);
+    // Only include line items when explicitly requested (detail view)
+    const invoices = includeItems
+      ? await prisma.invoice.findMany({
+          ...baseOpts,
+          include: { customer: { select: { name: true, email: true } }, items: true },
+        })
+      : await prisma.invoice.findMany({
+          ...baseOpts,
+          select: {
+            id: true, invoiceNumber: true, customerId: true, organizationId: true,
+            status: true, issueDate: true, dueDate: true, subtotal: true,
+            taxRate: true, taxAmount: true, total: true, notes: true,
+            createdAt: true, updatedAt: true,
+            customer: { select: { name: true, email: true } },
+          },
+        });
+
+    const hasMore   = invoices.length > take;
+    const data      = hasMore ? invoices.slice(0, take) : invoices;
+    const nextCursor = hasMore ? data[data.length - 1].id : null;
+
+    return NextResponse.json({ invoices: data, nextCursor, hasMore });
   } catch (error) {
     console.error("[INVOICES_GET]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
