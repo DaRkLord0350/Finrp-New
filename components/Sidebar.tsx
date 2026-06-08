@@ -19,6 +19,7 @@ import {
   Scale,
   Wallet,
   Plug,
+  BarChart2,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,9 @@ const navItems = [
   { label: "Finance", href: "/finance", icon: BarChart3 },
   { label: "ERP", href: "/erp", icon: Boxes },
   { label: "Compliance", href: "/compliance", icon: ShieldCheck },
+  { label: "Reports", href: "/reports", icon: BarChart2 },
+  // { label: "Reports", href: "/reports", icon: Bot },
+
   { label: "AI Advisor", href: "/advisor", icon: Bot },
 ];
 

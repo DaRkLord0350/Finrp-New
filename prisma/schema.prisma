@@ -82,6 +82,7 @@ model Organization {
   monthlyRevenueStats MonthlyRevenueStat[]
   firmSnapshots    FirmSnapshot[]
   complianceStats  ComplianceStat[]
+  scheduledReports ScheduledReport[]
 
   @@index([slug])
   @@map("organizations")
@@ -3027,6 +3028,59 @@ model FirmSnapshot {
   @@unique([organizationId, snapshotDate])
   @@index([organizationId, snapshotDate])
   @@map("firm_snapshots")
+}
+
+// ============================================================
+// REPORTS CENTER
+// ============================================================
+
+model FavoriteReport {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  reportSlug     String
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, organizationId, reportSlug])
+  @@index([userId, organizationId])
+  @@map("favorite_reports")
+}
+
+model ScheduledReport {
+  id               String   @id @default(cuid())
+  organizationId   String
+  reportSlug       String
+  name             String
+  frequency        String   // "daily" | "weekly" | "monthly"
+  emailRecipients  String[]
+  filters          Json?
+  nextRunAt        DateTime
+  lastRunAt        DateTime?
+  enabled          Boolean  @default(true)
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([enabled, nextRunAt])
+  @@map("scheduled_reports")
+}
+
+model ReportCache {
+  id             String   @id @default(cuid())
+  organizationId String
+  reportSlug     String
+  filterHash     String
+  payload        Json
+  generatedAt    DateTime @default(now())
+  expiresAt      DateTime
+
+  @@unique([organizationId, reportSlug, filterHash])
+  @@index([organizationId, reportSlug])
+  @@index([expiresAt])
+  @@map("report_cache")
 }
 
 // Organization-level compliance summary
