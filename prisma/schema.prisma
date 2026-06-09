@@ -166,8 +166,10 @@ enum AccountType {
   ASSET
   LIABILITY
   EQUITY
-  REVENUE
+  INCOME
   EXPENSE
+  COGS
+  STOCK
 }
 
 enum EntryType {
@@ -661,12 +663,24 @@ model Account {
   name           String
 
   type           AccountType
+  accountSubType String?
 
   description    String?
 
-  balance        Decimal @default(0) @db.Decimal(16,2)
+  // Running ledger balance (debit/credit-normalized per `type`).
+  // Exposed to API/service consumers as `currentBalance`.
+  balance         Decimal  @default(0) @db.Decimal(16,2)
+  openingBalance  Decimal  @default(0) @db.Decimal(16,2)
 
-  isActive       Boolean @default(true)
+  isActive          Boolean @default(true)
+  isSystemGenerated Boolean @default(false)
+
+  parentAccountId String?
+  parentAccount   Account?  @relation("AccountHierarchy", fields: [parentAccountId], references: [id], onDelete: SetNull)
+  children        Account[] @relation("AccountHierarchy")
+
+  createdBy String?
+  updatedBy String?
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -678,11 +692,14 @@ model Account {
   loans Loan[]
 
   @@index([organizationId])
+  @@index([organizationId, type])
+  @@index([organizationId, isActive])
+  @@index([parentAccountId])
 
   @@unique([organizationId, code])
 
   @@map("accounts")
-  
+
   expenses Expense[] @relation("ExpensePaymentAccount")
 }
 

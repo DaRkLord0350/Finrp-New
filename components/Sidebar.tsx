@@ -29,10 +29,10 @@ const navItems = [
   { label: "CRM", href: "/crm", icon: Users },
   { label: "Billing", href: "/billing", icon: FileText },
   { label: "Finance", href: "/finance", icon: BarChart3 },
+  { label: "Accounting", href: "/accounting/chart-of-accounts", icon: Wallet },
   { label: "ERP", href: "/erp", icon: Boxes },
   { label: "Compliance", href: "/compliance", icon: ShieldCheck },
   { label: "Reports", href: "/reports", icon: BarChart2 },
-  // { label: "Reports", href: "/reports", icon: Bot },
 
   { label: "AI Advisor", href: "/advisor", icon: Bot },
 ];
@@ -55,7 +55,6 @@ export default function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const inTreds = pathname.startsWith("/customer/treds");
   const [tredsOpen, setTredsOpen] = useState(inTreds);
-
   return (
     <>
       {/* Mobile overlay backdrop */}

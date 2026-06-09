@@ -10,6 +10,7 @@
 // ============================================================
 
 export { customerRepository } from "./customer.repository";
+export { accountRepository } from "./account.repository";
 export { invoiceRepository } from "./invoice.repository";
 export { complianceRepository } from "./compliance.repository";
 export { integrationRepository } from "./integration.repository";
