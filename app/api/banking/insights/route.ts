@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
+import { runInsightGeneration, generateAIInsightText } from "@/lib/banking/insight-generator";
 
 export async function GET(req: NextRequest) {
   const { userId } = await auth();
@@ -10,9 +12,19 @@ export async function GET(req: NextRequest) {
   const orgId = await getTenantId();
   if (!orgId) return NextResponse.json({ error: "No organization" }, { status: 400 });
 
+  const { searchParams } = new URL(req.url);
+  const unreadOnly = searchParams.get("unread") === "true";
+  const insightType = searchParams.get("type");
+
   const insights = await prisma.bankAIInsight.findMany({
-    where: { organizationId: orgId, isDismissed: false },
-    orderBy: { createdAt: "desc" },
+    where: {
+      organizationId: orgId,
+      isDismissed: false,
+      ...(unreadOnly ? { isRead: false } : {}),
+      ...(insightType ? { insightType: insightType as never } : {}),
+      OR: [{ validUntil: null }, { validUntil: { gte: new Date() } }],
+    },
+    orderBy: [{ severity: "desc" }, { createdAt: "desc" }],
     take: 20,
   });
 
@@ -37,4 +49,33 @@ export async function PATCH(req: NextRequest) {
   });
 
   return NextResponse.json({ updated: insight.count });
+}
+
+export async function POST(req: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const orgId = await getTenantId();
+  if (!orgId) return NextResponse.json({ error: "No organization" }, { status: 400 });
+
+  try {
+    const body = await req.json();
+    const { action, question } = body;
+
+    if (action === "regenerate") {
+      await runInsightGeneration(orgId);
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "ask" && question) {
+      const answer = await generateAIInsightText(orgId, question);
+      return NextResponse.json({ answer });
+    }
+
+    return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+  } catch (err) {
+    Sentry.captureException(err, { tags: { area: "banking", action: "insights-post" } });
+    const message = err instanceof Error ? err.message : "Internal server error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

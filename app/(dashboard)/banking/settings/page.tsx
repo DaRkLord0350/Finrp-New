@@ -1,22 +1,38 @@
 "use client";
 
-import { useState } from "react";
-import { Settings2, Bell, Shield, RefreshCw, Tag, Palette, Save, CheckCircle2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Settings2, Bell, Shield, RefreshCw, Tag, Save, CheckCircle2 } from "lucide-react";
+
+const SETTINGS_KEY = "banking_settings_v1";
+
+const DEFAULT_SETTINGS = {
+  autoSync: true, syncFrequency: "HOURLY", autoCategorizaion: true, duplicateDetection: true,
+  notifyConsentExpiry: true, notifyLargeTransactions: true, largeTransactionThreshold: 500000,
+  notifyReconciliationDue: true, defaultCurrency: "INR", fiscalYearStart: "APRIL",
+  reconciliationReminder: 7, riskAlertMinSeverity: "MEDIUM",
+  aiInsightsEnabled: true, gstMatchEnabled: true,
+};
+
+type Settings = typeof DEFAULT_SETTINGS;
 
 export default function BankingSettingsPage() {
   const [saved, setSaved] = useState(false);
-  const [settings, setSettings] = useState({
-    autoSync: true, syncFrequency: "HOURLY", autoCategorizaion: true, duplicateDetection: true,
-    notifyConsentExpiry: true, notifyLargeTransactions: true, largeTransactionThreshold: 500000,
-    notifyReconciliationDue: true, defaultCurrency: "INR", fiscalYearStart: "APRIL",
-    reconciliationReminder: 7, riskAlertMinSeverity: "MEDIUM",
-    aiInsightsEnabled: true, gstMatchEnabled: true,
-  });
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SETTINGS_KEY);
+      if (stored) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(stored) });
+    } catch {}
+  }, []);
 
   const save = () => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
+
+  const set = (key: keyof Settings, value: unknown) => setSettings(s => ({ ...s, [key]: value }));
 
   const Section = ({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) => (
     <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
@@ -40,6 +56,13 @@ export default function BankingSettingsPage() {
     </div>
   );
 
+  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+      <p style={{ fontSize: 13, color: "var(--text-primary)" }}>{label}</p>
+      {children}
+    </div>
+  );
+
   return (
     <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -48,81 +71,64 @@ export default function BankingSettingsPage() {
           <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Configure sync, notifications, categorization, and risk preferences</p>
         </div>
         <button onClick={save} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "8px 16px", borderRadius: 8, border: "none", background: saved ? "#10b981" : "#6366f1", color: "white", cursor: "pointer", fontWeight: 600, transition: "background 0.2s" }}>
-          {saved ? <><CheckCircle2 size={13} /> Saved!</> : <><Save size={13} /> Save Changes</>}
+          {saved ? <CheckCircle2 size={13} /> : <Save size={13} />}
+          {saved ? "Saved!" : "Save Settings"}
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        {/* Sync Settings */}
-        <Section title="Sync & Automation" icon={<RefreshCw size={14} />}>
-          <Toggle label="Auto Sync" desc="Automatically sync all connected accounts" checked={settings.autoSync} onChange={v => setSettings(s => ({ ...s, autoSync: v }))} />
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>SYNC FREQUENCY</label>
-            <select value={settings.syncFrequency} onChange={e => setSettings(s => ({ ...s, syncFrequency: e.target.value }))} style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
-              <option value="REALTIME">Real-time (AA)</option>
-              <option value="HOURLY">Every hour</option>
-              <option value="DAILY">Once daily</option>
-              <option value="MANUAL">Manual only</option>
-            </select>
-          </div>
-          <Toggle label="Auto-Categorization" desc="Apply rules engine to new transactions automatically" checked={settings.autoCategorizaion} onChange={v => setSettings(s => ({ ...s, autoCategorizaion: v }))} />
-          <Toggle label="Duplicate Detection" desc="Flag potential duplicate transactions for review" checked={settings.duplicateDetection} onChange={v => setSettings(s => ({ ...s, duplicateDetection: v }))} />
-        </Section>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Section title="Sync & Data" icon={<RefreshCw size={14} />}>
+            <Toggle label="Auto Sync" desc="Automatically sync connected accounts" checked={settings.autoSync} onChange={v => set("autoSync", v)} />
+            <Field label="Sync Frequency">
+              <select value={settings.syncFrequency} onChange={e => set("syncFrequency", e.target.value)} style={{ fontSize: 12, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
+                {["REAL_TIME", "HOURLY", "EVERY_6_HOURS", "DAILY"].map(o => <option key={o} value={o}>{o.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}</option>)}
+              </select>
+            </Field>
+            <Toggle label="Duplicate Detection" desc="Flag possible duplicate transactions" checked={settings.duplicateDetection} onChange={v => set("duplicateDetection", v)} />
+          </Section>
 
-        {/* Notifications */}
-        <Section title="Notifications" icon={<Bell size={14} />}>
-          <Toggle label="Consent Expiry Alerts" desc="Alert 30, 14, and 7 days before consent expiry" checked={settings.notifyConsentExpiry} onChange={v => setSettings(s => ({ ...s, notifyConsentExpiry: v }))} />
-          <Toggle label="Large Transaction Alerts" desc="Notify on transactions above threshold" checked={settings.notifyLargeTransactions} onChange={v => setSettings(s => ({ ...s, notifyLargeTransactions: v }))} />
-          {settings.notifyLargeTransactions && (
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>THRESHOLD AMOUNT (₹)</label>
-              <input type="number" value={settings.largeTransactionThreshold} onChange={e => setSettings(s => ({ ...s, largeTransactionThreshold: +e.target.value }))} style={{ width: "100%", fontSize: 13, padding: "7px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", outline: "none", boxSizing: "border-box" }} />
-            </div>
-          )}
-          <Toggle label="Reconciliation Reminders" desc="Remind if reconciliation not done after N days" checked={settings.notifyReconciliationDue} onChange={v => setSettings(s => ({ ...s, notifyReconciliationDue: v }))} />
-        </Section>
+          <Section title="Categorization" icon={<Tag size={14} />}>
+            <Toggle label="Auto Categorize" desc="Use rules engine to auto-assign categories" checked={settings.autoCategorizaion} onChange={v => set("autoCategorizaion", v)} />
+            <Toggle label="AI Insights" desc="Generate AI-powered cash flow insights" checked={settings.aiInsightsEnabled} onChange={v => set("aiInsightsEnabled", v)} />
+            <Toggle label="GST Matching" desc="Match bank transactions to GSTR entries" checked={settings.gstMatchEnabled} onChange={v => set("gstMatchEnabled", v)} />
+          </Section>
+        </div>
 
-        {/* Risk Settings */}
-        <Section title="Risk & Fraud" icon={<Shield size={14} />}>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>MINIMUM ALERT SEVERITY</label>
-            <select value={settings.riskAlertMinSeverity} onChange={e => setSettings(s => ({ ...s, riskAlertMinSeverity: e.target.value }))} style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
-              <option value="LOW">Low (all alerts)</option>
-              <option value="MEDIUM">Medium and above</option>
-              <option value="HIGH">High and Critical only</option>
-              <option value="CRITICAL">Critical only</option>
-            </select>
-          </div>
-          <Toggle label="AI Insights" desc="Enable AI-powered financial insights panel" checked={settings.aiInsightsEnabled} onChange={v => setSettings(s => ({ ...s, aiInsightsEnabled: v }))} />
-          <Toggle label="GST Match Center" desc="Enable automatic GST return reconciliation" checked={settings.gstMatchEnabled} onChange={v => setSettings(s => ({ ...s, gstMatchEnabled: v }))} />
-        </Section>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Section title="Notifications" icon={<Bell size={14} />}>
+            <Toggle label="Consent Expiry Alerts" desc="Notify before AA consent expires" checked={settings.notifyConsentExpiry} onChange={v => set("notifyConsentExpiry", v)} />
+            <Toggle label="Large Transaction Alerts" checked={settings.notifyLargeTransactions} onChange={v => set("notifyLargeTransactions", v)} />
+            <Field label="Large Txn Threshold">
+              <input type="number" value={settings.largeTransactionThreshold} onChange={e => set("largeTransactionThreshold", Number(e.target.value))} style={{ width: 120, fontSize: 12, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", outline: "none" }} />
+            </Field>
+            <Toggle label="Reconciliation Reminders" checked={settings.notifyReconciliationDue} onChange={v => set("notifyReconciliationDue", v)} />
+            <Field label="Reminder Days Before">
+              <input type="number" value={settings.reconciliationReminder} onChange={e => set("reconciliationReminder", Number(e.target.value))} min={1} max={30} style={{ width: 80, fontSize: 12, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", outline: "none" }} />
+            </Field>
+          </Section>
 
-        {/* General */}
-        <Section title="General" icon={<Settings2 size={14} />}>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>DEFAULT CURRENCY</label>
-            <select value={settings.defaultCurrency} onChange={e => setSettings(s => ({ ...s, defaultCurrency: e.target.value }))} style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
-              <option value="INR">INR — Indian Rupee</option>
-              <option value="USD">USD — US Dollar</option>
-              <option value="EUR">EUR — Euro</option>
-              <option value="GBP">GBP — British Pound</option>
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>FISCAL YEAR START</label>
-            <select value={settings.fiscalYearStart} onChange={e => setSettings(s => ({ ...s, fiscalYearStart: e.target.value }))} style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
-              <option value="APRIL">April (India)</option>
-              <option value="JANUARY">January</option>
-              <option value="JULY">July</option>
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>RECONCILIATION REMINDER (DAYS)</label>
-            <input type="number" value={settings.reconciliationReminder} onChange={e => setSettings(s => ({ ...s, reconciliationReminder: +e.target.value }))} min={1} max={30} style={{ width: "100%", fontSize: 13, padding: "7px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", outline: "none", boxSizing: "border-box" }} />
-            <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>Alert if reconciliation not completed within this many days</p>
-          </div>
-        </Section>
+          <Section title="Risk & Compliance" icon={<Shield size={14} />}>
+            <Field label="Min Alert Severity">
+              <select value={settings.riskAlertMinSeverity} onChange={e => set("riskAlertMinSeverity", e.target.value)} style={{ fontSize: 12, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
+                {["LOW", "MEDIUM", "HIGH", "CRITICAL"].map(o => <option key={o}>{o}</option>)}
+              </select>
+            </Field>
+            <Field label="Fiscal Year Start">
+              <select value={settings.fiscalYearStart} onChange={e => set("fiscalYearStart", e.target.value)} style={{ fontSize: 12, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
+                {["APRIL", "JANUARY", "JULY", "OCTOBER"].map(o => <option key={o}>{o}</option>)}
+              </select>
+            </Field>
+            <Field label="Default Currency">
+              <select value={settings.defaultCurrency} onChange={e => set("defaultCurrency", e.target.value)} style={{ fontSize: 12, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
+                {["INR", "USD", "EUR", "GBP"].map(o => <option key={o}>{o}</option>)}
+              </select>
+            </Field>
+          </Section>
+        </div>
       </div>
+
+      <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Settings are stored locally. Backend persistence coming soon.</p>
     </div>
   );
 }

@@ -3,40 +3,10 @@
 import { useState } from "react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine, Legend,
+  Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { TrendingUp, TrendingDown, DollarSign, Flame, Droplets, Calendar, ChevronDown, AlertTriangle, BrainCircuit, ArrowUpRight, ArrowDownRight } from "lucide-react";
-
-const MONTHLY_DATA = [
-  { month: "Jan", inflow: 9800000, outflow: 7200000, net: 2600000 },
-  { month: "Feb", inflow: 8400000, outflow: 6800000, net: 1600000 },
-  { month: "Mar", inflow: 11200000, outflow: 8900000, net: 2300000 },
-  { month: "Apr", inflow: 10600000, outflow: 9200000, net: 1400000 },
-  { month: "May", inflow: 13400000, outflow: 10100000, net: 3300000 },
-  { month: "Jun", inflow: 12300000, outflow: 8700000, net: 3600000 },
-];
-
-const FORECAST_DATA = [
-  { month: "Jun", inflow: 12300000, outflow: 8700000, net: 3600000, forecast: false },
-  { month: "Jul", inflow: 13100000, outflow: 9400000, net: 3700000, forecast: true },
-  { month: "Aug", inflow: 11800000, outflow: 10200000, net: 1600000, forecast: true },
-  { month: "Sep", inflow: 14200000, outflow: 9800000, net: 4400000, forecast: true },
-];
-
-const DAILY_DATA = Array.from({ length: 30 }, (_, i) => ({
-  day: `${i + 1} Jun`,
-  balance: 24000000 + Math.sin(i * 0.5) * 3000000 + i * 150000,
-  inflow: Math.random() * 2000000 + 400000,
-  outflow: Math.random() * 1600000 + 300000,
-}));
-
-const UPCOMING_OBLIGATIONS = [
-  { label: "GST Payment (Jun 20)", amount: 284000, days: 10, type: "gst", severity: "warning" },
-  { label: "Payroll (Jun 30)", amount: 2340000, days: 20, type: "payroll", severity: "info" },
-  { label: "AWS Invoice (Jun 25)", amount: 56000, days: 15, type: "vendor", severity: "info" },
-  { label: "Loan EMI HDFC (Jul 1)", amount: 284500, days: 21, type: "loan", severity: "info" },
-  { label: "TDS Q1 Deposit (Jul 7)", amount: 148000, days: 27, type: "tds", severity: "warning" },
-];
+import { TrendingUp, TrendingDown, Flame, Droplets, Loader2, RefreshCw } from "lucide-react";
+import { useQuery, useQueryClient } from "@/lib/queryCache";
 
 function formatINR(n: number) {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
@@ -44,158 +14,181 @@ function formatINR(n: number) {
   return `₹${(n / 1000).toFixed(0)}K`;
 }
 
-export default function CashFlowPage() {
-  const [period, setPeriod] = useState<"daily" | "monthly" | "quarterly">("monthly");
-  const [forecastHorizon, setForecastHorizon] = useState<30 | 60 | 90>(30);
+interface CashFlowSnapshot {
+  month?: string;
+  inflow: number;
+  outflow: number;
+  net: number;
+  snapshotDate?: string;
+}
 
-  const latest = MONTHLY_DATA[MONTHLY_DATA.length - 1];
-  const prev = MONTHLY_DATA[MONTHLY_DATA.length - 2];
-  const inflowChg = ((latest.inflow - prev.inflow) / prev.inflow) * 100;
-  const outflowChg = ((latest.outflow - prev.outflow) / prev.outflow) * 100;
-  const netChg = latest.net - prev.net;
-  const burnRate = latest.outflow / 30;
-  const daysOfCash = Math.round(28540000 / burnRate);
+export default function CashFlowPage() {
+  const [period, setPeriod] = useState<"monthly" | "quarterly">("monthly");
+  const [months, setMonths] = useState(6);
+  const qc = useQueryClient();
+
+  const key = ["banking", "cash-flow", period, months];
+
+  const { data, isLoading } = useQuery(
+    key,
+    async () => {
+      const periodParam = period === "monthly" ? "MONTHLY" : "QUARTERLY";
+      const r = await fetch(`/api/banking/cash-flow?period=${periodParam}&months=${months}`);
+      if (!r.ok) return { snapshots: [] as CashFlowSnapshot[] };
+      return r.json() as Promise<{ snapshots: CashFlowSnapshot[]; source: string }>;
+    },
+    { staleTime: 60_000 }
+  );
+
+  const snapshots = (data?.snapshots ?? []).map(s => ({
+    label: s.month ?? new Date(s.snapshotDate ?? "").toLocaleString("default", { month: "short", year: "2-digit" }),
+    inflow: s.inflow,
+    outflow: s.outflow,
+    net: s.net,
+  }));
+
+  const rebuild = async () => {
+    await fetch("/api/banking/cash-flow", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ months: 12 }) });
+    qc.invalidate(key);
+  };
+
+  const latest = snapshots[snapshots.length - 1];
+  const prev = snapshots[snapshots.length - 2];
+  const inflowChg = prev && prev.inflow > 0 ? ((latest.inflow - prev.inflow) / prev.inflow) * 100 : 0;
+  const outflowChg = prev && prev.outflow > 0 ? ((latest.outflow - prev.outflow) / prev.outflow) * 100 : 0;
+  const totalInflow = snapshots.reduce((s, r) => s + r.inflow, 0);
+  const totalOutflow = snapshots.reduce((s, r) => s + r.outflow, 0);
 
   return (
     <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>Cash Flow Center</h1>
-          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Treasury intelligence with AI-powered forecasting</p>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>Cash Flow</h1>
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Historical and projected cash movements</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {(["daily", "monthly", "quarterly"] as const).map(p => (
-            <button key={p} onClick={() => setPeriod(p)} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 7, border: "1px solid var(--border)", background: period === p ? "#6366f1" : "var(--bg-card)", color: period === p ? "white" : "var(--text-secondary)", cursor: "pointer", textTransform: "capitalize" }}>{p}</button>
-          ))}
+          <select value={months} onChange={e => setMonths(Number(e.target.value))} style={{ fontSize: 12, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
+            <option value={3}>3 Months</option>
+            <option value={6}>6 Months</option>
+            <option value={12}>12 Months</option>
+          </select>
+          <div style={{ display: "flex", gap: 0 }}>
+            {(["monthly", "quarterly"] as const).map(p => (
+              <button key={p} onClick={() => setPeriod(p)} style={{ fontSize: 12, padding: "6px 12px", border: "1px solid var(--border)", background: period === p ? "#6366f1" : "var(--bg-card)", color: period === p ? "white" : "var(--text-secondary)", cursor: "pointer", borderRadius: p === "monthly" ? "8px 0 0 8px" : "0 8px 8px 0" }}>
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </button>
+            ))}
+          </div>
+          <button onClick={rebuild} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
+            <RefreshCw size={12} /> Rebuild
+          </button>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-        {[
-          { label: "Monthly Inflow", value: formatINR(latest.inflow), change: inflowChg, icon: <TrendingUp size={14} color="#10b981" />, accent: "#10b981" },
-          { label: "Monthly Outflow", value: formatINR(latest.outflow), change: outflowChg, icon: <TrendingDown size={14} color="#ef4444" />, accent: "#ef4444" },
-          { label: "Net Cash Flow", value: formatINR(latest.net), change: (netChg / prev.net) * 100, icon: <DollarSign size={14} color="#6366f1" />, accent: "#6366f1" },
-          { label: "Days of Cash", value: `${daysOfCash}d`, change: null, icon: <Droplets size={14} color="#06b6d4" />, accent: "#06b6d4", sub: `Burn: ${formatINR(burnRate)}/day` },
-        ].map((card) => (
-          <div key={card.label} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px 18px", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: card.accent }} />
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{card.label}</p>
-              <div style={{ width: 28, height: 28, borderRadius: 6, background: `${card.accent}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>{card.icon}</div>
-            </div>
-            <p style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)" }}>{card.value}</p>
-            {card.sub && <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{card.sub}</p>}
-            {card.change !== null && (
-              <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
-                {(card.change ?? 0) >= 0 ? <ArrowUpRight size={11} color="#10b981" /> : <ArrowDownRight size={11} color="#ef4444" />}
-                <span style={{ fontSize: 11, fontWeight: 600, color: (card.change ?? 0) >= 0 ? "#10b981" : "#ef4444" }}>{Math.abs(card.change ?? 0).toFixed(1)}%</span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>vs last month</span>
+      {isLoading ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} style={{ height: 96, borderRadius: 12, background: "var(--bg-card)", border: "1px solid var(--border)", opacity: 0.4 }} />)}
+        </div>
+      ) : snapshots.length > 0 ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          {[
+            { label: "Total Inflow", value: formatINR(totalInflow), sub: `${months}m period`, icon: TrendingUp, color: "#10b981", change: inflowChg },
+            { label: "Total Outflow", value: formatINR(totalOutflow), sub: `${months}m period`, icon: TrendingDown, color: "#ef4444", change: outflowChg },
+            { label: "Net Cash Flow", value: formatINR(totalInflow - totalOutflow), sub: `${months}m net`, icon: Flame, color: (totalInflow - totalOutflow) >= 0 ? "#10b981" : "#ef4444" },
+            { label: "Avg Monthly Net", value: formatINR(snapshots.length > 0 ? (totalInflow - totalOutflow) / snapshots.length : 0), sub: "per month", icon: Droplets, color: "#6366f1" },
+          ].map(({ label, value, sub, icon: Icon, color, change }) => (
+            <div key={label} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px 18px", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: color }} />
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</p>
+                <Icon size={14} color={color} />
               </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Charts Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        {/* Monthly Inflow / Outflow */}
-        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 16 }}>Monthly Inflow vs Outflow</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={MONTHLY_DATA} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} tickFormatter={(v) => formatINR(v)} />
-              <Tooltip contentStyle={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatINR(Number(v ?? 0))} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="inflow" name="Inflow" fill="#10b981" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="outflow" name="Outflow" fill="#ef4444" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Cash Balance Trend */}
-        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 16 }}>Daily Balance Trend (June)</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={DAILY_DATA.slice(0, 20)} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-              <defs>
-                <linearGradient id="balanceGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} interval={3} />
-              <YAxis tick={{ fontSize: 10, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} tickFormatter={(v) => formatINR(v)} />
-              <Tooltip contentStyle={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatINR(Number(v ?? 0))} />
-              <ReferenceLine y={5000000} stroke="#ef4444" strokeDasharray="3 3" label={{ value: "Min Threshold", fontSize: 10, fill: "#ef4444" }} />
-              <Area type="monotone" dataKey="balance" stroke="#6366f1" fill="url(#balanceGrad)" strokeWidth={2} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Forecast + Obligations */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        {/* Forecast Chart */}
-        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <BrainCircuit size={14} color="#818cf8" />
-              <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>AI Cash Flow Forecast</h3>
+              <p style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1 }}>{value}</p>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{sub}</p>
+              {change !== undefined && (
+                <p style={{ fontSize: 11, color: change >= 0 ? "#10b981" : "#ef4444", fontWeight: 600, marginTop: 4 }}>
+                  {change >= 0 ? "↑" : "↓"} {Math.abs(change).toFixed(1)}% vs prior
+                </p>
+              )}
             </div>
-            <select value={forecastHorizon} onChange={e => setForecastHorizon(+e.target.value as 30 | 60 | 90)} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
-              <option value={30}>30 Days</option>
-              <option value={60}>60 Days</option>
-              <option value={90}>90 Days</option>
-            </select>
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={FORECAST_DATA} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-              <defs>
-                <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#818cf8" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} tickFormatter={(v) => formatINR(v)} />
-              <Tooltip contentStyle={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatINR(Number(v ?? 0))} />
-              <Area type="monotone" dataKey="inflow" stroke="#10b981" fill="none" strokeWidth={2} strokeDasharray="5 3" />
-              <Area type="monotone" dataKey="net" stroke="#818cf8" fill="url(#forecastGrad)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-          <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8 }}>Dashed lines = AI forecast · Based on historical patterns + calendar obligations</p>
+          ))}
         </div>
+      ) : null}
 
-        {/* Upcoming Obligations */}
-        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 14 }}>Upcoming Obligations</h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {UPCOMING_OBLIGATIONS.map((ob, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, background: ob.severity === "warning" ? "rgba(245,158,11,0.06)" : "var(--bg-hover)", border: `1px solid ${ob.severity === "warning" ? "rgba(245,158,11,0.2)" : "var(--border)"}` }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: ob.severity === "warning" ? "#f59e0b" : "#6366f1", flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 12, fontWeight: 500, color: "var(--text-primary)" }}>{ob.label}</p>
-                  <p style={{ fontSize: 10, color: "var(--text-muted)" }}>Due in {ob.days} days</p>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: "#ef4444" }}>−{formatINR(ob.amount)}</p>
-                </div>
+      {/* Bar Chart — Inflow vs Outflow */}
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Inflow vs Outflow</h3>
+            <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Monthly comparison</p>
+          </div>
+          <div style={{ display: "flex", gap: 12 }}>
+            {[["#10b981", "Inflow"], ["#ef4444", "Outflow"]].map(([c, l]) => (
+              <div key={l} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 3, background: c }} />
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{l}</span>
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>Total Obligations (30 days)</p>
-              <p style={{ fontSize: 13, fontWeight: 700, color: "#ef4444" }}>−{formatINR(UPCOMING_OBLIGATIONS.reduce((s, o) => s + o.amount, 0))}</p>
-            </div>
-          </div>
         </div>
+        {isLoading ? (
+          <div style={{ height: 240, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Loader2 size={20} color="var(--text-muted)" style={{ animation: "spin 1s linear infinite" }} />
+          </div>
+        ) : snapshots.length === 0 ? (
+          <div style={{ height: 240, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)" }}>No cash flow data. Sync your accounts or click Rebuild.</p>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={snapshots} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barGap={2}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v / 100000).toFixed(0)}L`} />
+              <Tooltip contentStyle={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={v => formatINR(Number(v ?? 0))} />
+              <Bar dataKey="inflow" name="Inflow" fill="#10b981" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="outflow" name="Outflow" fill="#ef4444" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Net Cash Flow Area */}
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
+        <div style={{ marginBottom: 16 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Net Cash Flow Trend</h3>
+          <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Cumulative surplus / deficit</p>
+        </div>
+        {isLoading ? (
+          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Loader2 size={20} color="var(--text-muted)" style={{ animation: "spin 1s linear infinite" }} />
+          </div>
+        ) : snapshots.length === 0 ? (
+          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)" }}>No data available.</p>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={180}>
+            <AreaChart data={snapshots} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="netGradPos" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="netGradNeg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.25} /><stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v / 100000).toFixed(0)}L`} />
+              <Tooltip contentStyle={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={v => formatINR(Number(v ?? 0))} />
+              <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="4 2" />
+              <Area type="monotone" dataKey="net" name="Net" stroke="#6366f1" fill="url(#netGradPos)" strokeWidth={2} dot={{ r: 3, fill: "#6366f1" }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </div>
   );

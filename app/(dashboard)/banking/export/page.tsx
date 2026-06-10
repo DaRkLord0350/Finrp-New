@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Download, FileSpreadsheet, FileText, File, CheckCircle2, Calendar, Filter } from "lucide-react";
+import { useBankAccounts } from "@/hooks/useBankAccounts";
 
 const EXPORT_REPORTS = [
   { id: "transactions", label: "Transaction Report", description: "All transactions with categories, tags, and reconciliation status", formats: ["xlsx", "csv", "pdf"], icon: <FileSpreadsheet size={18} color="#10b981" /> },
@@ -21,13 +22,22 @@ export default function ExportPage() {
   const [exporting, setExporting] = useState(false);
   const [done, setDone] = useState<string[]>([]);
 
+  const { accounts } = useBankAccounts();
   const toggle = (id: string) => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
 
   const handleExport = async () => {
     setExporting(true);
-    await new Promise(r => setTimeout(r, 1800));
-    setDone(selected);
-    setExporting(false);
+    try {
+      if (selected.includes("transactions")) {
+        const params = new URLSearchParams({ format, dateFrom, dateTo });
+        if (bank !== "all") params.set("bankAccountId", bank);
+        window.open(`/api/banking/transactions/export?${params}`, "_blank");
+      }
+      await new Promise(r => setTimeout(r, 800));
+      setDone(selected);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -98,9 +108,9 @@ export default function ExportPage() {
             <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>BANK ACCOUNT</label>
             <select value={bank} onChange={e => setBank(e.target.value)} style={{ width: "100%", fontSize: 12, padding: "7px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
               <option value="all">All Accounts</option>
-              <option value="hdfc4821">HDFC Bank XXXX4821</option>
-              <option value="icici9032">ICICI Bank XXXX9032</option>
-              <option value="sbi1197">SBI XXXX1197</option>
+              {accounts.map(a => (
+                <option key={a.id} value={a.id}>{a.bankName} {a.maskedNumber}</option>
+              ))}
             </select>
           </div>
 
