@@ -20,6 +20,7 @@ import {
   Wallet,
   Plug,
   BarChart2,
+  Building2,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,16 @@ const tredsSubItems = [
   { label: "Integration", href: "/customer/treds/integration", icon: Plug },
 ];
 
+const bankingSubItems = [
+  { label: "Dashboard",      href: "/banking/dashboard",     icon: LayoutDashboard },
+  { label: "Bank Accounts",  href: "/banking/accounts",      icon: Building2 },
+  { label: "Transactions",   href: "/banking/transactions",  icon: Wallet },
+  { label: "Reconciliation", href: "/banking/reconciliation",icon: Scale },
+  { label: "Cash Flow",      href: "/banking/cash-flow",     icon: BarChart3 },
+  { label: "GST Match",      href: "/banking/gst-match",     icon: ShieldCheck },
+  { label: "AI Insights",    href: "/banking/ai-insights",   icon: Bot },
+];
+
 interface SidebarProps {
   open?: boolean;
   onClose?: () => void;
@@ -54,7 +65,9 @@ interface SidebarProps {
 export default function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const inTreds = pathname.startsWith("/customer/treds");
+  const inBanking = pathname.startsWith("/banking");
   const [tredsOpen, setTredsOpen] = useState(inTreds);
+  const [bankingOpen, setBankingOpen] = useState(inBanking);
   return (
     <>
       {/* Mobile overlay backdrop */}
@@ -142,6 +155,88 @@ export default function Sidebar({ open = false, onClose }: SidebarProps) {
               </Link>
             );
           })}
+
+          {/* ── Banking OS Section ───────────────────── */}
+          <div style={{ marginTop: 4 }}>
+            <p
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "var(--text-muted)",
+                padding: "8px 12px 4px",
+              }}
+            >
+              Banking
+            </p>
+
+            <button
+              className={cn("sidebar-nav-item", inBanking && "active")}
+              onClick={() => setBankingOpen((v) => !v)}
+              style={{ width: "100%", textAlign: "left" }}
+            >
+              <Landmark size={16} strokeWidth={1.75} />
+              <span>Banking OS</span>
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
+                <span
+                  style={{
+                    fontSize: 9,
+                    background: "rgba(99,102,241,0.15)",
+                    color: "#818cf8",
+                    padding: "1px 5px",
+                    borderRadius: 4,
+                    fontWeight: 700,
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  NEW
+                </span>
+                <ChevronDown
+                  size={12}
+                  style={{
+                    transform: bankingOpen ? "rotate(180deg)" : "rotate(0deg)",
+                    transition: "transform 0.2s ease",
+                    opacity: 0.6,
+                  }}
+                />
+              </div>
+            </button>
+
+            {bankingOpen && (
+              <div
+                style={{
+                  paddingLeft: 24,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1,
+                  marginTop: 2,
+                  borderLeft: "1px solid var(--border)",
+                  marginLeft: 20,
+                }}
+              >
+                {bankingSubItems.map((item) => {
+                  const active = pathname.startsWith(item.href);
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn("sidebar-nav-item", active && "active")}
+                      onClick={onClose}
+                      style={{ fontSize: 13, padding: "7px 10px" }}
+                    >
+                      <Icon size={13} strokeWidth={1.75} />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+                <Link href="/banking" className={cn("sidebar-nav-item")} onClick={onClose} style={{ fontSize: 11, padding: "5px 10px", color: "var(--text-muted)" }}>
+                  View all →
+                </Link>
+              </div>
+            )}
+          </div>
 
           {/* ── TReDS Section ────────────────────────── */}
           <div style={{ marginTop: 4 }}>

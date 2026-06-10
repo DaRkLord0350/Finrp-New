@@ -84,6 +84,18 @@ model Organization {
   complianceStats  ComplianceStat[]
   scheduledReports ScheduledReport[]
 
+  // ── Banking OS ──────────────────────────────
+  bankTransactions       BankTransaction[]
+  bankingRules           BankingRule[]
+  reconciliationSessions BankReconciliationSession[]
+  bankConsents           BankConsent[]
+  bankConnections        BankConnection[]
+  bankStatementImports   BankStatementImport[]
+  cashFlowSnapshots      CashFlowSnapshot[]
+  gstBankMatches         GSTBankMatch[]
+  bankRiskAlerts         BankRiskAlert[]
+  bankAIInsights         BankAIInsight[]
+
   @@index([slug])
   @@map("organizations")
 }
@@ -760,40 +772,82 @@ model JournalLine {
 // BANK ACCOUNT
 // ============================================================
 model BankAccount {
-  id               String @id @default(cuid())
-
+  id               String          @id @default(cuid())
   organizationId   String
 
+  // Identity
   accountName      String
-
   bankName         String
-
+  bankCode         String?         // First 4 chars of IFSC
   accountNumber    String
-
+  maskedNumber     String?         // e.g. "XXXX XXXX 4321"
   ifscCode         String?
-
   swiftCode        String?
+  micrCode         String?
+  branchName       String?
+  branchCity       String?
 
-  currency         String @default("INR")
+  // Account classification
+  accountType      BankAccountType @default(CURRENT)
+  currency         String          @default("INR")
 
-  openingBalance   Decimal @default(0) @db.Decimal(16,2)
+  // Balances
+  openingBalance   Decimal         @default(0) @db.Decimal(16,2)
+  currentBalance   Decimal         @default(0) @db.Decimal(16,2)
+  availableBalance Decimal         @default(0) @db.Decimal(16,2)
+  ledgerBalance    Decimal         @default(0) @db.Decimal(16,2)
 
-  currentBalance   Decimal @default(0) @db.Decimal(16,2)
+  // Flags
+  isPrimary        Boolean         @default(false)
+  isActive         Boolean         @default(true)
+  isVirtual        Boolean         @default(false)
 
-  isPrimary        Boolean @default(false)
+  // Sync state
+  lastSyncAt       DateTime?
+  lastSyncStatus   String?         // "SUCCESS" | "FAILED" | "PARTIAL"
+  lastSyncError    String?
+  autoSyncEnabled  Boolean         @default(false)
+  syncFrequency    String?         // "HOURLY" | "DAILY" | "WEEKLY"
+  nextSyncAt       DateTime?
 
-  createdAt        DateTime @default(now())
+  // Health & consent
+  healthScore      Int?            // 0-100
+  consentStatus    String?         // "ACTIVE" | "EXPIRED" | "REVOKED" | "NONE"
+  connectionId     String?
 
-  updatedAt        DateTime @updatedAt
+  // Metadata
+  notes            String?
+  metadata         Json?
 
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
   deletedAt        DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  payments Payment[] @relation("BankAccountPayments")
+  organization     Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments         Payment[]                 @relation("BankAccountPayments")
+  connection       BankConnection?           @relation("BankConnectionAccounts", fields: [connectionId], references: [id])
+  bankTransactions BankTransaction[]         @relation("BankAccountTransactions")
+  reconciliations  BankReconciliationSession[] @relation("BankAccountReconciliations")
+  statementImports BankStatementImport[]     @relation("BankAccountImports")
+  consents         BankConsent[]             @relation("BankAccountConsents")
 
   @@index([organizationId])
-
+  @@index([organizationId, isActive])
+  @@index([organizationId, accountType])
   @@map("bank_accounts")
+}
+
+enum BankAccountType {
+  SAVINGS
+  CURRENT
+  CASH_CREDIT
+  OVERDRAFT
+  FIXED_DEPOSIT
+  RECURRING_DEPOSIT
+  NRE
+  NRO
+  FOREX
+  WALLET
 }
 
 // ============================================================
@@ -3112,8 +3166,8 @@ model ComplianceStat {
   approvedCount      Int @default(0)
   rejectedCount      Int @default(0)
   expiredCount       Int @default(0)
-  dueSoon7d          Int @default(0)  // expiring within 7 days
-  dueSoon30d         Int @default(0)  // expiring within 30 days
+  dueSoon7d          Int @default(0)
+  dueSoon30d         Int @default(0)
 
   computedAt     DateTime @default(now())
 
@@ -3122,4 +3176,582 @@ model ComplianceStat {
   @@unique([organizationId, snapshotDate])
   @@index([organizationId, snapshotDate])
   @@map("compliance_stats")
+}
+
+// ============================================================
+// =================== BANKING OS MODELS ======================
+// ============================================================
+
+// ============================================================
+// BANK TRANSACTION
+// ============================================================
+model BankTransaction {
+  id               String          @id @default(cuid())
+  organizationId   String
+  bankAccountId    String
+
+  transactionDate  DateTime
+  valueDate        DateTime?
+  narration        String
+  referenceNumber  String?
+  chequeNumber     String?
+
+  // Amounts
+  credit           Decimal?        @db.Decimal(16, 2)
+  debit            Decimal?        @db.Decimal(16, 2)
+  balance          Decimal?        @db.Decimal(16, 2)
+
+  // Classification
+  category         String?
+  subCategory      String?
+  gstCategory      GSTCategory?
+  txnType          BankTxnType     @default(UNKNOWN)
+
+  // GST correlation
+  gstin            String?
+  invoiceRef       String?
+  gstAmount        Decimal?        @db.Decimal(16, 2)
+
+  // Status
+  status           BankTxnStatus   @default(UNREVIEWED)
+  reconcileStatus  ReconcileStatus @default(UNMATCHED)
+
+  // Source
+  source           BankTxnSource   @default(MANUAL)
+  importJobId      String?
+
+  // Entity link (after matching)
+  entityType       String?
+  entityId         String?
+
+  // Flags
+  isFlagged        Boolean         @default(false)
+  isDuplicate      Boolean         @default(false)
+  isIgnored        Boolean         @default(false)
+  requiresApproval Boolean         @default(false)
+
+  // Metadata
+  tags             String[]
+  notes            String?
+  metadata         Json?
+  aiCategory       String?
+  aiConfidence     Decimal?        @db.Decimal(5, 2)
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount      BankAccount             @relation("BankAccountTransactions", fields: [bankAccountId], references: [id])
+  reconcileMatches ReconciliationMatch[]
+  riskAlerts       BankRiskAlert[]
+
+  @@index([organizationId, transactionDate])
+  @@index([organizationId, bankAccountId])
+  @@index([organizationId, status])
+  @@index([organizationId, reconcileStatus])
+  @@index([bankAccountId, transactionDate])
+  @@map("bank_transactions")
+}
+
+enum BankTxnType {
+  UPI
+  NEFT
+  RTGS
+  IMPS
+  CHEQUE
+  CASH
+  EMI
+  SALARY
+  GST_PAYMENT
+  TDS_PAYMENT
+  VENDOR_PAYMENT
+  CUSTOMER_RECEIPT
+  BANK_CHARGE
+  INTEREST
+  DIVIDEND
+  LOAN_EMI
+  REFUND
+  REVERSAL
+  UNKNOWN
+}
+
+enum BankTxnStatus {
+  UNREVIEWED
+  REVIEWED
+  CATEGORIZED
+  MATCHED
+  EXCLUDED
+}
+
+enum ReconcileStatus {
+  UNMATCHED
+  MATCHED
+  PARTIAL
+  EXCEPTION
+  DUPLICATE
+  IGNORED
+}
+
+enum BankTxnSource {
+  AA_SETU
+  AA_FINBOX
+  ICICI_API
+  HDFC_API
+  AXIS_API
+  SBI_API
+  KOTAK_API
+  PDF_UPLOAD
+  CSV_UPLOAD
+  EXCEL_UPLOAD
+  MANUAL
+}
+
+enum GSTCategory {
+  B2B_PURCHASE
+  B2B_SALE
+  B2C_SALE
+  GST_PAYMENT
+  GST_REFUND
+  IMPORT
+  EXPORT
+  RCM_PAYMENT
+  EXEMPT
+  UNKNOWN
+}
+
+// ============================================================
+// BANKING RULE (Auto-categorization engine)
+// ============================================================
+model BankingRule {
+  id             String   @id @default(cuid())
+  organizationId String
+
+  name           String
+  description    String?
+
+  priority       Int      @default(100)
+  isActive       Boolean  @default(true)
+  isSystem       Boolean  @default(false)
+
+  // Conditions: [{field, operator, value, logic}]
+  conditions     Json
+
+  // Actions: [{type, value}]
+  actions        Json
+
+  matchCount     Int      @default(0)
+  lastMatchedAt  DateTime?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isActive])
+  @@index([organizationId, priority])
+  @@map("banking_rules")
+}
+
+// ============================================================
+// BANK RECONCILIATION SESSION
+// ============================================================
+model BankReconciliationSession {
+  id             String                @id @default(cuid())
+  organizationId String
+  bankAccountId  String
+
+  name           String?
+  startDate      DateTime
+  endDate        DateTime
+
+  status         ReconcileSessionStatus @default(IN_PROGRESS)
+
+  totalTxns      Int     @default(0)
+  matchedTxns    Int     @default(0)
+  unmatchedTxns  Int     @default(0)
+  exceptionTxns  Int     @default(0)
+
+  openingBalance Decimal? @db.Decimal(16, 2)
+  closingBalance Decimal? @db.Decimal(16, 2)
+
+  completedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount    BankAccount      @relation("BankAccountReconciliations", fields: [bankAccountId], references: [id])
+  matches        ReconciliationMatch[]
+
+  @@index([organizationId, bankAccountId])
+  @@index([organizationId, status])
+  @@map("bank_reconciliation_sessions")
+}
+
+enum ReconcileSessionStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+// ============================================================
+// RECONCILIATION MATCH
+// ============================================================
+model ReconciliationMatch {
+  id                String          @id @default(cuid())
+  sessionId         String
+  bankTransactionId String
+
+  entityType        String?
+  entityId          String?
+  entityRef         String?
+
+  matchType         MatchType       @default(MANUAL)
+  confidence        Decimal?        @db.Decimal(5, 2)
+  status            ReconcileStatus @default(MATCHED)
+
+  notes             String?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  session           BankReconciliationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  bankTransaction   BankTransaction           @relation(fields: [bankTransactionId], references: [id])
+
+  @@index([sessionId])
+  @@index([bankTransactionId])
+  @@map("reconciliation_matches")
+}
+
+enum MatchType {
+  AUTO
+  MANUAL
+  SUGGESTED
+}
+
+// ============================================================
+// BANK CONSENT (Account Aggregator)
+// ============================================================
+model BankConsent {
+  id             String        @id @default(cuid())
+  organizationId String
+  bankAccountId  String?
+
+  provider       AAProvider    @default(SETU)
+  consentHandle  String?       @unique
+  consentId      String?
+
+  status         ConsentStatus @default(PENDING)
+
+  startDate      DateTime?
+  endDate        DateTime?
+  consentType    String?
+  frequency      String?
+
+  fiTypes        String[]
+
+  metadata       Json?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount    BankAccount? @relation("BankAccountConsents", fields: [bankAccountId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@map("bank_consents")
+}
+
+enum AAProvider {
+  SETU
+  FINBOX
+  ONEMONEY
+  PERFIOS
+  YODLEE
+  MANUAL
+}
+
+enum ConsentStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  REVOKED
+  REJECTED
+  PAUSED
+}
+
+// ============================================================
+// BANK CONNECTION (API integration config)
+// ============================================================
+model BankConnection {
+  id             String           @id @default(cuid())
+  organizationId String
+
+  provider       BankProvider     @default(MANUAL)
+  name           String?
+  displayName    String?
+
+  accessToken    String?
+  refreshToken   String?
+  webhookSecret  String?
+
+  status         ConnectionStatus @default(DISCONNECTED)
+  lastSyncAt     DateTime?
+  nextSyncAt     DateTime?
+  healthScore    Int?
+
+  metadata       Json?
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccounts   BankAccount[] @relation("BankConnectionAccounts")
+
+  @@unique([organizationId, provider])
+  @@index([organizationId])
+  @@map("bank_connections")
+}
+
+enum BankProvider {
+  SETU_AA
+  FINBOX
+  ICICI
+  HDFC
+  AXIS
+  SBI
+  KOTAK
+  YES_BANK
+  MANUAL
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  SYNCING
+  PENDING_AUTH
+}
+
+// ============================================================
+// BANK STATEMENT IMPORT
+// ============================================================
+model BankStatementImport {
+  id             String              @id @default(cuid())
+  organizationId String
+  bankAccountId  String?
+
+  fileName       String
+  fileUrl        String?
+  fileType       BankImportFileType  @default(CSV)
+  fileSize       Int?
+
+  status         BankImportStatus    @default(PENDING)
+
+  totalRows      Int?
+  successRows    Int?
+  errorRows      Int?
+  duplicateRows  Int?
+
+  errors         Json?
+  detectedBank   String?
+  metadata       Json?
+
+  processedAt    DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount    BankAccount? @relation("BankAccountImports", fields: [bankAccountId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@map("bank_statement_imports")
+}
+
+enum BankImportFileType {
+  PDF
+  CSV
+  EXCEL
+  OFX
+  MT940
+}
+
+enum BankImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  PARTIAL
+}
+
+// ============================================================
+// CASH FLOW SNAPSHOT
+// ============================================================
+model CashFlowSnapshot {
+  id             String   @id @default(cuid())
+  organizationId String
+
+  snapshotDate   DateTime
+  period         String   // "DAILY" | "WEEKLY" | "MONTHLY" | "QUARTERLY"
+
+  totalInflow    Decimal  @default(0) @db.Decimal(16, 2)
+  totalOutflow   Decimal  @default(0) @db.Decimal(16, 2)
+  netCashFlow    Decimal  @default(0) @db.Decimal(16, 2)
+  openingBalance Decimal  @default(0) @db.Decimal(16, 2)
+  closingBalance Decimal  @default(0) @db.Decimal(16, 2)
+
+  breakdown      Json?
+  isForecast     Boolean  @default(false)
+
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, snapshotDate, period])
+  @@index([organizationId, snapshotDate])
+  @@map("cash_flow_snapshots")
+}
+
+// ============================================================
+// GST BANK MATCH
+// ============================================================
+model GSTBankMatch {
+  id                String         @id @default(cuid())
+  organizationId    String
+  bankTransactionId String?
+
+  gstrType          String?
+  gstrPeriod        String?
+  invoiceId         String?
+  invoiceNumber     String?
+  gstin             String?
+  vendorName        String?
+
+  amount            Decimal        @db.Decimal(16, 2)
+  gstAmount         Decimal?       @db.Decimal(16, 2)
+
+  matchStatus       GSTMatchStatus @default(UNMATCHED)
+  confidence        Decimal?       @db.Decimal(5, 2)
+  issues            Json?
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, matchStatus])
+  @@index([organizationId, gstrPeriod])
+  @@map("gst_bank_matches")
+}
+
+enum GSTMatchStatus {
+  MATCHED
+  UNMATCHED
+  PARTIAL
+  MISMATCH
+  MISSING_INVOICE
+  MISSING_RETURN
+}
+
+// ============================================================
+// BANK RISK ALERT
+// ============================================================
+model BankRiskAlert {
+  id                String          @id @default(cuid())
+  organizationId    String
+  bankTransactionId String?
+
+  riskType          RiskType
+  severity          RiskSeverity    @default(LOW)
+  title             String
+  description       String
+
+  status            RiskAlertStatus @default(OPEN)
+  metadata          Json?
+
+  resolvedAt        DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  organization      Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transaction       BankTransaction? @relation(fields: [bankTransactionId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, severity])
+  @@index([organizationId, status])
+  @@map("bank_risk_alerts")
+}
+
+enum RiskType {
+  DUPLICATE_PAYMENT
+  ROUND_TRIPPING
+  LARGE_WITHDRAWAL
+  DORMANT_ACTIVITY
+  SUSPICIOUS_TRANSFER
+  VENDOR_FRAUD
+  UNUSUAL_PATTERN
+  HIGH_VALUE_TRANSACTION
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskAlertStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+// ============================================================
+// BANK AI INSIGHT
+// ============================================================
+model BankAIInsight {
+  id             String        @id @default(cuid())
+  organizationId String
+
+  insightType    AIInsightType
+  title          String
+  summary        String
+  detail         String?
+  data           Json?
+
+  actionRequired Boolean       @default(false)
+  actionLabel    String?
+  actionUrl      String?
+  severity       String?
+
+  isRead         Boolean       @default(false)
+  isDismissed    Boolean       @default(false)
+  validUntil     DateTime?
+
+  createdAt      DateTime      @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, insightType])
+  @@index([organizationId, isRead])
+  @@map("bank_ai_insights")
+}
+
+enum AIInsightType {
+  CASH_FLOW_ALERT
+  EXPENSE_TREND
+  VENDOR_ANALYSIS
+  CUSTOMER_ANALYSIS
+  TAX_INSIGHT
+  COMPLIANCE_ALERT
+  DUPLICATE_DETECTED
+  FRAUD_SIGNAL
+  LIQUIDITY_WARNING
+  PAYMENT_FORECAST
+  SALARY_PATTERN
+  GST_ALERT
 }
