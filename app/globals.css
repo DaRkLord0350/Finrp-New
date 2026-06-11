@@ -16,6 +16,9 @@
   --bg-elevated: #f3f4f6;
   --bg-overlay: #e5e7eb;
   --bg-nav: rgba(255, 255, 255, 0.8);
+  /* Card + hover aliases (used by Banking OS / CA Hub modules) */
+  --bg-card: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.025);
 
   /* Border */
   --border: oklch(0.922 0 0);
@@ -93,6 +96,9 @@
   --bg-elevated: #18181b;
   --bg-overlay: #1c1c20;
   --bg-nav: rgba(9, 9, 11, 0.8);
+  /* Card + hover aliases (used by Banking OS / CA Hub modules) */
+  --bg-card: #131316;
+  --bg-hover: rgba(255, 255, 255, 0.03);
 
   /* Border */
   --border: oklch(1 0 0 / 10%);

@@ -3755,3 +3755,429 @@ enum AIInsightType {
   SALARY_PATTERN
   GST_ALERT
 }
+
+// ============================================================
+// ============================================================
+//   CA HUB — Chartered Accountant Practice Operating System
+//
+//   Net-new data layer for the CA Hub super-module. Designed to be
+//   ADDITIVE: every model carries scalar tenant keys (firmId /
+//   organizationId = client org) with indexes instead of formal
+//   back-relations, so adding this block does NOT require touching
+//   any of the 100+ existing core models. Wire formal relations
+//   later if/when needed.
+//
+//   Tenant model:
+//     firmId         → the CA practice (Firm) that owns the record
+//     organizationId → the CLIENT organization the filing belongs to
+//     caUserId       → the CA/staff user responsible
+//
+//   Tables are prefixed ca_hub_* to avoid any name collision.
+// ============================================================
+
+enum CaFilingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  PENDING_DOCS
+  PENDING_REVIEW
+  READY_TO_FILE
+  FILED
+  LATE_FILED
+  OVERDUE
+  REJECTED
+}
+
+enum CaRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum GstReturnType {
+  GSTR1
+  GSTR3B
+  GSTR9
+  GSTR9C
+  CMP08
+  GSTR4
+  IFF
+}
+
+enum ItrFormType {
+  ITR1
+  ITR2
+  ITR3
+  ITR4
+  ITR5
+  ITR6
+  ITR7
+}
+
+enum TaxRegime {
+  OLD
+  NEW
+}
+
+enum TdsFormType {
+  FORM24Q
+  FORM26Q
+  FORM27Q
+  FORM27EQ
+}
+
+enum AuditEngagementType {
+  STATUTORY
+  TAX_AUDIT
+  INTERNAL
+  GST_AUDIT
+  STOCK
+  CONCURRENT
+  LIMITED_REVIEW
+}
+
+enum AuditEngagementStatus {
+  PLANNING
+  FIELDWORK
+  REVIEW
+  FINALIZED
+  SIGNED_OFF
+}
+
+enum RocFormType {
+  AOC4
+  MGT7
+  MGT7A
+  DIR3KYC
+  ADT1
+  DPT3
+  LLP8
+  LLP11
+  INC22
+}
+
+enum CaEsignType {
+  AADHAAR
+  DSC
+}
+
+enum CaEsignStatus {
+  DRAFT
+  SENT
+  VIEWED
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+enum CaCopilotRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum CaCopilotDomain {
+  COMPLIANCE
+  AUDIT
+  GST
+  TAX
+  NOTICE
+  GENERAL
+}
+
+// ── Per-client compliance scorecard (Client 360 + dashboard) ──
+model ClientComplianceProfile {
+  id             String      @id @default(cuid())
+  organizationId String      @unique
+  firmId         String?
+  partnerUserId  String?
+  managerUserId  String?
+  healthScore    Int         @default(0)
+  riskLevel      CaRiskLevel @default(LOW)
+  gstStatus      CaFilingStatus @default(NOT_STARTED)
+  tdsStatus      CaFilingStatus @default(NOT_STARTED)
+  itrStatus      CaFilingStatus @default(NOT_STARTED)
+  rocStatus      CaFilingStatus @default(NOT_STARTED)
+  auditStatus    CaFilingStatus @default(NOT_STARTED)
+  payrollStatus  CaFilingStatus @default(NOT_STARTED)
+  openTaskCount  Int         @default(0)
+  monthlyFee     Decimal?    @db.Decimal(12, 2)
+  lastReviewedAt DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([firmId])
+  @@index([riskLevel])
+  @@map("ca_hub_client_profiles")
+}
+
+// ── GST filings (GSTR-1/3B/9/9C etc.) ─────────────────────────
+model GstFiling {
+  id             String         @id @default(cuid())
+  organizationId String
+  firmId         String?
+  caUserId       String?
+  gstin          String?
+  returnType     GstReturnType
+  periodLabel    String          // e.g. "May 2026" or "FY 2025-26"
+  periodMonth    Int?
+  periodYear     Int
+  status         CaFilingStatus @default(NOT_STARTED)
+  taxableValue   Decimal?       @db.Decimal(16, 2)
+  taxLiability   Decimal?       @db.Decimal(16, 2)
+  itcClaimed     Decimal?       @db.Decimal(16, 2)
+  dueDate        DateTime
+  filedAt        DateTime?
+  arn            String?         // Acknowledgement Reference Number
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@index([returnType, periodYear, periodMonth])
+  @@index([dueDate])
+  @@map("ca_hub_gst_filings")
+}
+
+// ── Income tax returns (ITR 1-7) ──────────────────────────────
+model ItrFiling {
+  id              String         @id @default(cuid())
+  organizationId  String
+  firmId          String?
+  caUserId        String?
+  pan             String?
+  assessmentYear  String          // e.g. "2026-27"
+  formType        ItrFormType
+  regime          TaxRegime?
+  status          CaFilingStatus @default(NOT_STARTED)
+  grossTotalIncome Decimal?      @db.Decimal(16, 2)
+  totalDeductions Decimal?       @db.Decimal(16, 2)
+  taxPayable      Decimal?       @db.Decimal(16, 2)
+  refundDue       Decimal?       @db.Decimal(16, 2)
+  aisImported     Boolean        @default(false)
+  dueDate         DateTime
+  filedAt         DateTime?
+  acknowledgementNo String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@index([assessmentYear, formType])
+  @@map("ca_hub_itr_filings")
+}
+
+// ── TDS returns (24Q/26Q/27Q/27EQ) ────────────────────────────
+model TdsReturn {
+  id             String         @id @default(cuid())
+  organizationId String
+  firmId         String?
+  caUserId       String?
+  tan            String?
+  formType       TdsFormType
+  quarter        String          // "Q1".."Q4"
+  financialYear  String          // "2026-27"
+  status         CaFilingStatus @default(NOT_STARTED)
+  totalDeducted  Decimal?       @db.Decimal(16, 2)
+  totalDeposited Decimal?       @db.Decimal(16, 2)
+  deducteeCount  Int            @default(0)
+  dueDate        DateTime
+  filedAt        DateTime?
+  tokenNumber    String?         // provisional receipt / token
+  challanMatched Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@index([formType, financialYear, quarter])
+  @@map("ca_hub_tds_returns")
+}
+
+// ── Audit engagements + workpapers ────────────────────────────
+model AuditEngagement {
+  id             String                @id @default(cuid())
+  organizationId String
+  firmId         String?
+  leadCaUserId   String?
+  type           AuditEngagementType
+  financialYear  String
+  status         AuditEngagementStatus @default(PLANNING)
+  riskRating     CaRiskLevel           @default(MEDIUM)
+  udin           String?
+  materiality    Decimal?              @db.Decimal(16, 2)
+  planningDoneAt DateTime?
+  signOffAt      DateTime?
+  dueDate        DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  workpapers AuditWorkpaper[]
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@map("ca_hub_audit_engagements")
+}
+
+model AuditWorkpaper {
+  id             String         @id @default(cuid())
+  engagementId   String
+  ref            String          // index ref e.g. "B-3.2"
+  title          String
+  area           String          // "Revenue", "Fixed Assets", ...
+  status         CaFilingStatus @default(NOT_STARTED)
+  preparedById   String?
+  reviewedById   String?
+  conclusion     String?
+  sortOrder      Int            @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  engagement AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+  @@map("ca_hub_audit_workpapers")
+}
+
+// ── ROC / MCA filings ─────────────────────────────────────────
+model RocFiling {
+  id             String         @id @default(cuid())
+  organizationId String
+  firmId         String?
+  caUserId       String?
+  cin            String?
+  formType       RocFormType
+  financialYear  String
+  status         CaFilingStatus @default(NOT_STARTED)
+  dueDate        DateTime
+  filedAt        DateTime?
+  srn            String?         // Service Request Number
+  feePaid        Decimal?       @db.Decimal(12, 2)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@index([formType, financialYear])
+  @@map("ca_hub_roc_filings")
+}
+
+// ── Document vault (OCR + versioning + DigiLocker) ────────────
+model CaVaultDocument {
+  id             String   @id @default(cuid())
+  organizationId String?
+  firmId         String?
+  name           String
+  category       String   // "GST", "ITR", "KYC", "Financials", ...
+  mimeType       String?
+  sizeBytes      Int?
+  storageKey     String?
+  version        Int      @default(1)
+  uploadedById   String?
+  isConfidential Boolean  @default(false)
+  source         String?  // "UPLOAD" | "DIGILOCKER" | "CLIENT_PORTAL"
+  tags           String[] @default([])
+  ocrText        String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([firmId])
+  @@index([organizationId])
+  @@index([category])
+  @@map("ca_hub_vault_documents")
+}
+
+// ── eSign requests (Aadhaar / DSC) ────────────────────────────
+model CaEsignRequest {
+  id             String        @id @default(cuid())
+  organizationId String?
+  firmId         String?
+  documentName   String
+  documentKey    String?
+  signType       CaEsignType
+  status         CaEsignStatus @default(DRAFT)
+  signerName     String?
+  signerEmail    String?
+  requestedById  String?
+  sentAt         DateTime?
+  signedAt       DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@map("ca_hub_esign_requests")
+}
+
+// ── Timesheets (team productivity) ────────────────────────────
+model CaTimesheet {
+  id             String   @id @default(cuid())
+  firmId         String?
+  caUserId       String
+  organizationId String?  // client worked on (nullable for internal)
+  date           DateTime
+  hours          Decimal  @db.Decimal(5, 2)
+  billable       Boolean  @default(true)
+  activity       String
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  @@index([firmId, date])
+  @@index([caUserId, date])
+  @@map("ca_hub_timesheets")
+}
+
+// ── AI Copilot threads + messages ─────────────────────────────
+model CaCopilotThread {
+  id        String          @id @default(cuid())
+  firmId    String?
+  caUserId  String
+  domain    CaCopilotDomain @default(GENERAL)
+  title     String
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  messages CaCopilotMessage[]
+
+  @@index([caUserId])
+  @@index([firmId])
+  @@map("ca_hub_copilot_threads")
+}
+
+model CaCopilotMessage {
+  id        String        @id @default(cuid())
+  threadId  String
+  role      CaCopilotRole
+  content   String        @db.Text
+  createdAt DateTime      @default(now())
+
+  thread CaCopilotThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@map("ca_hub_copilot_messages")
+}
+
+// ── Practice metric snapshots (analytics rollups) ─────────────
+model PracticeMetricSnapshot {
+  id           String   @id @default(cuid())
+  firmId       String?
+  snapshotDate DateTime
+  totalClients Int      @default(0)
+  gstDue       Int      @default(0)
+  tdsDue       Int      @default(0)
+  itrDue       Int      @default(0)
+  rocDue       Int      @default(0)
+  auditPending Int      @default(0)
+  overdueCount Int      @default(0)
+  revenueMTD   Decimal? @db.Decimal(16, 2)
+  wip          Decimal? @db.Decimal(16, 2)
+  realizationRate Decimal? @db.Decimal(5, 2)
+  onTimeFilingRate Decimal? @db.Decimal(5, 2)
+  teamUtilization  Decimal? @db.Decimal(5, 2)
+  createdAt    DateTime @default(now())
+
+  @@unique([firmId, snapshotDate])
+  @@index([firmId])
+  @@map("ca_hub_metric_snapshots")
+}
