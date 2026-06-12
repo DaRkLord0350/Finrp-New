@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth/session";
+import { getOrganizationId } from "@/lib/auth/organization";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { format } from "date-fns";
@@ -34,7 +35,9 @@ export default async function CustomerCompliancePage() {
   const user = await getCurrentUser().catch(() => null);
   if (!user) redirect("/sign-in");
 
-  const submissions = await getComplianceTimeline(user.organizationId);
+  // Workspace-aware: serves the impersonated client org when a CA is viewing
+  const organizationId = await getOrganizationId();
+  const submissions = await getComplianceTimeline(organizationId);
 
   const completed = submissions.filter((s) => ["APPROVED", "COMPLETED"].includes(s.status)).length;
   const overdue = submissions.filter(

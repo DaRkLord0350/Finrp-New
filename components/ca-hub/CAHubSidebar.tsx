@@ -4,18 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X, Scale, ArrowLeft, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  CA_HUB_MODULES,
-  CA_HUB_GROUPS,
-  moduleHref,
-  type ModuleStatus,
-} from "@/lib/ca-hub/nav";
-
-const STATUS_BADGE: Record<ModuleStatus, { label: string; color: string; bg: string }> = {
-  live: { label: "LIVE", color: "#10b981", bg: "rgba(16,185,129,0.14)" },
-  beta: { label: "BETA", color: "#818cf8", bg: "rgba(99,102,241,0.16)" },
-  soon: { label: "SOON", color: "#a1a1aa", bg: "rgba(161,161,170,0.14)" },
-};
+import { CA_HUB_NAV_GROUPS } from "@/lib/ca-hub/nav";
+import { SidebarNavGroup } from "@/components/SidebarNavGroup";
 
 interface Props {
   open?: boolean;
@@ -24,9 +14,6 @@ interface Props {
 
 export default function CAHubSidebar({ open = false, onClose }: Props) {
   const pathname = usePathname();
-
-  const isActive = (href: string) =>
-    href === "/ca-hub" ? pathname === "/ca-hub" : pathname.startsWith(href);
 
   return (
     <>
@@ -64,65 +51,16 @@ export default function CAHubSidebar({ open = false, onClose }: Props) {
           </button>
         </div>
 
-        {/* Grouped nav */}
+        {/* Nav — domain group → module → sub-pages, all config-driven */}
         <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, overflowY: "auto", paddingRight: 2 }}>
-          {CA_HUB_GROUPS.map((group) => {
-            const mods = CA_HUB_MODULES.filter((m) => m.group === group);
-            if (mods.length === 0) return null;
-            return (
-              <div key={group} style={{ marginBottom: 4 }}>
-                <p
-                  style={{
-                    fontSize: 9.5, fontWeight: 700, letterSpacing: "0.09em",
-                    textTransform: "uppercase", color: "var(--text-muted)",
-                    padding: "8px 12px 4px",
-                  }}
-                >
-                  {group}
-                </p>
-                {mods.map((m) => {
-                  const href = moduleHref(m);
-                  const active = isActive(href);
-                  const Icon = m.icon;
-                  const badge = STATUS_BADGE[m.status];
-                  return (
-                    <Link
-                      key={href}
-                      href={href}
-                      onClick={onClose}
-                      className={cn("sidebar-nav-item", active && "active")}
-                      style={{ fontSize: 13, padding: "8px 10px" }}
-                      title={m.description}
-                    >
-                      <span
-                        style={{
-                          width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          background: active ? `${m.accent}22` : "transparent",
-                        }}
-                      >
-                        <Icon size={14} strokeWidth={1.9} color={active ? m.accent : "currentColor"} />
-                      </span>
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {m.label}
-                      </span>
-                      {m.status !== "live" && (
-                        <span
-                          style={{
-                            fontSize: 8.5, fontWeight: 800, letterSpacing: "0.04em",
-                            color: badge.color, background: badge.bg,
-                            padding: "1px 5px", borderRadius: 4, flexShrink: 0,
-                          }}
-                        >
-                          {badge.label}
-                        </span>
-                      )}
-                    </Link>
-                  );
-                })}
-              </div>
-            );
-          })}
+          {CA_HUB_NAV_GROUPS.map((group) => (
+            <SidebarNavGroup
+              key={group.id}
+              group={group}
+              pathname={pathname}
+              onNavigate={onClose}
+            />
+          ))}
         </nav>
 
         {/* Bottom */}

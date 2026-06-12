@@ -11,6 +11,12 @@
 //   live  → fully interactive
 //   beta  → interactive, evolving
 //   soon  → scaffolded, on the roadmap
+//
+// `items` feeds the landing-page feature grids; `subNav` feeds the
+// sidebar accordion (module → sub-pages). Sub-pages flagged
+// `comingSoon` render as disabled SOON rows — flip the flag once
+// the route exists. CA_HUB_NAV_GROUPS at the bottom assembles the
+// full sidebar tree consumed by <SidebarNavGroup>.
 // ============================================================
 
 import type { LucideIcon } from "lucide-react";
@@ -29,7 +35,9 @@ import {
   UsersRound,
   BarChart3,
   Sparkles,
+  Briefcase,
 } from "lucide-react";
+import type { NavBadge, NavGroupConfig, NavItem } from "@/components/SidebarNavGroup";
 
 export type ModuleStatus = "live" | "beta" | "soon";
 
@@ -40,10 +48,20 @@ export interface CaHubSubItem {
   blurb?: string;
 }
 
+/** Sidebar sub-page of a module (becomes a nested accordion row). */
+export interface CaHubSubNavItem {
+  label: string;
+  href: string;
+  /** no route yet — renders as a disabled SOON row */
+  comingSoon?: boolean;
+}
+
 export interface CaHubModule {
   /** url slug under /ca-hub */
   slug: string;
   label: string;
+  /** compact label used in the sidebar tree (falls back to `label`) */
+  shortLabel?: string;
   /** sidebar grouping header */
   group: "Practice" | "Compliance" | "Filings" | "Assurance" | "Workspace" | "Intelligence";
   icon: LucideIcon;
@@ -54,6 +72,8 @@ export interface CaHubModule {
   description: string;
   /** sub-features (becomes the landing feature grid + future sub-routes) */
   items: CaHubSubItem[];
+  /** sidebar sub-navigation — modules with subNav render as nested accordions */
+  subNav?: CaHubSubNavItem[];
 }
 
 export const CA_HUB_BASE = "/ca-hub";
@@ -62,6 +82,7 @@ export const CA_HUB_MODULES: CaHubModule[] = [
   {
     slug: "",
     label: "Practice Dashboard",
+    shortLabel: "Dashboard",
     group: "Practice",
     icon: LayoutDashboard,
     accent: "#6366f1",
@@ -114,6 +135,7 @@ export const CA_HUB_MODULES: CaHubModule[] = [
   {
     slug: "gst",
     label: "GST Command Center",
+    shortLabel: "GST",
     group: "Filings",
     icon: ReceiptText,
     accent: "#f59e0b",
@@ -129,10 +151,18 @@ export const CA_HUB_MODULES: CaHubModule[] = [
       { label: "ITC Reconciliation", href: "/ca-hub/gst", blurb: "2B vs books matching" },
       { label: "Bulk Filing Workflows", href: "/ca-hub/gst", blurb: "Multi-GSTIN automation" },
     ],
+    subNav: [
+      { label: "Dashboard", href: "/ca-hub/gst" },
+      { label: "Returns", href: "/ca-hub/gst/returns", comingSoon: true },
+      { label: "Reconciliation", href: "/ca-hub/gst/reconciliation", comingSoon: true },
+      { label: "Notices", href: "/ca-hub/gst/notices", comingSoon: true },
+      { label: "AI Review", href: "/ca-hub/gst/ai-review", comingSoon: true },
+    ],
   },
   {
     slug: "income-tax",
     label: "Income Tax Center",
+    shortLabel: "Income Tax",
     group: "Filings",
     icon: FileSpreadsheet,
     accent: "#8b5cf6",
@@ -146,10 +176,18 @@ export const CA_HUB_MODULES: CaHubModule[] = [
       { label: "Regime Comparison", href: "/ca-hub/income-tax", blurb: "Old vs new optimizer" },
       { label: "Bulk Filing", href: "/ca-hub/income-tax", blurb: "Batch e-filing" },
     ],
+    subNav: [
+      { label: "Dashboard", href: "/ca-hub/income-tax" },
+      { label: "Individual Returns", href: "/ca-hub/income-tax/individual-returns", comingSoon: true },
+      { label: "Business Returns", href: "/ca-hub/income-tax/business-returns", comingSoon: true },
+      { label: "Tax Planning", href: "/ca-hub/income-tax/tax-planning", comingSoon: true },
+      { label: "Notices", href: "/ca-hub/income-tax/notices", comingSoon: true },
+    ],
   },
   {
     slug: "tds",
     label: "TDS Center",
+    shortLabel: "TDS",
     group: "Filings",
     icon: Landmark,
     accent: "#06b6d4",
@@ -164,10 +202,17 @@ export const CA_HUB_MODULES: CaHubModule[] = [
       { label: "TRACES Integration", href: "/ca-hub/tds", blurb: "Justification + defaults" },
       { label: "Challan Reconciliation", href: "/ca-hub/tds", blurb: "OLTAS matching" },
     ],
+    subNav: [
+      { label: "Dashboard", href: "/ca-hub/tds" },
+      { label: "Returns", href: "/ca-hub/tds/returns", comingSoon: true },
+      { label: "Certificates", href: "/ca-hub/tds/certificates", comingSoon: true },
+      { label: "Compliance", href: "/ca-hub/tds/compliance", comingSoon: true },
+    ],
   },
   {
     slug: "audit",
     label: "Audit Workspace",
+    shortLabel: "Audit",
     group: "Assurance",
     icon: ClipboardCheck,
     accent: "#ec4899",
@@ -182,10 +227,18 @@ export const CA_HUB_MODULES: CaHubModule[] = [
       { label: "Tax Audit 3CA/3CB/3CD", href: "/ca-hub/audit", blurb: "Form generation" },
       { label: "UDIN Automation", href: "/ca-hub/audit", blurb: "ICAI UDIN minting" },
     ],
+    subNav: [
+      { label: "Dashboard", href: "/ca-hub/audit" },
+      { label: "Engagements", href: "/ca-hub/audit/engagements", comingSoon: true },
+      { label: "Working Papers", href: "/ca-hub/audit/working-papers", comingSoon: true },
+      { label: "Findings", href: "/ca-hub/audit/findings", comingSoon: true },
+      { label: "Reports", href: "/ca-hub/audit/reports", comingSoon: true },
+    ],
   },
   {
     slug: "roc",
     label: "ROC & MCA Center",
+    shortLabel: "ROC & MCA",
     group: "Assurance",
     icon: Building2,
     accent: "#f43f5e",
@@ -199,10 +252,18 @@ export const CA_HUB_MODULES: CaHubModule[] = [
       { label: "LLP Forms", href: "/ca-hub/roc", blurb: "Form 8 + Form 11" },
       { label: "Filing Tracker", href: "/ca-hub/roc", blurb: "SRN + status timeline" },
     ],
+    subNav: [
+      { label: "Dashboard", href: "/ca-hub/roc" },
+      { label: "Incorporation", href: "/ca-hub/roc/incorporation", comingSoon: true },
+      { label: "Annual Filings", href: "/ca-hub/roc/annual-filings", comingSoon: true },
+      { label: "Compliance", href: "/ca-hub/roc/compliance", comingSoon: true },
+      { label: "Forms", href: "/ca-hub/roc/forms", comingSoon: true },
+    ],
   },
   {
     slug: "documents",
     label: "Document Vault",
+    shortLabel: "Documents",
     group: "Workspace",
     icon: FolderLock,
     accent: "#14b8a6",
@@ -214,6 +275,11 @@ export const CA_HUB_MODULES: CaHubModule[] = [
       { label: "Versioning", href: "/ca-hub/documents", blurb: "Immutable history" },
       { label: "Secure Sharing", href: "/ca-hub/documents", blurb: "Expiring links + audit" },
       { label: "DigiLocker", href: "/ca-hub/documents", blurb: "Govt document pull" },
+    ],
+    subNav: [
+      { label: "Document Vault", href: "/ca-hub/documents" },
+      { label: "Shared Documents", href: "/ca-hub/documents/shared", comingSoon: true },
+      { label: "Client Requests", href: "/ca-hub/documents/requests", comingSoon: true },
     ],
   },
   {
@@ -231,10 +297,19 @@ export const CA_HUB_MODULES: CaHubModule[] = [
       { label: "Filing Approval", href: "/ca-hub/client-portal", blurb: "e-Approve returns" },
       { label: "Messaging Center", href: "/ca-hub/client-portal", blurb: "Threaded comms" },
     ],
+    subNav: [
+      { label: "Portal Home", href: "/ca-hub/client-portal" },
+      // client workspace launchers — these live in the CA Portal shell
+      { label: "All Clients", href: "/ca/customers/all" },
+      { label: "Assigned Clients", href: "/ca/customers/assigned" },
+      { label: "Activities", href: "/ca/customers/activity" },
+      { label: "Records", href: "/ca/customers" },
+    ],
   },
   {
     slug: "esign",
     label: "eSign Center",
+    shortLabel: "eSign",
     group: "Workspace",
     icon: PenLine,
     accent: "#a855f7",
@@ -246,11 +321,17 @@ export const CA_HUB_MODULES: CaHubModule[] = [
       { label: "DSC Signing", href: "/ca-hub/esign", blurb: "Token + cloud DSC" },
       { label: "Bulk Signing Queue", href: "/ca-hub/esign", blurb: "Batch sign-off" },
     ],
+    subNav: [
+      { label: "Dashboard", href: "/ca-hub/esign" },
+      { label: "Pending", href: "/ca-hub/esign/pending", comingSoon: true },
+      { label: "Completed", href: "/ca-hub/esign/completed", comingSoon: true },
+      { label: "Templates", href: "/ca-hub/esign/templates", comingSoon: true },
+    ],
   },
   {
     slug: "team",
     label: "Team Management",
-    group: "Intelligence",
+    group: "Practice",
     icon: UsersRound,
     accent: "#22c55e",
     status: "beta",
@@ -266,7 +347,7 @@ export const CA_HUB_MODULES: CaHubModule[] = [
   {
     slug: "analytics",
     label: "Practice Analytics",
-    group: "Intelligence",
+    group: "Practice",
     icon: BarChart3,
     accent: "#eab308",
     status: "beta",
@@ -282,6 +363,7 @@ export const CA_HUB_MODULES: CaHubModule[] = [
   {
     slug: "copilot",
     label: "AI CA Copilot",
+    shortLabel: "AI Copilot",
     group: "Intelligence",
     icon: Sparkles,
     accent: "#f97316",
@@ -294,6 +376,13 @@ export const CA_HUB_MODULES: CaHubModule[] = [
       { label: "GST Assistant", href: "/ca-hub/copilot", blurb: "Rate + ITC queries" },
       { label: "Tax Assistant", href: "/ca-hub/copilot", blurb: "Computation help" },
       { label: "Notice Response", href: "/ca-hub/copilot", blurb: "Draft replies to notices" },
+    ],
+    subNav: [
+      { label: "Dashboard", href: "/ca-hub/copilot" },
+      { label: "Compliance Assistant", href: "/ca-hub/copilot/compliance", comingSoon: true },
+      { label: "GST Assistant", href: "/ca-hub/copilot/gst", comingSoon: true },
+      { label: "Tax Assistant", href: "/ca-hub/copilot/tax", comingSoon: true },
+      { label: "Audit Assistant", href: "/ca-hub/copilot/audit", comingSoon: true },
     ],
   },
 ];
@@ -315,3 +404,65 @@ export function getModuleBySlug(slug: string): CaHubModule | undefined {
 export function moduleHref(m: CaHubModule): string {
   return m.slug ? `${CA_HUB_BASE}/${m.slug}` : CA_HUB_BASE;
 }
+
+// ── Sidebar tree assembly ─────────────────────────────────────
+
+/** Status → sidebar badge (live modules show no badge). */
+export const STATUS_BADGE: Record<ModuleStatus, NavBadge | null> = {
+  live: null,
+  beta: { text: "BETA", color: "#818cf8", background: "rgba(99,102,241,0.16)" },
+  soon: { text: "SOON", color: "#a1a1aa", background: "rgba(161,161,170,0.14)" },
+};
+
+const GROUP_ICONS: Record<CaHubModule["group"], LucideIcon> = {
+  Practice: Briefcase,
+  Compliance: ShieldCheck,
+  Filings: ReceiptText,
+  Assurance: ClipboardCheck,
+  Workspace: FolderLock,
+  Intelligence: Sparkles,
+};
+
+function moduleToNavItem(m: CaHubModule): NavItem {
+  const base = moduleHref(m);
+  const badge = STATUS_BADGE[m.status] ?? undefined;
+  const label = m.shortLabel ?? m.label;
+
+  // modules without subNav are plain leaves
+  if (!m.subNav) {
+    return {
+      label,
+      href: base,
+      icon: m.icon,
+      accent: m.accent,
+      badge,
+      description: m.description,
+      exact: m.slug === "",
+    };
+  }
+
+  // modules with subNav render as nested accordions
+  return {
+    id: m.slug || "dashboard",
+    label,
+    icon: m.icon,
+    accent: m.accent,
+    badge,
+    description: m.description,
+    basePath: base,
+    items: m.subNav.map((s) => ({
+      label: s.label,
+      href: s.href,
+      comingSoon: s.comingSoon,
+      exact: s.href === base,
+    })),
+  };
+}
+
+/** Full sidebar tree: domain group → module → sub-pages. */
+export const CA_HUB_NAV_GROUPS: NavGroupConfig[] = CA_HUB_GROUPS.map((group) => ({
+  id: group.toLowerCase(),
+  label: group,
+  icon: GROUP_ICONS[group],
+  items: CA_HUB_MODULES.filter((m) => m.group === group).map(moduleToNavItem),
+}));

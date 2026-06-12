@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, readCurrentUser } from "./session";
 import { rolePermissions } from "./permissions";
+import { resolveWorkspaceTenant } from "@/lib/workspace/context";
 import { Role } from "@prisma/client";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +28,9 @@ import { Role } from "@prisma/client";
 export async function requireAuth() {
   try {
     const user = await getCurrentUser();
-    return { user, organizationId: user.organizationId };
+    // Client Workspace override — CA acting on behalf of an assigned client
+    const workspaceOrgId = await resolveWorkspaceTenant();
+    return { user, organizationId: workspaceOrgId ?? user.organizationId };
   } catch {
     throw NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -44,7 +47,9 @@ export async function requireAuthReadOnly() {
   try {
     const user = await readCurrentUser();
     if (!user) throw new Error("not provisioned");
-    return { user, organizationId: user.organizationId };
+    // Client Workspace override — CA acting on behalf of an assigned client
+    const workspaceOrgId = await resolveWorkspaceTenant();
+    return { user, organizationId: workspaceOrgId ?? user.organizationId };
   } catch {
     throw NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

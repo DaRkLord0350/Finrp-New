@@ -96,6 +96,10 @@ model Organization {
   bankRiskAlerts         BankRiskAlert[]
   bankAIInsights         BankAIInsight[]
 
+  // ── Client Workspace (CA impersonation) ─────
+  clientAssignments  ClientAssignment[]  @relation("ClientAssignmentOrg")
+  clientActivityLogs ClientActivityLog[] @relation("ClientActivityOrg")
+
   @@index([slug])
   @@map("organizations")
 }
@@ -152,6 +156,9 @@ model User {
   sentMessages      Message[]            @relation("MessageSender")
   receivedMessages  Message[]            @relation("MessageReceiver")
   templateAssignmentsMade TemplateAssignment[] @relation("TemplateAssignmentCreatedBy")
+  clientAssignments       ClientAssignment[]   @relation("ClientAssignmentCA")
+  clientAssignmentsMade   ClientAssignment[]   @relation("ClientAssignmentCreatedBy")
+  clientActivityLogs      ClientActivityLog[]  @relation("ClientActivityCA")
 
   @@index([organizationId])
   @@index([userRole])
@@ -4180,4 +4187,89 @@ model PracticeMetricSnapshot {
   @@unique([firmId, snapshotDate])
   @@index([firmId])
   @@map("ca_hub_metric_snapshots")
+}
+
+// ============================================================
+// ============ CLIENT WORKSPACE (CA ↔ Client Org RBAC) =======
+// ============================================================
+// ClientAssignment: grants a CA user access to a client
+// organization with a scoped permission set. Powering:
+//   • "Assigned Customers" list in the CA portal
+//   • Workspace entry validation (impersonation)
+//   • Per-module permission gating inside the workspace
+// ClientActivityLog: immutable audit trail of every workspace
+// session and every mutation a CA performs on behalf of a client.
+// ============================================================
+
+enum ClientPermission {
+  VIEW_DASHBOARD
+  MANAGE_BANKING
+  MANAGE_GST
+  MANAGE_TDS
+  MANAGE_DOCUMENTS
+  MANAGE_PAYROLL
+}
+
+enum ClientActivityAction {
+  WORKSPACE_ENTER
+  WORKSPACE_EXIT
+  WORKSPACE_SWITCH
+  VIEW
+  CREATE
+  UPDATE
+  DELETE
+  EXPORT
+  PERMISSION_DENIED
+  ASSIGNMENT_CREATED
+  ASSIGNMENT_UPDATED
+  ASSIGNMENT_REVOKED
+}
+
+model ClientAssignment {
+  id             String             @id @default(cuid())
+  caUserId       String             // CA / CA_FIRM_ADMIN user granted access
+  organizationId String             // client organization being accessed
+  firmId         String?            // CA's firm at assignment time (firm-admin scope)
+  permissions    ClientPermission[] @default([VIEW_DASHBOARD, MANAGE_BANKING, MANAGE_GST, MANAGE_TDS, MANAGE_DOCUMENTS, MANAGE_PAYROLL])
+  isActive       Boolean            @default(true)
+  notes          String?
+  assignedById   String
+  assignedAt     DateTime           @default(now())
+  revokedAt      DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  caUser       User         @relation("ClientAssignmentCA", fields: [caUserId], references: [id])
+  organization Organization @relation("ClientAssignmentOrg", fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedBy   User         @relation("ClientAssignmentCreatedBy", fields: [assignedById], references: [id])
+
+  @@unique([caUserId, organizationId])
+  @@index([caUserId, isActive])
+  @@index([organizationId, isActive])
+  @@index([firmId])
+  @@map("client_assignments")
+}
+
+model ClientActivityLog {
+  id             String               @id @default(cuid())
+  caUserId       String               // acting CA user
+  organizationId String               // client org acted upon
+  action         ClientActivityAction
+  method         String?              // HTTP method for API mutations
+  path           String?              // request path / page route
+  entity         String?              // domain entity (e.g. "sale", "bankTransaction")
+  entityId       String?
+  summary        String               // human-readable description
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime             @default(now())
+
+  caUser       User         @relation("ClientActivityCA", fields: [caUserId], references: [id])
+  organization Organization @relation("ClientActivityOrg", fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([caUserId, createdAt])
+  @@index([action])
+  @@map("client_activity_logs")
 }

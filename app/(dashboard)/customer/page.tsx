@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth/session";
+import { getOrganizationId } from "@/lib/auth/organization";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { format } from "date-fns";
@@ -64,7 +65,9 @@ export default async function CustomerPortalPage() {
   const user = await getCurrentUser().catch(() => null);
   if (!user) redirect("/sign-in");
 
-  const data = await getCustomerPortalData(user.organizationId, user.email);
+  // Workspace-aware: serves the impersonated client org when a CA is viewing
+  const organizationId = await getOrganizationId();
+  const data = await getCustomerPortalData(organizationId, user.email);
 
   const completedSubs = data.submissions.filter((s) =>
     ["APPROVED", "COMPLETED"].includes(s.status)
