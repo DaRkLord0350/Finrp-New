@@ -95,6 +95,9 @@ model Organization {
   gstBankMatches         GSTBankMatch[]
   bankRiskAlerts         BankRiskAlert[]
   bankAIInsights         BankAIInsight[]
+  bankSyncHistory        BankSyncHistory[]
+  bankBalances           BankBalance[]
+  bankWebhookEvents      BankWebhookEvent[] @relation("OrgBankWebhookEvents")
 
   // ── Client Workspace (CA impersonation) ─────
   clientAssignments  ClientAssignment[]  @relation("ClientAssignmentOrg")
@@ -821,6 +824,7 @@ model BankAccount {
   healthScore      Int?            // 0-100
   consentStatus    String?         // "ACTIVE" | "EXPIRED" | "REVOKED" | "NONE"
   connectionId     String?
+  linkedAccountRef String?         // AA linkRefNumber — maps Setu FI data to this account
 
   // Metadata
   notes            String?
@@ -837,10 +841,13 @@ model BankAccount {
   reconciliations  BankReconciliationSession[] @relation("BankAccountReconciliations")
   statementImports BankStatementImport[]     @relation("BankAccountImports")
   consents         BankConsent[]             @relation("BankAccountConsents")
+  balances         BankBalance[]             @relation("BankAccountBalances")
+  syncHistory      BankSyncHistory[]         @relation("BankAccountSyncHistory")
 
   @@index([organizationId])
   @@index([organizationId, isActive])
   @@index([organizationId, accountType])
+  @@index([linkedAccountRef])
   @@map("bank_accounts")
 }
 
@@ -3226,6 +3233,7 @@ model BankTransaction {
   // Source
   source           BankTxnSource   @default(MANUAL)
   importJobId      String?
+  externalTxnId    String?         // provider txn id (AA dedup key)
 
   // Entity link (after matching)
   entityType       String?
@@ -3252,6 +3260,7 @@ model BankTransaction {
   reconcileMatches ReconciliationMatch[]
   riskAlerts       BankRiskAlert[]
 
+  @@unique([bankAccountId, externalTxnId])
   @@index([organizationId, transactionDate])
   @@index([organizationId, bankAccountId])
   @@index([organizationId, status])
@@ -3458,14 +3467,28 @@ model BankConsent {
 
   metadata       Json?
 
+  // Lifecycle + audit
+  vua             String?   // masked customer AA handle (e.g. 99XXXXXX99@onemoney)
+  purposeCode     String?   @default("101")
+  redirectUrl     String?
+  approvedAt      DateTime?
+  revokedAt       DateTime?
+  rejectedAt      DateTime?
+  lastDataFetchAt DateTime?
+  failureReason   String?
+  createdById     String?   // DB User.id of the customer who initiated
+  deletedAt       DateTime?
+
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   bankAccount    BankAccount? @relation("BankAccountConsents", fields: [bankAccountId], references: [id])
+  syncHistory    BankSyncHistory[] @relation("BankConsentSyncHistory")
 
   @@index([organizationId])
   @@index([organizationId, status])
+  @@index([consentId])
   @@map("bank_consents")
 }
 
@@ -3761,6 +3784,134 @@ enum AIInsightType {
   PAYMENT_FORECAST
   SALARY_PATTERN
   GST_ALERT
+}
+
+// ============================================================
+// BANK SYNC HISTORY (per-run sync audit trail)
+// ============================================================
+model BankSyncHistory {
+  id             String        @id @default(cuid())
+  organizationId String
+  bankAccountId  String?
+  consentId      String?       // BankConsent.id
+  connectionId   String?
+
+  provider       AAProvider    @default(SETU)
+  trigger        SyncTrigger   @default(MANUAL)
+  syncType       SyncType      @default(INCREMENTAL)
+  status         SyncRunStatus @default(QUEUED)
+
+  // Setu FI data session backing this run
+  dataSessionId  String?
+  fromDate       DateTime?
+  toDate         DateTime?
+
+  // Outcome counters
+  txnsFetched    Int           @default(0)
+  txnsSaved      Int           @default(0)
+  txnsDuplicate  Int           @default(0)
+  balancesSaved  Int           @default(0)
+
+  attempt        Int           @default(1)
+  error          String?
+  errorCode      String?
+  metadata       Json?
+
+  startedAt      DateTime      @default(now())
+  completedAt    DateTime?
+  durationMs     Int?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount    BankAccount? @relation("BankAccountSyncHistory", fields: [bankAccountId], references: [id])
+  consent        BankConsent? @relation("BankConsentSyncHistory", fields: [consentId], references: [id])
+
+  @@index([organizationId, startedAt])
+  @@index([bankAccountId, startedAt])
+  @@index([organizationId, status])
+  @@index([dataSessionId])
+  @@map("bank_sync_history")
+}
+
+enum SyncTrigger {
+  MANUAL
+  SCHEDULED
+  WEBHOOK
+  INITIAL
+}
+
+enum SyncType {
+  FULL
+  INCREMENTAL
+  BALANCE_ONLY
+}
+
+enum SyncRunStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+// ============================================================
+// BANK BALANCE (point-in-time balance snapshots per account)
+// ============================================================
+model BankBalance {
+  id               String        @id @default(cuid())
+  organizationId   String
+  bankAccountId    String
+
+  balanceDate      DateTime
+  currentBalance   Decimal       @db.Decimal(16, 2)
+  availableBalance Decimal?      @db.Decimal(16, 2)
+  ledgerBalance    Decimal?      @db.Decimal(16, 2)
+  currency         String        @default("INR")
+  source           BankTxnSource @default(AA_SETU)
+
+  createdAt        DateTime      @default(now())
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount      BankAccount  @relation("BankAccountBalances", fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([bankAccountId, balanceDate, source])
+  @@index([organizationId, balanceDate])
+  @@index([bankAccountId, balanceDate])
+  @@map("bank_balances")
+}
+
+// ============================================================
+// BANK WEBHOOK EVENT (AA webhook audit + idempotency store)
+// Standalone (not the generic WebhookEvent) because AA webhooks
+// arrive before any Integration row exists and may not be
+// resolvable to an organization until the consent is looked up.
+// ============================================================
+model BankWebhookEvent {
+  id             String        @id @default(cuid())
+  organizationId String?       // resolved from consent lookup; null if unknown
+  provider       AAProvider    @default(SETU)
+  eventType      String
+  externalId     String?       @unique // provider notification id (replay dedup)
+  consentId      String?       // Setu consent id
+  dataSessionId  String?
+  payload        Json
+  rawBody        String?
+  signature      String?
+  signatureValid Boolean       @default(false)
+  status         WebhookStatus @default(PENDING)
+  processedAt    DateTime?
+  error          String?
+  retryCount     Int           @default(0)
+  receivedAt     DateTime      @default(now())
+
+  organization   Organization? @relation("OrgBankWebhookEvents", fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([provider, eventType])
+  @@index([consentId])
+  @@index([status, receivedAt])
+  @@map("bank_webhook_events")
 }
 
 // ============================================================
@@ -4208,6 +4359,7 @@ enum ClientPermission {
   MANAGE_TDS
   MANAGE_DOCUMENTS
   MANAGE_PAYROLL
+  MANAGE_CONSENTS // explicit grant: CA may create/revoke consents + disconnect accounts
 }
 
 enum ClientActivityAction {

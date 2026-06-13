@@ -34,8 +34,15 @@ export {
   updateAccountBalance,
 } from "./ledger-integration";
 
+// Setu AA — provider + services
+export { getBankingProvider, SetuProvider, BankingProviderError } from "./providers";
+export { initiateConsent, refreshConsentStatus, revokeConsent, linkDiscoveredAccounts } from "./consent-service";
+export { runBankSync } from "./sync-service";
+export { processBankWebhook, normalizeWebhookPayload } from "./webhook-service";
+export { enqueueBankSync, getBankSyncQueue, scheduleBankAutoSyncScan } from "./queue";
+export { getSetuConfig, isSetuConfigured, SetuConfigError } from "./setu/config";
+
 // Integrations
-export { createConsent, syncConsentStatus, fetchAndStoreTransactions, processSetuWebhook } from "./integrations/setu-aa";
 export { createLinkToken, exchangePublicToken, syncTransactions, syncBalances, processPlaidWebhook } from "./integrations/plaid-client";
 export { parseCSV, parseExcel, parsePDF, detectColumnMapping, detectBank } from "./integrations/statement-parser";
 

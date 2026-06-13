@@ -75,13 +75,16 @@ export function useBankSync() {
     }
   }, [data, syncingIds, syncAccount]);
 
-  const connectSetu = useCallback(async (bankAccountId?: string) => {
+  const connectSetu = useCallback(async (opts?: { bankAccountId?: string; vua?: string }) => {
     const res = await fetch("/api/banking/setu/connect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bankAccountId }),
+      body: JSON.stringify({ bankAccountId: opts?.bankAccountId, vua: opts?.vua }),
     });
-    if (!res.ok) throw new Error("Failed to initiate Setu connection");
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? "Failed to initiate Setu connection");
+    }
     const { redirectUrl } = await res.json();
     window.location.href = redirectUrl;
   }, []);

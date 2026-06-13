@@ -96,6 +96,10 @@ export const manualMatchSchema = z.object({
 export const setuConsentSchema = z.object({
   bankAccountId: z.string().cuid().optional(),
   redirectUrl: z.string().url().optional(),
+  // Customer AA handle ("9999999999@onemoney") or bare mobile number.
+  // Optional — Setu's hosted consent page collects it when omitted.
+  vua: z.string().regex(/^\d{10}(@[\w-]+)?$/, "Expected 10-digit mobile, optionally @handle").optional(),
+  phoneNumber: z.string().regex(/^\d{10}$/, "Expected 10-digit mobile number").optional(),
   dateRange: z.object({
     from: z.string(),
     to: z.string(),

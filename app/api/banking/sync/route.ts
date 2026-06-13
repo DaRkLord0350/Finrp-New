@@ -1,29 +1,15 @@
+// ============================================================
+// FinRP — Bank Sync Trigger / Status
+// POST /api/banking/sync { bankAccountId, force? } — enqueue sync
+// GET  /api/banking/sync — per-account sync status summary
+// ============================================================
+
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import * as Sentry from "@sentry/nextjs";
 import { getTenantId } from "@/lib/auth/tenant";
 import { prisma } from "@/lib/prisma";
-import { Queue } from "bullmq";
-import { getRedisConnection } from "@/lib/redis";
-import { BANK_SYNC_QUEUE } from "@/lib/banking/workers/bank-sync.worker";
-import type { BankSyncJobData } from "@/lib/banking/types";
-
-let syncQueue: Queue<BankSyncJobData> | null = null;
-
-function getBankSyncQueue(): Queue<BankSyncJobData> {
-  if (!syncQueue) {
-    syncQueue = new Queue<BankSyncJobData>(BANK_SYNC_QUEUE, {
-      connection: getRedisConnection("queue"),
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: "exponential", delay: 5000 },
-        removeOnComplete: { count: 200 },
-        removeOnFail: { count: 100 },
-      },
-    });
-  }
-  return syncQueue;
-}
+import { enqueueBankSync } from "@/lib/banking/queue";
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
@@ -41,10 +27,10 @@ export async function POST(req: NextRequest) {
     }
 
     const account = await prisma.bankAccount.findFirst({
-      where: { id: bankAccountId, organizationId: orgId },
+      where: { id: bankAccountId, organizationId: orgId, deletedAt: null },
       include: {
         connection: { select: { provider: true, id: true } },
-        consents: { where: { status: "ACTIVE" }, take: 1 },
+        consents: { where: { status: "ACTIVE", deletedAt: null }, take: 1, select: { id: true } },
       },
     });
 
@@ -62,25 +48,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const provider = account.connection?.provider ?? (account.consents.length > 0 ? "SETU_AA" : null);
+    const activeConsent = account.consents[0];
+    const provider = account.connection?.provider ?? (activeConsent ? "SETU_AA" : null);
 
     if (!provider) {
-      return NextResponse.json({ error: "No connection or consent configured for this account" }, { status: 422 });
+      return NextResponse.json(
+        { error: "No connection or consent configured for this account" },
+        { status: 422 }
+      );
     }
 
-    const jobId = `bank-sync-${bankAccountId}-${Date.now()}`;
-    const q = getBankSyncQueue();
+    const jobId = await enqueueBankSync(
+      {
+        organizationId: orgId,
+        bankAccountId,
+        consentDbId: activeConsent?.id,
+        connectionId: account.connection?.id,
+        provider,
+        trigger: "MANUAL",
+        syncType: "INCREMENTAL",
+      },
+      force ? { dedupeKey: `${bankAccountId}:force:${Date.now()}` } : undefined
+    );
 
-    await q.add("bank-sync", {
-      bankSyncJobId: jobId,
-      organizationId: orgId,
-      bankAccountId,
-      connectionId: account.connection?.id,
-      provider,
-      isIncremental: true,
-    }, { jobId });
-
-    return NextResponse.json({ jobId, status: "queued" });
+    return NextResponse.json({ jobId, status: "queued" }, { status: 202 });
   } catch (err) {
     Sentry.captureException(err, { tags: { area: "banking", action: "trigger-sync" } });
     const message = err instanceof Error ? err.message : "Internal server error";
@@ -88,7 +79,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

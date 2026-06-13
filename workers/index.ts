@@ -20,6 +20,9 @@ async function startWorkers() {
   const { createSyncWorker } = await import("@/lib/jobs/workers/sync.worker");
   const { createWebhookWorker } = await import("@/lib/jobs/workers/webhook.worker");
   const { startStuckJobChecker } = await import("@/lib/jobs/workers/stuck-job-checker");
+  const { createBankSyncWorker } = await import("@/lib/banking/workers/bank-sync.worker");
+  const { createBankImportWorker } = await import("@/lib/banking/workers/bank-import.worker");
+  const { scheduleBankAutoSyncScan } = await import("@/lib/banking/queue");
 
   console.log("═══════════════════════════════════════════════════");
   console.log("  FinRP Workers starting");
@@ -43,12 +46,21 @@ async function startWorkers() {
     createImportWorker(),
     createSyncWorker(),
     createWebhookWorker(),
+    createBankSyncWorker(),
+    createBankImportWorker(),
   ];
 
   console.log(`[Workers] ${workers.length} workers started`);
-  console.log("  • import  worker (concurrency=3)");
-  console.log("  • sync    worker (concurrency=5)");
-  console.log("  • webhook worker (concurrency=10)");
+  console.log("  • import      worker (concurrency=3)");
+  console.log("  • sync        worker (concurrency=5)");
+  console.log("  • webhook     worker (concurrency=10)");
+  console.log("  • bank-sync   worker (concurrency=3)");
+  console.log("  • bank-import worker (concurrency=2)");
+
+  // Repeatable scan that fans out scheduled bank refreshes (idempotent)
+  await scheduleBankAutoSyncScan().catch((err) => {
+    console.error("[Workers] Failed to schedule bank auto-sync scan:", err);
+  });
 
   // Stuck-job checker — runs every 60 s in the same process
   const checkerTimer = startStuckJobChecker(60_000);

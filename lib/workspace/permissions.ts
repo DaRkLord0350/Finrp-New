@@ -20,6 +20,7 @@ export const WORKSPACE_PERMISSIONS: ClientPermission[] = [
   "MANAGE_TDS",
   "MANAGE_DOCUMENTS",
   "MANAGE_PAYROLL",
+  "MANAGE_CONSENTS",
 ];
 
 export const PERMISSION_LABELS: Record<ClientPermission, string> = {
@@ -29,6 +30,9 @@ export const PERMISSION_LABELS: Record<ClientPermission, string> = {
   MANAGE_TDS:       "TDS",
   MANAGE_DOCUMENTS: "Documents",
   MANAGE_PAYROLL:   "Payroll",
+  // Explicit grant only — never in ClientAssignment defaults. Lets a CA
+  // create/revoke AA consents and disconnect bank accounts for the client.
+  MANAGE_CONSENTS:  "Bank Consents",
 };
 
 // ---------------------------------------------------------------------------

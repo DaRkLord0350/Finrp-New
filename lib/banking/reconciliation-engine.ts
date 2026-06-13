@@ -157,6 +157,37 @@ export async function autoMatch(
           matchType: confidence >= 0.85 ? "AUTO" : "SUGGESTED",
         });
       }
+
+      // Debit → also look for recorded expenses
+      const expenses = await prisma.expense.findMany({
+        where: {
+          organizationId,
+          deletedAt: null,
+          expenseDate: {
+            gte: new Date(session.startDate.getTime() - 30 * 24 * 60 * 60 * 1000),
+            lte: new Date(session.endDate.getTime() + 30 * 24 * 60 * 60 * 1000),
+          },
+        },
+        select: { id: true, description: true, vendorName: true, amount: true, taxAmount: true, expenseDate: true },
+        take: 20,
+      });
+
+      for (const exp of expenses) {
+        const expAmount = Number(exp.amount) + Number(exp.taxAmount);
+        if (!withinTolerance(amount, expAmount)) continue;
+        if (!withinDateWindow(txn.transactionDate, exp.expenseDate)) continue;
+
+        const ref = exp.vendorName ?? exp.description;
+        const confidence = computeConfidence(txn.narration, ref, amount, expAmount);
+        candidates.push({
+          bankTransactionId: txn.id,
+          entityType: "EXPENSE",
+          entityId: exp.id,
+          entityRef: ref,
+          confidence,
+          matchType: confidence >= 0.85 ? "AUTO" : "SUGGESTED",
+        });
+      }
     }
 
     if (candidates.length === 0) continue;

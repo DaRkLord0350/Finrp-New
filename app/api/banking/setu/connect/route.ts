@@ -1,41 +1,61 @@
+// ============================================================
+// FinRP — Connect Bank via Setu AA
+// POST /api/banking/setu/connect
+// Creates a Setu consent and returns the hosted approval URL.
+// Owner action: CAs in a client workspace need MANAGE_CONSENTS.
+// ============================================================
+
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import * as Sentry from "@sentry/nextjs";
-import { getTenantId } from "@/lib/auth/tenant";
-import { createConsent } from "@/lib/banking/integrations/setu-aa";
+import { initiateConsent } from "@/lib/banking/consent-service";
+import { requireConsentManagementAccess } from "@/lib/banking/consent-guard";
 import { setuConsentSchema } from "@/lib/banking/validations";
+import { SetuConfigError } from "@/lib/banking/setu/config";
+import { BankingProviderError } from "@/lib/banking/providers";
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const orgId = await getTenantId();
-  if (!orgId) return NextResponse.json({ error: "No organization" }, { status: 400 });
+  const access = await requireConsentManagementAccess();
+  if (!access.ok) return access.response;
 
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const parsed = setuConsentSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Validation error", issues: parsed.error.issues }, { status: 422 });
+      return NextResponse.json(
+        { error: "Validation error", issues: parsed.error.issues },
+        { status: 422 }
+      );
     }
 
-    const now = new Date();
-    const defaultFrom = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-    const defaultTo = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-
-    const result = await createConsent(orgId, {
+    const result = await initiateConsent({
+      organizationId: access.organizationId,
+      createdById: access.userId ?? undefined,
       bankAccountId: parsed.data.bankAccountId,
-      redirectUrl: parsed.data.redirectUrl ?? `${process.env.NEXT_PUBLIC_APP_URL}/banking/consent/callback`,
-      dateRange: parsed.data.dateRange ?? {
-        from: defaultFrom.toISOString(),
-        to: defaultTo.toISOString(),
-      },
-      consentTypes: parsed.data.consentTypes ?? ["TRANSACTIONS", "SUMMARY"],
-      fiTypes: parsed.data.fiTypes ?? ["DEPOSIT", "RECURRING_DEPOSIT"],
+      vua: parsed.data.vua ?? parsed.data.phoneNumber,
+      dataRange: parsed.data.dateRange
+        ? { from: new Date(parsed.data.dateRange.from), to: new Date(parsed.data.dateRange.to) }
+        : undefined,
+      redirectUrl: parsed.data.redirectUrl,
     });
 
-    return NextResponse.json(result, { status: 201 });
+    return NextResponse.json(
+      {
+        consentDbId: result.consentDbId,
+        consentId: result.consentId,
+        redirectUrl: result.redirectUrl,
+      },
+      { status: 201 }
+    );
   } catch (err) {
+    if (err instanceof SetuConfigError) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
+    if (err instanceof BankingProviderError) {
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status: err.status === 429 ? 429 : 502 }
+      );
+    }
     Sentry.captureException(err, { tags: { area: "banking", action: "setu-connect" } });
     const message = err instanceof Error ? err.message : "Internal server error";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -99,7 +99,7 @@ export default function Client360() {
       </div>
 
       {/* Tab content */}
-      {tab === "Overview" ? <OverviewTab client={client} /> : tab === "Compliance" ? <ComplianceTab client={client} /> : <AreaTab tab={tab} client={client} />}
+      {tab === "Overview" ? <OverviewTab client={client} /> : tab === "Compliance" ? <ComplianceTab client={client} /> : tab === "Banking" ? <BankingTab client={client} /> : <AreaTab tab={tab} client={client} />}
     </div>
   );
 }
@@ -207,6 +207,72 @@ function ComplianceTab({ client }: { client: typeof demoClients[number] }) {
         </table>
       </div>
     </Panel>
+  );
+}
+
+// Banking access runs through the Client Workspace: the signed workspace
+// session scopes every /banking page + API to the client org, gated by
+// the ClientAssignment's MANAGE_BANKING permission. Consent creation /
+// revocation / disconnection additionally require the explicit
+// MANAGE_CONSENTS grant — enforced server-side in the consent routes.
+function BankingTab({ client }: { client: typeof demoClients[number] }) {
+  const capabilities = [
+    { label: "View accounts & balances", granted: true },
+    { label: "View transactions", granted: true },
+    { label: "Run reconciliation", granted: true },
+    { label: "Create categorization rules", granted: true },
+    { label: "Generate banking reports", granted: true },
+    { label: "Create / revoke AA consents", granted: false },
+    { label: "Disconnect bank accounts", granted: false },
+  ];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <Panel title="Live Banking Workspace" subtitle="Account Aggregator-powered client banking">
+        <p style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
+          Open the client workspace to work with <b>{client.name}</b>&apos;s live bank data —
+          connected accounts, balance history, AA-synced transactions, reconciliation
+          sessions, rules and cash-flow analytics. Every action is audit-logged against
+          your CA account.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {capabilities.map((cap) => (
+            <div key={cap.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
+              <span style={{ width: 7, height: 7, borderRadius: 99, background: cap.granted ? "#10b981" : "#ef4444", flexShrink: 0 }} />
+              <span style={{ color: "var(--text-secondary)", flex: 1 }}>{cap.label}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: cap.granted ? "#10b981" : "#ef4444" }}>
+                {cap.granted ? "INCLUDED" : "OWNER / EXPLICIT GRANT"}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 14, lineHeight: 1.5 }}>
+          Consent lifecycle actions stay with the customer unless your assignment
+          includes the <b>Bank Consents</b> permission.
+        </p>
+      </Panel>
+      <Panel title="Banking Modules" subtitle="Available inside the client workspace">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {[
+            ["Banking Dashboard", "/banking/dashboard"],
+            ["Transactions", "/banking/transactions"],
+            ["Reconciliation", "/banking/reconciliation"],
+            ["Rules Engine", "/banking/rules"],
+            ["Cash Flow Analytics", "/banking/cash-flow"],
+            ["Sync History", "/banking/sync-history"],
+          ].map(([label, href]) => (
+            <div key={href} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 9, border: "1px solid var(--border)" }}>
+              <Landmark size={15} color="var(--text-muted)" />
+              <span style={{ fontSize: 12.5, color: "var(--text-secondary)", flex: 1 }}>{label}</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{href}</span>
+            </div>
+          ))}
+        </div>
+        <p style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 12 }}>
+          Enter via <b>Client Portfolio → Open Workspace</b> — the workspace banner keeps
+          you aware you&apos;re acting on the client&apos;s organization.
+        </p>
+      </Panel>
+    </div>
   );
 }
 

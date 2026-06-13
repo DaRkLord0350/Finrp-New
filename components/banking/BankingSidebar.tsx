@@ -18,6 +18,7 @@ import {
   Download,
   Settings2,
   ChevronRight,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,7 @@ const bankingNav = [
   { label: "AI Insights",       href: "/banking/ai-insights",   icon: BrainCircuit, badge: "AI" },
   { label: "Risk Center",       href: "/banking/risk-center",   icon: ShieldAlert },
   { label: "Consent Manager",   href: "/banking/consent",       icon: KeyRound },
+  { label: "Sync History",      href: "/banking/sync-history",  icon: History },
   { label: "Bank Connections",  href: "/banking/connections",   icon: Plug2 },
   { label: "Import Statements", href: "/banking/import",        icon: Upload },
   { label: "Export Center",     href: "/banking/export",        icon: Download },
