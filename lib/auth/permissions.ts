@@ -20,6 +20,11 @@ export const rolePermissions: Record<Role, string[]> = {
     "payments.write",
     "finance.read",
     "finance.write",
+    // Chart of Accounts — full access (spec: SUPER_ADMIN)
+    "accounting.read",
+    "accounting.write",
+    "accounting.delete",
+    "accounting.export",
     "loans.read",
     "loans.write",
     "inventory.read",
@@ -49,6 +54,10 @@ export const rolePermissions: Record<Role, string[]> = {
     "invoices.write",
     "payments.read",
     "finance.read",
+    // Chart of Accounts — create/edit/view/export (spec: CA)
+    "accounting.read",
+    "accounting.write",
+    "accounting.export",
     "loans.read",
     "inventory.read",
     "inventory.write",
@@ -66,6 +75,9 @@ export const rolePermissions: Record<Role, string[]> = {
     "dashboard.read",
     "finance.read",
     "finance.write",
+    // Chart of Accounts — create/edit/view (spec: ACCOUNTANT)
+    "accounting.read",
+    "accounting.write",
     "invoices.read",
     "invoices.write",
     "payments.read",
@@ -86,6 +98,8 @@ export const rolePermissions: Record<Role, string[]> = {
     "invoices.read",
     "inventory.read",
     "compliance.read",
+    // Chart of Accounts — view only (spec: CLIENT)
+    "accounting.read",
   ],
 
   VIEWER: [
@@ -93,5 +107,7 @@ export const rolePermissions: Record<Role, string[]> = {
     "customers.read",
     "finance.read",
     "analytics.read",
+    // Chart of Accounts — view only (spec: CLIENT)
+    "accounting.read",
   ],
 };

@@ -267,7 +267,7 @@ npx tsx prisma/seed.ts YOUR_ORG_ID
     {
       code: "4001",
       name: "Sales Revenue",
-      type: AccountType.REVENUE,
+      type: AccountType.INCOME,
     },
     {
       code: "5001",

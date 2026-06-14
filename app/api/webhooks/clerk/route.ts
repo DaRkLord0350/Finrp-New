@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Webhook } from "svix";
+import { seedSystemAccounts } from "@/lib/accounting/system-accounts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -207,6 +208,10 @@ async function handleUserCreated(
         invitedBy: user.id,
       },
     });
+
+    // 5. Seed the default Chart of Accounts — every org needs a baseline
+    //    COA before it can post a single journal entry, invoice, or expense.
+    await seedSystemAccounts(tx, organization.id, user.id);
 
     return { organization, user };
   });

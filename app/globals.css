@@ -16,6 +16,9 @@
   --bg-elevated: #f3f4f6;
   --bg-overlay: #e5e7eb;
   --bg-nav: rgba(255, 255, 255, 0.8);
+  /* Card + hover aliases (used by Banking OS / CA Hub modules) */
+  --bg-card: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.025);
 
   /* Border */
   --border: oklch(0.922 0 0);
@@ -93,6 +96,9 @@
   --bg-elevated: #18181b;
   --bg-overlay: #1c1c20;
   --bg-nav: rgba(9, 9, 11, 0.8);
+  /* Card + hover aliases (used by Banking OS / CA Hub modules) */
+  --bg-card: #131316;
+  --bg-hover: rgba(255, 255, 255, 0.03);
 
   /* Border */
   --border: oklch(1 0 0 / 10%);
@@ -496,6 +502,40 @@ body {
   margin-left: 240px;
   min-height: 100vh;
   background: var(--bg-base);
+}
+
+/* ── Client Workspace (CA impersonation) ─────────────────────
+   A fixed 44px banner spans the full viewport width; everything
+   below (fixed sidebar, sticky topbar, content) shifts down. */
+.workspace-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  overflow: visible;
+  white-space: nowrap;
+}
+.workspace-shell .sidebar {
+  top: 44px;
+  min-height: calc(100vh - 44px);
+  height: calc(100vh - 44px);
+}
+.workspace-shell .main-content {
+  padding-top: 44px;
+}
+.workspace-shell .topbar {
+  top: 44px;
+}
+@media (max-width: 768px) {
+  .ws-hide-sm {
+    display: none !important;
+  }
 }
 .page-container {
   padding: 32px 32px;

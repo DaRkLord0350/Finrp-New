@@ -43,6 +43,7 @@ export class ZohoConnector extends BaseConnector {
     config: ZohoConfig
   ) {
     super(organizationId, config as unknown as Record<string, unknown>);
+    console.log("[ZOHO] Connector config", config);
     this.zohoConfig = config;
     this.integrationId = integrationId;
   }
@@ -68,11 +69,12 @@ export class ZohoConnector extends BaseConnector {
   // ---------------------------------------------------------------------------
   async fetchCustomers(cursor?: SyncCursor): Promise<ExtractionResult<RawCustomer>> {
     const contacts = await fetchAllCRMContacts({
+      
       integrationId: this.integrationId,
       dataCenter: this.zohoConfig.dataCenter,
       modifiedAfter: cursor?.lastModifiedAt,
     });
-
+    console.log("[ZOHO DEBUG] fetchCustomers entered", contacts.length);
     const records = contacts.map((c) => this.transformCRMContact(c));
     const lastModified = contacts[contacts.length - 1]?.Modified_Time;
 
@@ -175,18 +177,38 @@ export class ZohoConnector extends BaseConnector {
   // Full sync entry point — called by the sync worker
   // ---------------------------------------------------------------------------
   async sync(entity: string, cursor?: SyncCursor): Promise<SyncStats> {
+    console.log("[ZOHO] sync()", {
+      entity,
+      modules: this.zohoConfig.modules,
+    });
+    console.log("[ZOHO DEBUG] full config");
+    console.dir(this.zohoConfig, { depth: null });
+
+    console.log("[ZOHO DEBUG] crm enabled =", this.zohoConfig.modules?.crm);
+    console.log("[ZOHO DEBUG] books enabled =", this.zohoConfig.modules?.books);
+    console.log("[ZOHO DEBUG] inventory enabled =", this.zohoConfig.modules?.inventory);
     const stats: SyncStats = { created: 0, updated: 0, skipped: 0, failed: 0, merged: 0 };
 
     try {
-      if (entity === "customers" || entity === "all") {
+      if (
+        (entity === "customers" || entity === "all") &&
+        this.zohoConfig.modules?.crm
+      ) {
         const s = await this.syncCustomers(cursor);
         mergeStats(stats, s);
+        console.log("[ZOHO] Running CRM sync");
       }
-      if (entity === "invoices" || entity === "all") {
+      if (
+        (entity === "invoices" || entity === "all") &&
+        this.zohoConfig.modules?.books
+      ) {
         const s = await this.syncInvoices(cursor);
         mergeStats(stats, s);
       }
-      if (entity === "products" || entity === "all") {
+      if (
+        (entity === "products" || entity === "all") &&
+        this.zohoConfig.modules?.inventory
+      ) {
         const s = await this.syncProducts(cursor);
         mergeStats(stats, s);
       }
@@ -204,11 +226,18 @@ export class ZohoConnector extends BaseConnector {
   private async syncCustomers(cursor?: SyncCursor): Promise<SyncStats> {
     const stats: SyncStats = { created: 0, updated: 0, skipped: 0, failed: 0, merged: 0 };
     const extraction = await this.fetchCustomers(cursor);
-
+    console.log("[ZOHO DEBUG] syncCustomers entered");
     for (const raw of extraction.records) {
+      console.log("RAW INVOICE Customer Fetching   1");
+      console.dir(raw, { depth: null });
       try {
         const validation = this.validate(raw as unknown as Record<string, unknown>, "customer");
         if (!validation.valid) {
+          console.log(
+            "[ZOHO] Validation failed",
+            raw,
+            validation.errors
+          );
           stats.failed++;
           continue;
         }
@@ -224,6 +253,10 @@ export class ZohoConnector extends BaseConnector {
         });
 
         if (existing) {
+          console.log(
+              "[ZOHO] Updating customer",
+              raw.email
+            );
           await prisma.customer.update({
             where: { id: existing.id },
             data: {
@@ -240,6 +273,10 @@ export class ZohoConnector extends BaseConnector {
           });
           stats.updated++;
         } else {
+          console.log(
+            "[ZOHO] Creating customer",
+            raw.email
+          );
           await prisma.customer.create({
             data: {
               organizationId: this.organizationId,
@@ -277,6 +314,8 @@ export class ZohoConnector extends BaseConnector {
 
     for (const raw of extraction.records) {
       try {
+        console.log("RAW INVOICE  fetching invoices   2");
+        console.dir(raw, { depth: null });
         // Find customer by name (best-effort)
         const customer = await prisma.customer.findFirst({
           where: { organizationId: this.organizationId, name: raw.customerName ?? "" },
@@ -294,7 +333,9 @@ export class ZohoConnector extends BaseConnector {
             invoiceNumber: raw.invoiceNumber,
           },
         });
-
+        const subtotal = Number(raw.subtotal ?? raw.total ?? 0);
+        const taxAmount = Number(raw.taxAmount ?? 0);
+        const total = Number(raw.total ?? 0);
         const invoiceData = {
           customerId: customer.id,
           organizationId: this.organizationId,
@@ -302,9 +343,17 @@ export class ZohoConnector extends BaseConnector {
           status: mapInvoiceStatus(raw.status),
           issueDate: new Date(raw.issueDate),
           dueDate: new Date(raw.dueDate),
-          subtotal: Number(raw.subtotal),
-          taxAmount: Number(raw.taxAmount),
-          total: Number(raw.total),
+          // subtotal: Number(raw.subtotal),
+          // taxAmount: Number(raw.taxAmount),
+          // total: Number(raw.total),
+          // subtotal: Number(raw.subtotal ?? raw.total ?? 0),
+          // taxAmount: Number(raw.taxAmount ?? 0),
+          // total: Number(raw.total ?? 0),
+
+            subtotal,
+            taxAmount,
+            total,
+            // balanceDue: total,
           balanceDue: Number(raw.total) - 0,
           currency: raw.currency ?? "INR",
           notes: raw.notes ?? null,
@@ -316,6 +365,17 @@ export class ZohoConnector extends BaseConnector {
           stats.updated++;
         } else {
           await prisma.invoice.create({ data: invoiceData });
+          // await prisma.invoice.create({
+          //   data: {
+          //     ...invoiceData,
+            
+          //     organization: {
+          //       connect: {
+          //         id: organizationId,
+          //       },
+          //     },
+          //   },
+          // });
           stats.created++;
         }
       } catch (err) {
@@ -336,6 +396,8 @@ export class ZohoConnector extends BaseConnector {
     const extraction = await this.fetchProducts(cursor);
 
     for (const raw of extraction.records) {
+      console.log("RAW PRODUCT  fetching products   3");
+      console.dir(raw, { depth: null });
       try {
         const existing = raw.sku
           ? await prisma.item.findFirst({
@@ -393,6 +455,7 @@ export class ZohoConnector extends BaseConnector {
   }
 
   private transformBooksInvoice(inv: ZohoBooksInvoice): RawInvoice {
+    console.dir(inv, { depth: null });
     return {
       externalId: inv.invoice_id,
       invoiceNumber: inv.invoice_number,

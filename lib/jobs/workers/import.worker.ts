@@ -12,6 +12,7 @@
 import { Worker, type Job } from "bullmq";
 import { getRedisConnection } from "@/lib/redis";
 import { QUEUE_NAMES, type ImportJobData } from "@/lib/jobs/queues";
+import { enqueueDlq } from "@/lib/jobs/queues/dlq";
 import { prisma } from "@/lib/prisma";
 import { ETLPipeline, type PipelineEntity } from "@/lib/etl/pipeline";
 import { parseCSVFile } from "@/lib/connectors/csv/parser";
@@ -62,6 +63,19 @@ export function createImportWorker() {
       `[ImportWorker] Job FAILED id=${job?.id} importJobId=${job?.data?.importJobId} ` +
       `attempt=${job?.attemptsMade ?? "?"} error=${err.message}`
     );
+
+    // Move to DLQ after max retries are exhausted
+    const maxAttempts = job?.opts?.attempts ?? 3;
+    if (job && (job.attemptsMade ?? 0) >= maxAttempts) {
+      void enqueueDlq({
+        originalQueue: QUEUE_NAMES.IMPORT,
+        originalJobId: job.id,
+        payload: job.data,
+        error: err,
+        attemptsMade: job.attemptsMade ?? 0,
+        organizationId: job.data?.organizationId,
+      });
+    }
   });
 
   worker.on("stalled", (jobId) => {

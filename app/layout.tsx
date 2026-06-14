@@ -27,7 +27,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning className={cn("font-sans", geist.variable)}>
-        <body className="font-sans antialiased">
+        <body className="font-sans antialiased" suppressHydrationWarning>
           <ThemeProvider
             attribute="class"
             defaultTheme="dark"

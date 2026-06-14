@@ -21,20 +21,17 @@ export async function PATCH(
   const body = await req.json();
   const { status, notes } = body;
 
-  const task = await prisma.firmTask.findUnique({ where: { id } });
+  // Scoped findFirst enforces organizationId
+  const task = await prisma.firmTask.findFirst({ where: { id, organizationId: user.organizationId } });
   if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
 
   // CA can only update their own tasks
   if (user.userRole === "CA" && task.assignedCaId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  // Firm admin can update any task in their org
-  if (user.userRole === "CA_FIRM_ADMIN" && task.organizationId !== user.organizationId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
-  const updated = await prisma.firmTask.update({
-    where: { id },
+  const updated = await prisma.firmTask.updateMany({
+    where: { id, organizationId: user.organizationId },
     data: {
       ...(status && { status }),
       ...(notes !== undefined && { notes }),
@@ -42,7 +39,7 @@ export async function PATCH(
     },
   });
 
-  return NextResponse.json({ task: updated });
+  return NextResponse.json({ updated });
 }
 
 export async function DELETE(
@@ -55,11 +52,7 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  const task = await prisma.firmTask.findUnique({ where: { id } });
-  if (!task || task.organizationId !== user.organizationId) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
-  }
-
-  await prisma.firmTask.delete({ where: { id } });
+  const result = await prisma.firmTask.deleteMany({ where: { id, organizationId: user.organizationId } });
+  if (result.count === 0) return NextResponse.json({ error: "Task not found" }, { status: 404 });
   return NextResponse.json({ success: true });
 }

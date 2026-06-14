@@ -1,34 +1,16 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireTenant } from "@/lib/auth/require-tenant";
 
 export async function GET(
-  request: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+    const { organizationId } = await requireTenant();
     const { id } = await params;
-
-    // Get user's organization
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { organizationId: true },
-    });
-
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
-
-    // Get loan and verify it belongs to user's organization
-    const loan = await prisma.loan.findUnique({
-      where: { id },
-    });
-
-    if (!loan || loan.organizationId !== user.organizationId) {
-      return NextResponse.json({ error: "Loan not found" }, { status: 404 });
-    }
-
+    const loan = await prisma.loan.findFirst({ where: { id, organizationId } });
+    if (!loan) return NextResponse.json({ error: "Loan not found" }, { status: 404 });
     return NextResponse.json(loan);
   } catch (error) {
     console.error("[LOAN_GET]", error);
@@ -41,35 +23,12 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+    const { organizationId } = await requireTenant();
     const { id } = await params;
-
-    // Get user's organization
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { organizationId: true },
-    });
-
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
-
-    // Get loan and verify it belongs to user's organization
-    const loan = await prisma.loan.findUnique({
-      where: { id },
-    });
-
-    if (!loan || loan.organizationId !== user.organizationId) {
-      return NextResponse.json({ error: "Loan not found" }, { status: 404 });
-    }
-
     const body = await request.json();
-    const updatedLoan = await prisma.loan.update({
-      where: { id },
-      data: body,
-    });
-
-    return NextResponse.json(updatedLoan);
+    const result = await prisma.loan.updateMany({ where: { id, organizationId }, data: body });
+    if (result.count === 0) return NextResponse.json({ error: "Loan not found" }, { status: 404 });
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[LOAN_PUT]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -77,36 +36,14 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+    const { organizationId } = await requireTenant();
     const { id } = await params;
-
-    // Get user's organization
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { organizationId: true },
-    });
-
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
-
-    // Get loan and verify it belongs to user's organization
-    const loan = await prisma.loan.findUnique({
-      where: { id },
-    });
-
-    if (!loan || loan.organizationId !== user.organizationId) {
-      return NextResponse.json({ error: "Loan not found" }, { status: 404 });
-    }
-
-    await prisma.loan.delete({
-      where: { id },
-    });
-
+    const result = await prisma.loan.deleteMany({ where: { id, organizationId } });
+    if (result.count === 0) return NextResponse.json({ error: "Loan not found" }, { status: 404 });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[LOAN_DELETE]", error);

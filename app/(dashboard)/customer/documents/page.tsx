@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth/session";
+import { getOrganizationId } from "@/lib/auth/organization";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { format } from "date-fns";
@@ -40,7 +41,9 @@ export default async function CustomerDocumentsPage() {
   const user = await getCurrentUser().catch(() => null);
   if (!user) redirect("/sign-in");
 
-  const docs = await getCustomerDocuments(user.organizationId);
+  // Workspace-aware: serves the impersonated client org when a CA is viewing
+  const organizationId = await getOrganizationId();
+  const docs = await getCustomerDocuments(organizationId);
 
   const pending = docs.filter((d) => d.reviewStatus === "PENDING").length;
   const approved = docs.filter((d) => d.reviewStatus === "APPROVED").length;

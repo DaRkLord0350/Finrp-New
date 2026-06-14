@@ -3,7 +3,7 @@
 // Maps ConnectorType enum → concrete connector instance.
 // Reads integration config from DB + decrypts credentials.
 // ============================================================
-
+console.log("FACTORY MODULE LOADED");
 import type { ConnectorType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto/token-encryption";
@@ -22,6 +22,11 @@ interface ZohoStoredConfig {
   clientId: string;
   clientSecretEncrypted: string;
   accountId?: string;
+  modules?: {
+    crm?: boolean;
+    books?: boolean;
+    inventory?: boolean;
+  };
 }
 
 interface OdooStoredConfig {
@@ -72,6 +77,9 @@ export async function createConnector(
     case "ZOHO_CRM":
     case "ZOHO_BOOKS":
     case "ZOHO_INVENTORY":
+      console.log("############################");
+      console.log("FACTORY FILE EXECUTED");
+      console.log("############################");
       return createZohoConnector(organizationId, integrationId, config);
 
     case "ODOO":
@@ -101,14 +109,22 @@ function createZohoConnector(
   raw: Record<string, unknown>
 ): ZohoConnector {
   const stored = raw as unknown as ZohoStoredConfig;
+  console.log("[FACTORY] Raw integration config");
+  console.dir(stored, { depth: null });
 
   const config: ZohoConfig = {
     dataCenter: (stored.dataCenter?.toUpperCase() as ZohoConfig["dataCenter"]) ?? "US",
     clientId: stored.clientId,
     clientSecret: decrypt(stored.clientSecretEncrypted),
     accountId: stored.accountId,
+    modules: {
+      crm: stored.modules?.crm ?? true,
+      books: stored.modules?.books ?? false,
+      inventory: stored.modules?.inventory ?? false,
+    },
   };
-
+  console.log("[FACTORY] Raw integration config");
+  console.dir(raw, { depth: null });
   return new ZohoConnector(organizationId, integrationId, config);
 }
 

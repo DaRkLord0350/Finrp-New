@@ -82,6 +82,26 @@ model Organization {
   monthlyRevenueStats MonthlyRevenueStat[]
   firmSnapshots    FirmSnapshot[]
   complianceStats  ComplianceStat[]
+  scheduledReports ScheduledReport[]
+
+  // ── Banking OS ──────────────────────────────
+  bankTransactions       BankTransaction[]
+  bankingRules           BankingRule[]
+  reconciliationSessions BankReconciliationSession[]
+  bankConsents           BankConsent[]
+  bankConnections        BankConnection[]
+  bankStatementImports   BankStatementImport[]
+  cashFlowSnapshots      CashFlowSnapshot[]
+  gstBankMatches         GSTBankMatch[]
+  bankRiskAlerts         BankRiskAlert[]
+  bankAIInsights         BankAIInsight[]
+  bankSyncHistory        BankSyncHistory[]
+  bankBalances           BankBalance[]
+  bankWebhookEvents      BankWebhookEvent[] @relation("OrgBankWebhookEvents")
+
+  // ── Client Workspace (CA impersonation) ─────
+  clientAssignments  ClientAssignment[]  @relation("ClientAssignmentOrg")
+  clientActivityLogs ClientActivityLog[] @relation("ClientActivityOrg")
 
   @@index([slug])
   @@map("organizations")
@@ -139,6 +159,9 @@ model User {
   sentMessages      Message[]            @relation("MessageSender")
   receivedMessages  Message[]            @relation("MessageReceiver")
   templateAssignmentsMade TemplateAssignment[] @relation("TemplateAssignmentCreatedBy")
+  clientAssignments       ClientAssignment[]   @relation("ClientAssignmentCA")
+  clientAssignmentsMade   ClientAssignment[]   @relation("ClientAssignmentCreatedBy")
+  clientActivityLogs      ClientActivityLog[]  @relation("ClientActivityCA")
 
   @@index([organizationId])
   @@index([userRole])
@@ -165,8 +188,10 @@ enum AccountType {
   ASSET
   LIABILITY
   EQUITY
-  REVENUE
+  INCOME
   EXPENSE
+  COGS
+  STOCK
 }
 
 enum EntryType {
@@ -660,12 +685,24 @@ model Account {
   name           String
 
   type           AccountType
+  accountSubType String?
 
   description    String?
 
-  balance        Decimal @default(0) @db.Decimal(16,2)
+  // Running ledger balance (debit/credit-normalized per `type`).
+  // Exposed to API/service consumers as `currentBalance`.
+  balance         Decimal  @default(0) @db.Decimal(16,2)
+  openingBalance  Decimal  @default(0) @db.Decimal(16,2)
 
-  isActive       Boolean @default(true)
+  isActive          Boolean @default(true)
+  isSystemGenerated Boolean @default(false)
+
+  parentAccountId String?
+  parentAccount   Account?  @relation("AccountHierarchy", fields: [parentAccountId], references: [id], onDelete: SetNull)
+  children        Account[] @relation("AccountHierarchy")
+
+  createdBy String?
+  updatedBy String?
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -677,11 +714,14 @@ model Account {
   loans Loan[]
 
   @@index([organizationId])
+  @@index([organizationId, type])
+  @@index([organizationId, isActive])
+  @@index([parentAccountId])
 
   @@unique([organizationId, code])
 
   @@map("accounts")
-  
+
   expenses Expense[] @relation("ExpensePaymentAccount")
 }
 
@@ -742,40 +782,86 @@ model JournalLine {
 // BANK ACCOUNT
 // ============================================================
 model BankAccount {
-  id               String @id @default(cuid())
-
+  id               String          @id @default(cuid())
   organizationId   String
 
+  // Identity
   accountName      String
-
   bankName         String
-
+  bankCode         String?         // First 4 chars of IFSC
   accountNumber    String
-
+  maskedNumber     String?         // e.g. "XXXX XXXX 4321"
   ifscCode         String?
-
   swiftCode        String?
+  micrCode         String?
+  branchName       String?
+  branchCity       String?
 
-  currency         String @default("INR")
+  // Account classification
+  accountType      BankAccountType @default(CURRENT)
+  currency         String          @default("INR")
 
-  openingBalance   Decimal @default(0) @db.Decimal(16,2)
+  // Balances
+  openingBalance   Decimal         @default(0) @db.Decimal(16,2)
+  currentBalance   Decimal         @default(0) @db.Decimal(16,2)
+  availableBalance Decimal         @default(0) @db.Decimal(16,2)
+  ledgerBalance    Decimal         @default(0) @db.Decimal(16,2)
 
-  currentBalance   Decimal @default(0) @db.Decimal(16,2)
+  // Flags
+  isPrimary        Boolean         @default(false)
+  isActive         Boolean         @default(true)
+  isVirtual        Boolean         @default(false)
 
-  isPrimary        Boolean @default(false)
+  // Sync state
+  lastSyncAt       DateTime?
+  lastSyncStatus   String?         // "SUCCESS" | "FAILED" | "PARTIAL"
+  lastSyncError    String?
+  autoSyncEnabled  Boolean         @default(false)
+  syncFrequency    String?         // "HOURLY" | "DAILY" | "WEEKLY"
+  nextSyncAt       DateTime?
 
-  createdAt        DateTime @default(now())
+  // Health & consent
+  healthScore      Int?            // 0-100
+  consentStatus    String?         // "ACTIVE" | "EXPIRED" | "REVOKED" | "NONE"
+  connectionId     String?
+  linkedAccountRef String?         // AA linkRefNumber — maps Setu FI data to this account
 
-  updatedAt        DateTime @updatedAt
+  // Metadata
+  notes            String?
+  metadata         Json?
 
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
   deletedAt        DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  payments Payment[] @relation("BankAccountPayments")
+  organization     Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments         Payment[]                 @relation("BankAccountPayments")
+  connection       BankConnection?           @relation("BankConnectionAccounts", fields: [connectionId], references: [id])
+  bankTransactions BankTransaction[]         @relation("BankAccountTransactions")
+  reconciliations  BankReconciliationSession[] @relation("BankAccountReconciliations")
+  statementImports BankStatementImport[]     @relation("BankAccountImports")
+  consents         BankConsent[]             @relation("BankAccountConsents")
+  balances         BankBalance[]             @relation("BankAccountBalances")
+  syncHistory      BankSyncHistory[]         @relation("BankAccountSyncHistory")
 
   @@index([organizationId])
-
+  @@index([organizationId, isActive])
+  @@index([organizationId, accountType])
+  @@index([linkedAccountRef])
   @@map("bank_accounts")
+}
+
+enum BankAccountType {
+  SAVINGS
+  CURRENT
+  CASH_CREDIT
+  OVERDRAFT
+  FIXED_DEPOSIT
+  RECURRING_DEPOSIT
+  NRE
+  NRO
+  FOREX
+  WALLET
 }
 
 // ============================================================
@@ -3029,6 +3115,59 @@ model FirmSnapshot {
   @@map("firm_snapshots")
 }
 
+// ============================================================
+// REPORTS CENTER
+// ============================================================
+
+model FavoriteReport {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  reportSlug     String
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, organizationId, reportSlug])
+  @@index([userId, organizationId])
+  @@map("favorite_reports")
+}
+
+model ScheduledReport {
+  id               String   @id @default(cuid())
+  organizationId   String
+  reportSlug       String
+  name             String
+  frequency        String   // "daily" | "weekly" | "monthly"
+  emailRecipients  String[]
+  filters          Json?
+  nextRunAt        DateTime
+  lastRunAt        DateTime?
+  enabled          Boolean  @default(true)
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([enabled, nextRunAt])
+  @@map("scheduled_reports")
+}
+
+model ReportCache {
+  id             String   @id @default(cuid())
+  organizationId String
+  reportSlug     String
+  filterHash     String
+  payload        Json
+  generatedAt    DateTime @default(now())
+  expiresAt      DateTime
+
+  @@unique([organizationId, reportSlug, filterHash])
+  @@index([organizationId, reportSlug])
+  @@index([expiresAt])
+  @@map("report_cache")
+}
+
 // Organization-level compliance summary
 model ComplianceStat {
   id             String   @id @default(cuid())
@@ -3041,8 +3180,8 @@ model ComplianceStat {
   approvedCount      Int @default(0)
   rejectedCount      Int @default(0)
   expiredCount       Int @default(0)
-  dueSoon7d          Int @default(0)  // expiring within 7 days
-  dueSoon30d         Int @default(0)  // expiring within 30 days
+  dueSoon7d          Int @default(0)
+  dueSoon30d         Int @default(0)
 
   computedAt     DateTime @default(now())
 
@@ -3051,4 +3190,1238 @@ model ComplianceStat {
   @@unique([organizationId, snapshotDate])
   @@index([organizationId, snapshotDate])
   @@map("compliance_stats")
+}
+
+// ============================================================
+// =================== BANKING OS MODELS ======================
+// ============================================================
+
+// ============================================================
+// BANK TRANSACTION
+// ============================================================
+model BankTransaction {
+  id               String          @id @default(cuid())
+  organizationId   String
+  bankAccountId    String
+
+  transactionDate  DateTime
+  valueDate        DateTime?
+  narration        String
+  referenceNumber  String?
+  chequeNumber     String?
+
+  // Amounts
+  credit           Decimal?        @db.Decimal(16, 2)
+  debit            Decimal?        @db.Decimal(16, 2)
+  balance          Decimal?        @db.Decimal(16, 2)
+
+  // Classification
+  category         String?
+  subCategory      String?
+  gstCategory      GSTCategory?
+  txnType          BankTxnType     @default(UNKNOWN)
+
+  // GST correlation
+  gstin            String?
+  invoiceRef       String?
+  gstAmount        Decimal?        @db.Decimal(16, 2)
+
+  // Status
+  status           BankTxnStatus   @default(UNREVIEWED)
+  reconcileStatus  ReconcileStatus @default(UNMATCHED)
+
+  // Source
+  source           BankTxnSource   @default(MANUAL)
+  importJobId      String?
+  externalTxnId    String?         // provider txn id (AA dedup key)
+
+  // Entity link (after matching)
+  entityType       String?
+  entityId         String?
+
+  // Flags
+  isFlagged        Boolean         @default(false)
+  isDuplicate      Boolean         @default(false)
+  isIgnored        Boolean         @default(false)
+  requiresApproval Boolean         @default(false)
+
+  // Metadata
+  tags             String[]
+  notes            String?
+  metadata         Json?
+  aiCategory       String?
+  aiConfidence     Decimal?        @db.Decimal(5, 2)
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount      BankAccount             @relation("BankAccountTransactions", fields: [bankAccountId], references: [id])
+  reconcileMatches ReconciliationMatch[]
+  riskAlerts       BankRiskAlert[]
+
+  @@unique([bankAccountId, externalTxnId])
+  @@index([organizationId, transactionDate])
+  @@index([organizationId, bankAccountId])
+  @@index([organizationId, status])
+  @@index([organizationId, reconcileStatus])
+  @@index([bankAccountId, transactionDate])
+  @@map("bank_transactions")
+}
+
+enum BankTxnType {
+  UPI
+  NEFT
+  RTGS
+  IMPS
+  CHEQUE
+  CASH
+  EMI
+  SALARY
+  GST_PAYMENT
+  TDS_PAYMENT
+  VENDOR_PAYMENT
+  CUSTOMER_RECEIPT
+  BANK_CHARGE
+  INTEREST
+  DIVIDEND
+  LOAN_EMI
+  REFUND
+  REVERSAL
+  UNKNOWN
+}
+
+enum BankTxnStatus {
+  UNREVIEWED
+  REVIEWED
+  CATEGORIZED
+  MATCHED
+  EXCLUDED
+}
+
+enum ReconcileStatus {
+  UNMATCHED
+  MATCHED
+  PARTIAL
+  EXCEPTION
+  DUPLICATE
+  IGNORED
+}
+
+enum BankTxnSource {
+  AA_SETU
+  AA_FINBOX
+  ICICI_API
+  HDFC_API
+  AXIS_API
+  SBI_API
+  KOTAK_API
+  PDF_UPLOAD
+  CSV_UPLOAD
+  EXCEL_UPLOAD
+  MANUAL
+}
+
+enum GSTCategory {
+  B2B_PURCHASE
+  B2B_SALE
+  B2C_SALE
+  GST_PAYMENT
+  GST_REFUND
+  IMPORT
+  EXPORT
+  RCM_PAYMENT
+  EXEMPT
+  UNKNOWN
+}
+
+// ============================================================
+// BANKING RULE (Auto-categorization engine)
+// ============================================================
+model BankingRule {
+  id             String   @id @default(cuid())
+  organizationId String
+
+  name           String
+  description    String?
+
+  priority       Int      @default(100)
+  isActive       Boolean  @default(true)
+  isSystem       Boolean  @default(false)
+
+  // Conditions: [{field, operator, value, logic}]
+  conditions     Json
+
+  // Actions: [{type, value}]
+  actions        Json
+
+  matchCount     Int      @default(0)
+  lastMatchedAt  DateTime?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isActive])
+  @@index([organizationId, priority])
+  @@map("banking_rules")
+}
+
+// ============================================================
+// BANK RECONCILIATION SESSION
+// ============================================================
+model BankReconciliationSession {
+  id             String                @id @default(cuid())
+  organizationId String
+  bankAccountId  String
+
+  name           String?
+  startDate      DateTime
+  endDate        DateTime
+
+  status         ReconcileSessionStatus @default(IN_PROGRESS)
+
+  totalTxns      Int     @default(0)
+  matchedTxns    Int     @default(0)
+  unmatchedTxns  Int     @default(0)
+  exceptionTxns  Int     @default(0)
+
+  openingBalance Decimal? @db.Decimal(16, 2)
+  closingBalance Decimal? @db.Decimal(16, 2)
+
+  completedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount    BankAccount      @relation("BankAccountReconciliations", fields: [bankAccountId], references: [id])
+  matches        ReconciliationMatch[]
+
+  @@index([organizationId, bankAccountId])
+  @@index([organizationId, status])
+  @@map("bank_reconciliation_sessions")
+}
+
+enum ReconcileSessionStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+// ============================================================
+// RECONCILIATION MATCH
+// ============================================================
+model ReconciliationMatch {
+  id                String          @id @default(cuid())
+  sessionId         String
+  bankTransactionId String
+
+  entityType        String?
+  entityId          String?
+  entityRef         String?
+
+  matchType         MatchType       @default(MANUAL)
+  confidence        Decimal?        @db.Decimal(5, 2)
+  status            ReconcileStatus @default(MATCHED)
+
+  notes             String?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  session           BankReconciliationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  bankTransaction   BankTransaction           @relation(fields: [bankTransactionId], references: [id])
+
+  @@index([sessionId])
+  @@index([bankTransactionId])
+  @@map("reconciliation_matches")
+}
+
+enum MatchType {
+  AUTO
+  MANUAL
+  SUGGESTED
+}
+
+// ============================================================
+// BANK CONSENT (Account Aggregator)
+// ============================================================
+model BankConsent {
+  id             String        @id @default(cuid())
+  organizationId String
+  bankAccountId  String?
+
+  provider       AAProvider    @default(SETU)
+  consentHandle  String?       @unique
+  consentId      String?
+
+  status         ConsentStatus @default(PENDING)
+
+  startDate      DateTime?
+  endDate        DateTime?
+  consentType    String?
+  frequency      String?
+
+  fiTypes        String[]
+
+  metadata       Json?
+
+  // Lifecycle + audit
+  vua             String?   // masked customer AA handle (e.g. 99XXXXXX99@onemoney)
+  purposeCode     String?   @default("101")
+  redirectUrl     String?
+  approvedAt      DateTime?
+  revokedAt       DateTime?
+  rejectedAt      DateTime?
+  lastDataFetchAt DateTime?
+  failureReason   String?
+  createdById     String?   // DB User.id of the customer who initiated
+  deletedAt       DateTime?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount    BankAccount? @relation("BankAccountConsents", fields: [bankAccountId], references: [id])
+  syncHistory    BankSyncHistory[] @relation("BankConsentSyncHistory")
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([consentId])
+  @@map("bank_consents")
+}
+
+enum AAProvider {
+  SETU
+  FINBOX
+  ONEMONEY
+  PERFIOS
+  YODLEE
+  MANUAL
+}
+
+enum ConsentStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  REVOKED
+  REJECTED
+  PAUSED
+}
+
+// ============================================================
+// BANK CONNECTION (API integration config)
+// ============================================================
+model BankConnection {
+  id             String           @id @default(cuid())
+  organizationId String
+
+  provider       BankProvider     @default(MANUAL)
+  name           String?
+  displayName    String?
+
+  accessToken    String?
+  refreshToken   String?
+  webhookSecret  String?
+
+  status         ConnectionStatus @default(DISCONNECTED)
+  lastSyncAt     DateTime?
+  nextSyncAt     DateTime?
+  healthScore    Int?
+
+  metadata       Json?
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccounts   BankAccount[] @relation("BankConnectionAccounts")
+
+  @@unique([organizationId, provider])
+  @@index([organizationId])
+  @@map("bank_connections")
+}
+
+enum BankProvider {
+  SETU_AA
+  FINBOX
+  ICICI
+  HDFC
+  AXIS
+  SBI
+  KOTAK
+  YES_BANK
+  MANUAL
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  SYNCING
+  PENDING_AUTH
+}
+
+// ============================================================
+// BANK STATEMENT IMPORT
+// ============================================================
+model BankStatementImport {
+  id             String              @id @default(cuid())
+  organizationId String
+  bankAccountId  String?
+
+  fileName       String
+  fileUrl        String?
+  fileType       BankImportFileType  @default(CSV)
+  fileSize       Int?
+
+  status         BankImportStatus    @default(PENDING)
+
+  totalRows      Int?
+  successRows    Int?
+  errorRows      Int?
+  duplicateRows  Int?
+
+  errors         Json?
+  detectedBank   String?
+  metadata       Json?
+
+  processedAt    DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount    BankAccount? @relation("BankAccountImports", fields: [bankAccountId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@map("bank_statement_imports")
+}
+
+enum BankImportFileType {
+  PDF
+  CSV
+  EXCEL
+  OFX
+  MT940
+}
+
+enum BankImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  PARTIAL
+}
+
+// ============================================================
+// CASH FLOW SNAPSHOT
+// ============================================================
+model CashFlowSnapshot {
+  id             String   @id @default(cuid())
+  organizationId String
+
+  snapshotDate   DateTime
+  period         String   // "DAILY" | "WEEKLY" | "MONTHLY" | "QUARTERLY"
+
+  totalInflow    Decimal  @default(0) @db.Decimal(16, 2)
+  totalOutflow   Decimal  @default(0) @db.Decimal(16, 2)
+  netCashFlow    Decimal  @default(0) @db.Decimal(16, 2)
+  openingBalance Decimal  @default(0) @db.Decimal(16, 2)
+  closingBalance Decimal  @default(0) @db.Decimal(16, 2)
+
+  breakdown      Json?
+  isForecast     Boolean  @default(false)
+
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, snapshotDate, period])
+  @@index([organizationId, snapshotDate])
+  @@map("cash_flow_snapshots")
+}
+
+// ============================================================
+// GST BANK MATCH
+// ============================================================
+model GSTBankMatch {
+  id                String         @id @default(cuid())
+  organizationId    String
+  bankTransactionId String?
+
+  gstrType          String?
+  gstrPeriod        String?
+  invoiceId         String?
+  invoiceNumber     String?
+  gstin             String?
+  vendorName        String?
+
+  amount            Decimal        @db.Decimal(16, 2)
+  gstAmount         Decimal?       @db.Decimal(16, 2)
+
+  matchStatus       GSTMatchStatus @default(UNMATCHED)
+  confidence        Decimal?       @db.Decimal(5, 2)
+  issues            Json?
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, matchStatus])
+  @@index([organizationId, gstrPeriod])
+  @@map("gst_bank_matches")
+}
+
+enum GSTMatchStatus {
+  MATCHED
+  UNMATCHED
+  PARTIAL
+  MISMATCH
+  MISSING_INVOICE
+  MISSING_RETURN
+}
+
+// ============================================================
+// BANK RISK ALERT
+// ============================================================
+model BankRiskAlert {
+  id                String          @id @default(cuid())
+  organizationId    String
+  bankTransactionId String?
+
+  riskType          RiskType
+  severity          RiskSeverity    @default(LOW)
+  title             String
+  description       String
+
+  status            RiskAlertStatus @default(OPEN)
+  metadata          Json?
+
+  resolvedAt        DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  organization      Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transaction       BankTransaction? @relation(fields: [bankTransactionId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, severity])
+  @@index([organizationId, status])
+  @@map("bank_risk_alerts")
+}
+
+enum RiskType {
+  DUPLICATE_PAYMENT
+  ROUND_TRIPPING
+  LARGE_WITHDRAWAL
+  DORMANT_ACTIVITY
+  SUSPICIOUS_TRANSFER
+  VENDOR_FRAUD
+  UNUSUAL_PATTERN
+  HIGH_VALUE_TRANSACTION
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskAlertStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+// ============================================================
+// BANK AI INSIGHT
+// ============================================================
+model BankAIInsight {
+  id             String        @id @default(cuid())
+  organizationId String
+
+  insightType    AIInsightType
+  title          String
+  summary        String
+  detail         String?
+  data           Json?
+
+  actionRequired Boolean       @default(false)
+  actionLabel    String?
+  actionUrl      String?
+  severity       String?
+
+  isRead         Boolean       @default(false)
+  isDismissed    Boolean       @default(false)
+  validUntil     DateTime?
+
+  createdAt      DateTime      @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, insightType])
+  @@index([organizationId, isRead])
+  @@map("bank_ai_insights")
+}
+
+enum AIInsightType {
+  CASH_FLOW_ALERT
+  EXPENSE_TREND
+  VENDOR_ANALYSIS
+  CUSTOMER_ANALYSIS
+  TAX_INSIGHT
+  COMPLIANCE_ALERT
+  DUPLICATE_DETECTED
+  FRAUD_SIGNAL
+  LIQUIDITY_WARNING
+  PAYMENT_FORECAST
+  SALARY_PATTERN
+  GST_ALERT
+}
+
+// ============================================================
+// BANK SYNC HISTORY (per-run sync audit trail)
+// ============================================================
+model BankSyncHistory {
+  id             String        @id @default(cuid())
+  organizationId String
+  bankAccountId  String?
+  consentId      String?       // BankConsent.id
+  connectionId   String?
+
+  provider       AAProvider    @default(SETU)
+  trigger        SyncTrigger   @default(MANUAL)
+  syncType       SyncType      @default(INCREMENTAL)
+  status         SyncRunStatus @default(QUEUED)
+
+  // Setu FI data session backing this run
+  dataSessionId  String?
+  fromDate       DateTime?
+  toDate         DateTime?
+
+  // Outcome counters
+  txnsFetched    Int           @default(0)
+  txnsSaved      Int           @default(0)
+  txnsDuplicate  Int           @default(0)
+  balancesSaved  Int           @default(0)
+
+  attempt        Int           @default(1)
+  error          String?
+  errorCode      String?
+  metadata       Json?
+
+  startedAt      DateTime      @default(now())
+  completedAt    DateTime?
+  durationMs     Int?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount    BankAccount? @relation("BankAccountSyncHistory", fields: [bankAccountId], references: [id])
+  consent        BankConsent? @relation("BankConsentSyncHistory", fields: [consentId], references: [id])
+
+  @@index([organizationId, startedAt])
+  @@index([bankAccountId, startedAt])
+  @@index([organizationId, status])
+  @@index([dataSessionId])
+  @@map("bank_sync_history")
+}
+
+enum SyncTrigger {
+  MANUAL
+  SCHEDULED
+  WEBHOOK
+  INITIAL
+}
+
+enum SyncType {
+  FULL
+  INCREMENTAL
+  BALANCE_ONLY
+}
+
+enum SyncRunStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+// ============================================================
+// BANK BALANCE (point-in-time balance snapshots per account)
+// ============================================================
+model BankBalance {
+  id               String        @id @default(cuid())
+  organizationId   String
+  bankAccountId    String
+
+  balanceDate      DateTime
+  currentBalance   Decimal       @db.Decimal(16, 2)
+  availableBalance Decimal?      @db.Decimal(16, 2)
+  ledgerBalance    Decimal?      @db.Decimal(16, 2)
+  currency         String        @default("INR")
+  source           BankTxnSource @default(AA_SETU)
+
+  createdAt        DateTime      @default(now())
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount      BankAccount  @relation("BankAccountBalances", fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([bankAccountId, balanceDate, source])
+  @@index([organizationId, balanceDate])
+  @@index([bankAccountId, balanceDate])
+  @@map("bank_balances")
+}
+
+// ============================================================
+// BANK WEBHOOK EVENT (AA webhook audit + idempotency store)
+// Standalone (not the generic WebhookEvent) because AA webhooks
+// arrive before any Integration row exists and may not be
+// resolvable to an organization until the consent is looked up.
+// ============================================================
+model BankWebhookEvent {
+  id             String        @id @default(cuid())
+  organizationId String?       // resolved from consent lookup; null if unknown
+  provider       AAProvider    @default(SETU)
+  eventType      String
+  externalId     String?       @unique // provider notification id (replay dedup)
+  consentId      String?       // Setu consent id
+  dataSessionId  String?
+  payload        Json
+  rawBody        String?
+  signature      String?
+  signatureValid Boolean       @default(false)
+  status         WebhookStatus @default(PENDING)
+  processedAt    DateTime?
+  error          String?
+  retryCount     Int           @default(0)
+  receivedAt     DateTime      @default(now())
+
+  organization   Organization? @relation("OrgBankWebhookEvents", fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([provider, eventType])
+  @@index([consentId])
+  @@index([status, receivedAt])
+  @@map("bank_webhook_events")
+}
+
+// ============================================================
+// ============================================================
+//   CA HUB — Chartered Accountant Practice Operating System
+//
+//   Net-new data layer for the CA Hub super-module. Designed to be
+//   ADDITIVE: every model carries scalar tenant keys (firmId /
+//   organizationId = client org) with indexes instead of formal
+//   back-relations, so adding this block does NOT require touching
+//   any of the 100+ existing core models. Wire formal relations
+//   later if/when needed.
+//
+//   Tenant model:
+//     firmId         → the CA practice (Firm) that owns the record
+//     organizationId → the CLIENT organization the filing belongs to
+//     caUserId       → the CA/staff user responsible
+//
+//   Tables are prefixed ca_hub_* to avoid any name collision.
+// ============================================================
+
+enum CaFilingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  PENDING_DOCS
+  PENDING_REVIEW
+  READY_TO_FILE
+  FILED
+  LATE_FILED
+  OVERDUE
+  REJECTED
+}
+
+enum CaRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum GstReturnType {
+  GSTR1
+  GSTR3B
+  GSTR9
+  GSTR9C
+  CMP08
+  GSTR4
+  IFF
+}
+
+enum ItrFormType {
+  ITR1
+  ITR2
+  ITR3
+  ITR4
+  ITR5
+  ITR6
+  ITR7
+}
+
+enum TaxRegime {
+  OLD
+  NEW
+}
+
+enum TdsFormType {
+  FORM24Q
+  FORM26Q
+  FORM27Q
+  FORM27EQ
+}
+
+enum AuditEngagementType {
+  STATUTORY
+  TAX_AUDIT
+  INTERNAL
+  GST_AUDIT
+  STOCK
+  CONCURRENT
+  LIMITED_REVIEW
+}
+
+enum AuditEngagementStatus {
+  PLANNING
+  FIELDWORK
+  REVIEW
+  FINALIZED
+  SIGNED_OFF
+}
+
+enum RocFormType {
+  AOC4
+  MGT7
+  MGT7A
+  DIR3KYC
+  ADT1
+  DPT3
+  LLP8
+  LLP11
+  INC22
+}
+
+enum CaEsignType {
+  AADHAAR
+  DSC
+}
+
+enum CaEsignStatus {
+  DRAFT
+  SENT
+  VIEWED
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+enum CaCopilotRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum CaCopilotDomain {
+  COMPLIANCE
+  AUDIT
+  GST
+  TAX
+  NOTICE
+  GENERAL
+}
+
+// ── Per-client compliance scorecard (Client 360 + dashboard) ──
+model ClientComplianceProfile {
+  id             String      @id @default(cuid())
+  organizationId String      @unique
+  firmId         String?
+  partnerUserId  String?
+  managerUserId  String?
+  healthScore    Int         @default(0)
+  riskLevel      CaRiskLevel @default(LOW)
+  gstStatus      CaFilingStatus @default(NOT_STARTED)
+  tdsStatus      CaFilingStatus @default(NOT_STARTED)
+  itrStatus      CaFilingStatus @default(NOT_STARTED)
+  rocStatus      CaFilingStatus @default(NOT_STARTED)
+  auditStatus    CaFilingStatus @default(NOT_STARTED)
+  payrollStatus  CaFilingStatus @default(NOT_STARTED)
+  openTaskCount  Int         @default(0)
+  monthlyFee     Decimal?    @db.Decimal(12, 2)
+  lastReviewedAt DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([firmId])
+  @@index([riskLevel])
+  @@map("ca_hub_client_profiles")
+}
+
+// ── GST filings (GSTR-1/3B/9/9C etc.) ─────────────────────────
+model GstFiling {
+  id             String         @id @default(cuid())
+  organizationId String
+  firmId         String?
+  caUserId       String?
+  gstin          String?
+  returnType     GstReturnType
+  periodLabel    String          // e.g. "May 2026" or "FY 2025-26"
+  periodMonth    Int?
+  periodYear     Int
+  status         CaFilingStatus @default(NOT_STARTED)
+  taxableValue   Decimal?       @db.Decimal(16, 2)
+  taxLiability   Decimal?       @db.Decimal(16, 2)
+  itcClaimed     Decimal?       @db.Decimal(16, 2)
+  dueDate        DateTime
+  filedAt        DateTime?
+  arn            String?         // Acknowledgement Reference Number
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@index([returnType, periodYear, periodMonth])
+  @@index([dueDate])
+  @@map("ca_hub_gst_filings")
+}
+
+// ── Income tax returns (ITR 1-7) ──────────────────────────────
+model ItrFiling {
+  id              String         @id @default(cuid())
+  organizationId  String
+  firmId          String?
+  caUserId        String?
+  pan             String?
+  assessmentYear  String          // e.g. "2026-27"
+  formType        ItrFormType
+  regime          TaxRegime?
+  status          CaFilingStatus @default(NOT_STARTED)
+  grossTotalIncome Decimal?      @db.Decimal(16, 2)
+  totalDeductions Decimal?       @db.Decimal(16, 2)
+  taxPayable      Decimal?       @db.Decimal(16, 2)
+  refundDue       Decimal?       @db.Decimal(16, 2)
+  aisImported     Boolean        @default(false)
+  dueDate         DateTime
+  filedAt         DateTime?
+  acknowledgementNo String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@index([assessmentYear, formType])
+  @@map("ca_hub_itr_filings")
+}
+
+// ── TDS returns (24Q/26Q/27Q/27EQ) ────────────────────────────
+model TdsReturn {
+  id             String         @id @default(cuid())
+  organizationId String
+  firmId         String?
+  caUserId       String?
+  tan            String?
+  formType       TdsFormType
+  quarter        String          // "Q1".."Q4"
+  financialYear  String          // "2026-27"
+  status         CaFilingStatus @default(NOT_STARTED)
+  totalDeducted  Decimal?       @db.Decimal(16, 2)
+  totalDeposited Decimal?       @db.Decimal(16, 2)
+  deducteeCount  Int            @default(0)
+  dueDate        DateTime
+  filedAt        DateTime?
+  tokenNumber    String?         // provisional receipt / token
+  challanMatched Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@index([formType, financialYear, quarter])
+  @@map("ca_hub_tds_returns")
+}
+
+// ── Audit engagements + workpapers ────────────────────────────
+model AuditEngagement {
+  id             String                @id @default(cuid())
+  organizationId String
+  firmId         String?
+  leadCaUserId   String?
+  type           AuditEngagementType
+  financialYear  String
+  status         AuditEngagementStatus @default(PLANNING)
+  riskRating     CaRiskLevel           @default(MEDIUM)
+  udin           String?
+  materiality    Decimal?              @db.Decimal(16, 2)
+  planningDoneAt DateTime?
+  signOffAt      DateTime?
+  dueDate        DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  workpapers AuditWorkpaper[]
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@map("ca_hub_audit_engagements")
+}
+
+model AuditWorkpaper {
+  id             String         @id @default(cuid())
+  engagementId   String
+  ref            String          // index ref e.g. "B-3.2"
+  title          String
+  area           String          // "Revenue", "Fixed Assets", ...
+  status         CaFilingStatus @default(NOT_STARTED)
+  preparedById   String?
+  reviewedById   String?
+  conclusion     String?
+  sortOrder      Int            @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  engagement AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+  @@map("ca_hub_audit_workpapers")
+}
+
+// ── ROC / MCA filings ─────────────────────────────────────────
+model RocFiling {
+  id             String         @id @default(cuid())
+  organizationId String
+  firmId         String?
+  caUserId       String?
+  cin            String?
+  formType       RocFormType
+  financialYear  String
+  status         CaFilingStatus @default(NOT_STARTED)
+  dueDate        DateTime
+  filedAt        DateTime?
+  srn            String?         // Service Request Number
+  feePaid        Decimal?       @db.Decimal(12, 2)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@index([formType, financialYear])
+  @@map("ca_hub_roc_filings")
+}
+
+// ── Document vault (OCR + versioning + DigiLocker) ────────────
+model CaVaultDocument {
+  id             String   @id @default(cuid())
+  organizationId String?
+  firmId         String?
+  name           String
+  category       String   // "GST", "ITR", "KYC", "Financials", ...
+  mimeType       String?
+  sizeBytes      Int?
+  storageKey     String?
+  version        Int      @default(1)
+  uploadedById   String?
+  isConfidential Boolean  @default(false)
+  source         String?  // "UPLOAD" | "DIGILOCKER" | "CLIENT_PORTAL"
+  tags           String[] @default([])
+  ocrText        String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([firmId])
+  @@index([organizationId])
+  @@index([category])
+  @@map("ca_hub_vault_documents")
+}
+
+// ── eSign requests (Aadhaar / DSC) ────────────────────────────
+model CaEsignRequest {
+  id             String        @id @default(cuid())
+  organizationId String?
+  firmId         String?
+  documentName   String
+  documentKey    String?
+  signType       CaEsignType
+  status         CaEsignStatus @default(DRAFT)
+  signerName     String?
+  signerEmail    String?
+  requestedById  String?
+  sentAt         DateTime?
+  signedAt       DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([firmId, status])
+  @@index([organizationId])
+  @@map("ca_hub_esign_requests")
+}
+
+// ── Timesheets (team productivity) ────────────────────────────
+model CaTimesheet {
+  id             String   @id @default(cuid())
+  firmId         String?
+  caUserId       String
+  organizationId String?  // client worked on (nullable for internal)
+  date           DateTime
+  hours          Decimal  @db.Decimal(5, 2)
+  billable       Boolean  @default(true)
+  activity       String
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  @@index([firmId, date])
+  @@index([caUserId, date])
+  @@map("ca_hub_timesheets")
+}
+
+// ── AI Copilot threads + messages ─────────────────────────────
+model CaCopilotThread {
+  id        String          @id @default(cuid())
+  firmId    String?
+  caUserId  String
+  domain    CaCopilotDomain @default(GENERAL)
+  title     String
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  messages CaCopilotMessage[]
+
+  @@index([caUserId])
+  @@index([firmId])
+  @@map("ca_hub_copilot_threads")
+}
+
+model CaCopilotMessage {
+  id        String        @id @default(cuid())
+  threadId  String
+  role      CaCopilotRole
+  content   String        @db.Text
+  createdAt DateTime      @default(now())
+
+  thread CaCopilotThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@map("ca_hub_copilot_messages")
+}
+
+// ── Practice metric snapshots (analytics rollups) ─────────────
+model PracticeMetricSnapshot {
+  id           String   @id @default(cuid())
+  firmId       String?
+  snapshotDate DateTime
+  totalClients Int      @default(0)
+  gstDue       Int      @default(0)
+  tdsDue       Int      @default(0)
+  itrDue       Int      @default(0)
+  rocDue       Int      @default(0)
+  auditPending Int      @default(0)
+  overdueCount Int      @default(0)
+  revenueMTD   Decimal? @db.Decimal(16, 2)
+  wip          Decimal? @db.Decimal(16, 2)
+  realizationRate Decimal? @db.Decimal(5, 2)
+  onTimeFilingRate Decimal? @db.Decimal(5, 2)
+  teamUtilization  Decimal? @db.Decimal(5, 2)
+  createdAt    DateTime @default(now())
+
+  @@unique([firmId, snapshotDate])
+  @@index([firmId])
+  @@map("ca_hub_metric_snapshots")
+}
+
+// ============================================================
+// ============ CLIENT WORKSPACE (CA ↔ Client Org RBAC) =======
+// ============================================================
+// ClientAssignment: grants a CA user access to a client
+// organization with a scoped permission set. Powering:
+//   • "Assigned Customers" list in the CA portal
+//   • Workspace entry validation (impersonation)
+//   • Per-module permission gating inside the workspace
+// ClientActivityLog: immutable audit trail of every workspace
+// session and every mutation a CA performs on behalf of a client.
+// ============================================================
+
+enum ClientPermission {
+  VIEW_DASHBOARD
+  MANAGE_BANKING
+  MANAGE_GST
+  MANAGE_TDS
+  MANAGE_DOCUMENTS
+  MANAGE_PAYROLL
+  MANAGE_CONSENTS // explicit grant: CA may create/revoke consents + disconnect accounts
+}
+
+enum ClientActivityAction {
+  WORKSPACE_ENTER
+  WORKSPACE_EXIT
+  WORKSPACE_SWITCH
+  VIEW
+  CREATE
+  UPDATE
+  DELETE
+  EXPORT
+  PERMISSION_DENIED
+  ASSIGNMENT_CREATED
+  ASSIGNMENT_UPDATED
+  ASSIGNMENT_REVOKED
+}
+
+model ClientAssignment {
+  id             String             @id @default(cuid())
+  caUserId       String             // CA / CA_FIRM_ADMIN user granted access
+  organizationId String             // client organization being accessed
+  firmId         String?            // CA's firm at assignment time (firm-admin scope)
+  permissions    ClientPermission[] @default([VIEW_DASHBOARD, MANAGE_BANKING, MANAGE_GST, MANAGE_TDS, MANAGE_DOCUMENTS, MANAGE_PAYROLL])
+  isActive       Boolean            @default(true)
+  notes          String?
+  assignedById   String
+  assignedAt     DateTime           @default(now())
+  revokedAt      DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  caUser       User         @relation("ClientAssignmentCA", fields: [caUserId], references: [id])
+  organization Organization @relation("ClientAssignmentOrg", fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedBy   User         @relation("ClientAssignmentCreatedBy", fields: [assignedById], references: [id])
+
+  @@unique([caUserId, organizationId])
+  @@index([caUserId, isActive])
+  @@index([organizationId, isActive])
+  @@index([firmId])
+  @@map("client_assignments")
+}
+
+model ClientActivityLog {
+  id             String               @id @default(cuid())
+  caUserId       String               // acting CA user
+  organizationId String               // client org acted upon
+  action         ClientActivityAction
+  method         String?              // HTTP method for API mutations
+  path           String?              // request path / page route
+  entity         String?              // domain entity (e.g. "sale", "bankTransaction")
+  entityId       String?
+  summary        String               // human-readable description
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime             @default(now())
+
+  caUser       User         @relation("ClientActivityCA", fields: [caUserId], references: [id])
+  organization Organization @relation("ClientActivityOrg", fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([caUserId, createdAt])
+  @@index([action])
+  @@map("client_activity_logs")
 }
