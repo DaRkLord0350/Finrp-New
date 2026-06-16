@@ -445,7 +445,8 @@ body {
 /* Sidebar */
 .sidebar {
   width: 240px;
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
   background: var(--bg-surface);
   border-right: 1px solid var(--border);
   display: flex;
@@ -455,6 +456,17 @@ body {
   left: 0;
   top: 0;
   z-index: 50;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+/* Let the flex:1 nav region scroll inside a fixed-height sidebar
+   (without min-height:0 a flex child refuses to shrink below its
+   content, pushing the pinned bottom group off-screen). */
+.sidebar > nav {
+  min-height: 0;
 }
 
 .sidebar-nav-item {

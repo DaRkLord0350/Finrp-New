@@ -135,6 +135,85 @@ async function handleUserCreated(
     return NextResponse.json({ message: "User already exists", userId: existing.id });
   }
 
+  // ── Invite acceptance ──────────────────────────────────────
+  // If a firm admin has a PENDING, non-expired invite for this
+  // email, provision the user INTO that firm's organization
+  // (instead of spinning up a brand-new org). This is what makes
+  // "Add Team Member → Send Invite" actually land the CA in the firm.
+  if (email) {
+    const pendingInvite = await prisma.invitation.findFirst({
+      where: {
+        email: { equals: email, mode: "insensitive" },
+        status: "PENDING",
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (pendingInvite) {
+      const joined = await prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            clerkId,
+            email,
+            name: pendingInvite.name ?? name,
+            role: pendingInvite.role,
+            userRole: pendingInvite.userRole ?? "CA",
+            avatarUrl: data.image_url ?? null,
+            phone: pendingInvite.phone ?? data.phone_numbers?.[0]?.phone_number ?? null,
+            isActive: true,
+            organizationId: pendingInvite.organizationId,
+            firmId: pendingInvite.firmId,
+            firmRole: pendingInvite.firmRole,
+            specialization: pendingInvite.specialization,
+            joiningDate: pendingInvite.joiningDate ?? new Date(),
+          },
+        });
+
+        await tx.membership.create({
+          data: {
+            userId: user.id,
+            organizationId: pendingInvite.organizationId,
+            role: pendingInvite.role,
+            invitedBy: pendingInvite.invitedBy,
+          },
+        });
+
+        await tx.invitation.update({
+          where: { id: pendingInvite.id },
+          data: { status: "ACCEPTED", acceptedAt: new Date() },
+        });
+
+        await tx.teamActivityLog.create({
+          data: {
+            organizationId: pendingInvite.organizationId,
+            actorId: pendingInvite.invitedBy,
+            targetUserId: user.id,
+            targetEmail: email,
+            action: "MEMBER_JOINED",
+            module: "TEAM",
+            metadata: { event: "invite_accepted", inviteId: pendingInvite.id },
+          },
+        });
+
+        return user;
+      });
+
+      console.log(
+        `[Clerk webhook] User ${joined.id} (${email}) joined firm org ${pendingInvite.organizationId} via invite ${pendingInvite.id}`
+      );
+
+      return NextResponse.json(
+        {
+          message: "User joined firm via invitation",
+          userId: joined.id,
+          organizationId: pendingInvite.organizationId,
+        },
+        { status: 201 }
+      );
+    }
+  }
+
   // Create everything in a single transaction
   const result = await prisma.$transaction(async (tx) => {
     // 1. Create the Organization (one per user in this SaaS model)

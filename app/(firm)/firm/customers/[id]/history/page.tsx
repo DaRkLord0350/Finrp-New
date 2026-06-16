@@ -104,7 +104,7 @@ export default async function CustomerHistoryPage({ params }: { params: Promise<
                           Assigned {format(new Date(a.assignedAt), "dd MMM yyyy, HH:mm")}
                           {a.unassignedAt && ` · Unassigned ${format(new Date(a.unassignedAt), "dd MMM yyyy")}`}
                         </p>
-                        {a.reason && <p style={{ fontSize: 12, color: "var(--text-secondary)", fontStyle: "italic" }}>"{a.reason}"</p>}
+                        {a.reason && <p style={{ fontSize: 12, color: "var(--text-secondary)", fontStyle: "italic" }}>&ldquo;{a.reason}&rdquo;</p>}
                         <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                           By {a.assignedBy.name ?? "System"}
                         </p>

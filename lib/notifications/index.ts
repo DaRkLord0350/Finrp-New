@@ -4,7 +4,7 @@
 // ============================================================
 
 import { prisma } from "@/lib/prisma";
-import { sendEmail, buildTaskDueEmail, buildAssignmentEmail, buildDocumentReviewEmail } from "./email";
+import { sendEmail, buildTaskDueEmail, buildAssignmentEmail, buildDocumentReviewEmail, buildTeamInviteEmail } from "./email";
 import { sendWhatsApp, buildTaskDueWhatsApp, buildAssignmentWhatsApp } from "./whatsapp";
 
 interface NotifyTaskDueParams {
@@ -121,6 +121,40 @@ export async function notifyAssignment(params: NotifyAssignmentParams) {
     const body = buildAssignmentWhatsApp({ customerName: params.customerName, firmName: params.firmName });
     sendWhatsApp({ to: params.caPhone, body }).catch(() => {});
   }
+}
+
+interface NotifyTeamInviteParams {
+  organizationId: string;
+  recipientEmail: string;
+  recipientName: string;
+  firmName: string;
+  inviterName: string;
+  role: string;
+  inviteUrl: string;
+}
+
+export async function notifyTeamInvite(params: NotifyTeamInviteParams) {
+  const settings = await getSettings(params.organizationId);
+  // Team invites are transactional — send unless email is explicitly disabled.
+  if (settings?.emailEnabled === false) return;
+
+  const html = buildTeamInviteEmail({
+    name: params.recipientName,
+    firmName: params.firmName,
+    inviterName: params.inviterName,
+    role: params.role,
+    inviteUrl: params.inviteUrl,
+  });
+  const subject = `You've been invited to join ${params.firmName} on FinRP`;
+
+  await queueNotification({
+    organizationId: params.organizationId,
+    recipientEmail: params.recipientEmail,
+    channel: "EMAIL",
+    subject,
+    body: html,
+  });
+  sendEmail({ to: params.recipientEmail, subject, html }).catch(() => {});
 }
 
 export async function notifyDocumentReview(params: NotifyDocumentReviewParams) {

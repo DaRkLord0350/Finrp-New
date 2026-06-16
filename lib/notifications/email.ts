@@ -24,7 +24,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: opts.from ?? process.env.RESEND_FROM_EMAIL ?? "noreply@finrp.in",
+        from: opts.from ?? process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
         to: [opts.to],
         subject: opts.subject,
         html: opts.html,
@@ -85,6 +85,35 @@ export function buildAssignmentEmail(params: {
       </div>
       <p style="color: #555; font-size: 14px;">Log in to FinRP to view the client details and pending tasks.</p>
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
+      <p style="color: #9ca3af; font-size: 12px;">FinRP — Practice Management Platform</p>
+    </div>
+  `;
+}
+
+export function buildTeamInviteEmail(params: {
+  name: string;
+  firmName: string;
+  inviterName: string;
+  role: string;
+  inviteUrl: string;
+}): string {
+  return `
+    <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2 style="color: #1a1a1a; margin-bottom: 8px;">You're invited to join ${params.firmName}</h2>
+      <p style="color: #555; margin-bottom: 24px;">Hi ${params.name},</p>
+      <div style="background: #f8f9fa; border-left: 4px solid #6366f1; padding: 16px; border-radius: 4px; margin-bottom: 20px;">
+        <p style="margin: 0; color: #1a1a1a; font-size: 14px;">
+          ${params.inviterName} has invited you to join <strong>${params.firmName}</strong> on FinRP as
+          <strong>${params.role}</strong>.
+        </p>
+      </div>
+      <p style="color: #555; font-size: 14px; margin-bottom: 20px;">
+        Sign up with this email address to accept the invitation and access the practice workspace.
+      </p>
+      <a href="${params.inviteUrl}" style="display: inline-block; background: #6366f1; color: white; text-decoration: none; padding: 11px 22px; border-radius: 8px; font-size: 14px; font-weight: 600;">
+        Accept Invitation
+      </a>
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px;" />
       <p style="color: #9ca3af; font-size: 12px;">FinRP — Practice Management Platform</p>
     </div>
   `;

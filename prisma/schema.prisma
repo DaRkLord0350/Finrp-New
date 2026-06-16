@@ -103,6 +103,12 @@ model Organization {
   clientAssignments  ClientAssignment[]  @relation("ClientAssignmentOrg")
   clientActivityLogs ClientActivityLog[] @relation("ClientActivityOrg")
 
+  // ── Firm team management (Phase 3) ──────────
+  teamActivityLogs   TeamActivityLog[]
+
+  // ── Customer document vault (Phase 5) ───────
+  vaultDocuments     CustomerDocument[] @relation("OrgVaultDocuments")
+
   @@index([slug])
   @@map("organizations")
 }
@@ -134,6 +140,11 @@ model User {
   lastLoginAt            DateTime?
   organizationId         String
   firmId                 String?
+  // ── Firm team-member profile (Phase 3) ──────────────────────
+  firmRole               FirmMemberRole?     // firm designation (≠ platform userRole)
+  specialization         Specialization?
+  joiningDate            DateTime?
+  defaultPermissions     ClientPermission[] @default([]) // applied when assigned to a client workspace
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -162,10 +173,37 @@ model User {
   clientAssignments       ClientAssignment[]   @relation("ClientAssignmentCA")
   clientAssignmentsMade   ClientAssignment[]   @relation("ClientAssignmentCreatedBy")
   clientActivityLogs      ClientActivityLog[]  @relation("ClientActivityCA")
+  teamActivityLogs        TeamActivityLog[]    @relation("TeamActivityTarget")
 
   @@index([organizationId])
   @@index([userRole])
   @@map("users")
+}
+
+// Firm-internal designation for a team member (distinct from the
+// platform-level UserRole that governs which portal they enter).
+enum FirmMemberRole {
+  CA
+  MANAGER
+  ARTICLE_ASSISTANT
+  ADMIN
+}
+
+// Practice area a team member specialises in.
+enum Specialization {
+  GST
+  INCOME_TAX
+  AUDIT
+  ROC
+  ACCOUNTING
+  PAYROLL
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
 }
 
 enum Role {
@@ -265,6 +303,7 @@ model Customer {
   customerAssignments CustomerAssignment[]  @relation("CustomerAssignments")
   firmTasks           FirmTask[]            @relation("CustomerFirmTasks")
   templateAssignments TemplateAssignment[]  @relation("CustomerTemplateAssignments")
+  vaultDocuments      CustomerDocument[]    @relation("CustomerVaultDocuments")
 
   @@unique([organizationId, customerCode])
   @@index([organizationId, customerType])
@@ -1615,12 +1654,48 @@ model Invitation {
   acceptedAt     DateTime?
   invitedBy      String?
   createdAt      DateTime @default(now())
+  // ── Firm team-member invite payload (Phase 3) ───────────────
+  name           String?
+  phone          String?
+  firmId         String?
+  firmRole       FirmMemberRole?
+  specialization Specialization?
+  joiningDate    DateTime?
+  userRole       UserRole?            // CA | CA_FIRM_ADMIN to grant on accept
+  status         InviteStatus @default(PENDING)
+  revokedAt      DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([email])
+  @@index([status])
   @@map("invitations")
+}
+
+// ============================================================
+// TEAM ACTIVITY LOG (Phase 3 — firm team management audit trail;
+// also the foundation reused by the Phase 10 audit module)
+// ============================================================
+model TeamActivityLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  actorId        String?  // user who performed the action
+  actorName      String?
+  targetUserId   String?  // affected member (when they have a User row)
+  targetEmail    String?  // affected member email (covers pending invites)
+  action         String   // MEMBER_INVITED | MEMBER_UPDATED | MEMBER_DEACTIVATED | MEMBER_REACTIVATED | MEMBERS_IMPORTED | PERMISSIONS_UPDATED | INVITE_RESENT | INVITE_REVOKED
+  module         String   @default("TEAM")
+  metadata       Json?
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  targetUser   User?        @relation("TeamActivityTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([targetUserId])
+  @@map("team_activity_logs")
 }
 
 // ============================================================
@@ -2750,12 +2825,144 @@ model FirmTask {
   assignedCa   User         @relation("CATasks", fields: [assignedCaId], references: [id])
   createdBy    User         @relation("FirmTaskCreatedBy", fields: [createdById], references: [id])
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  comments     FirmTaskComment[]
+  activities   FirmTaskActivity[]
+  attachments  FirmTaskAttachment[]
 
   @@index([customerId])
   @@index([assignedCaId])
   @@index([organizationId])
   @@index([templateId])
   @@map("firm_tasks")
+}
+
+// ============================================================
+// FIRM TASK WORKFLOW (Phase 6 — comments / attachments / history)
+// ============================================================
+model FirmTaskComment {
+  id         String   @id @default(cuid())
+  taskId     String
+  authorId   String
+  authorName String?
+  body       String   @db.Text
+  createdAt  DateTime @default(now())
+
+  task FirmTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("firm_task_comments")
+}
+
+model FirmTaskActivity {
+  id         String   @id @default(cuid())
+  taskId     String
+  actorId    String?
+  actorName  String?
+  action     String   // CREATED | STATUS_CHANGED | REASSIGNED | COMMENTED | ATTACHMENT_ADDED | UPDATED
+  fromStatus String?
+  toStatus   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  task FirmTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("firm_task_activities")
+}
+
+model FirmTaskAttachment {
+  id           String   @id @default(cuid())
+  taskId       String
+  fileName     String
+  fileUrl      String
+  mimeType     String?
+  fileSize     Int      @default(0)
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  task FirmTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("firm_task_attachments")
+}
+
+// ============================================================
+// CUSTOMER DOCUMENT VAULT (Phase 5 — folders / versions / downloads)
+// Stores metadata + fileUrl (same pattern as OrganizationDocument).
+// ============================================================
+enum DocumentFolder {
+  GST
+  INCOME_TAX
+  TDS
+  AUDIT
+  ROC
+  PAYROLL
+  BANK_STATEMENTS
+  INVOICES
+  OTHER
+}
+
+model CustomerDocument {
+  id             String         @id @default(cuid())
+  organizationId String
+  customerId     String
+  firmId         String?
+  folder         DocumentFolder @default(OTHER)
+  displayName    String
+  fileName       String
+  mimeType       String?
+  fileSize       Int            @default(0)
+  fileUrl        String
+  storageKey     String?
+  currentVersion Int            @default(1)
+  uploadedById   String?
+  isConfidential Boolean        @default(false)
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization              @relation("OrgVaultDocuments", fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer                  @relation("CustomerVaultDocuments", fields: [customerId], references: [id], onDelete: Cascade)
+  versions     CustomerDocumentVersion[]
+  downloads    DocumentDownloadLog[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([customerId, folder])
+  @@map("customer_documents")
+}
+
+model CustomerDocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  versionNumber Int
+  fileUrl       String
+  fileName      String
+  fileSize      Int      @default(0)
+  uploadedById  String?
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  document CustomerDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("customer_document_versions")
+}
+
+model DocumentDownloadLog {
+  id             String   @id @default(cuid())
+  documentId     String
+  organizationId String
+  userId         String?
+  userName       String?
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  document CustomerDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([organizationId])
+  @@map("document_download_logs")
 }
 
 // ============================================================

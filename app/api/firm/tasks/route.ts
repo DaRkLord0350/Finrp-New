@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { logTaskActivity } from "@/lib/firm/tasks";
 
 async function getFirmUser() {
   const { userId } = await auth();
@@ -79,6 +80,15 @@ export async function POST(req: NextRequest) {
       referenceType: "firm_task",
     },
   }).catch(() => {});
+
+  await logTaskActivity({
+    taskId: task.id,
+    actorId: user.id,
+    actorName: user.name ?? user.email,
+    action: "CREATED",
+    toStatus: task.status,
+    metadata: { customerName: customer.name },
+  });
 
   return NextResponse.json({ task }, { status: 201 });
 }

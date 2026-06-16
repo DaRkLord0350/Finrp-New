@@ -23,7 +23,8 @@ export async function GET(request: Request) {
   // Zoho sends the accounts-server it used — tells us the exact DC
   const accountsServer = searchParams.get("accounts-server");
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  // const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.finrp.org";
 
   // ── Handle OAuth errors (user denied, etc.) ──
   if (error) {
