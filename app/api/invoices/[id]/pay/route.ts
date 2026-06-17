@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
+import { logInvoiceActivity } from "@/lib/invoices/activity";
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -134,6 +135,18 @@ export async function POST(
       });
 
       return { payment, invoice: updatedInvoice };
+    });
+
+    await logInvoiceActivity({
+      invoiceId: id,
+      organizationId,
+      type: "PAYMENT_RECORDED",
+      message: `Payment of ${result.payment.amount.toString()} recorded`,
+      metadata: {
+        amount: Number(result.payment.amount),
+        method: result.payment.method,
+        status: result.invoice.status,
+      },
     });
 
     return NextResponse.json(result);

@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { Plus, Search, Download, ArrowRight, RefreshCw, ChevronDown } from "lucide-react";
+import { Plus, Search, Download, ArrowRight, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -11,85 +11,10 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { useInvoices } from "@/hooks/useInvoices";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { format } from "date-fns";
+import InvoiceStatusSelect from "@/components/InvoiceStatusSelect";
+import { getInvoiceStatusMeta } from "@/lib/invoice-status";
 
 const statusOptions = ["All", "DRAFT", "SENT", "VIEWED", "PAID", "PARTIAL", "OVERDUE", "CANCELLED"];
-
-// Editable invoice statuses (mirrors the InvoiceStatus enum) + display metadata.
-const STATUS_META: Record<string, { label: string; color: string }> = {
-  DRAFT:     { label: "Draft",     color: "#94a3b8" },
-  SENT:      { label: "Sent",      color: "#3b82f6" },
-  VIEWED:    { label: "Viewed",    color: "#06b6d4" },
-  PAID:      { label: "Paid",      color: "#10b981" },
-  PARTIAL:   { label: "Partial",   color: "#f59e0b" },
-  OVERDUE:   { label: "Overdue",   color: "#ef4444" },
-  CANCELLED: { label: "Cancelled", color: "#71717a" },
-};
-const STATUS_VALUES = Object.keys(STATUS_META);
-
-// ── Inline, color-coded status dropdown ───────────────────────
-// Replaces the static status badge so users can change an invoice's
-// status in place. Persistence + optimistic update is handled by the
-// caller via useInvoices().updateStatus.
-function StatusSelect({
-  value,
-  onChange,
-  pending,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-  pending?: boolean;
-}) {
-  const meta = STATUS_META[value] ?? { label: value, color: "#94a3b8" };
-  return (
-    <div style={{ position: "relative", display: "inline-flex" }}>
-      <select
-        value={STATUS_VALUES.includes(value) ? value : ""}
-        disabled={pending}
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label="Invoice status"
-        style={{
-          appearance: "none",
-          WebkitAppearance: "none",
-          MozAppearance: "none",
-          padding: "4px 26px 4px 11px",
-          borderRadius: 20,
-          fontSize: 12,
-          fontWeight: 600,
-          lineHeight: 1.4,
-          color: meta.color,
-          background: `${meta.color}15`,
-          border: `1px solid ${meta.color}30`,
-          cursor: pending ? "wait" : "pointer",
-          outline: "none",
-          opacity: pending ? 0.6 : 1,
-          transition: "all 0.15s ease",
-        }}
-      >
-        {!STATUS_VALUES.includes(value) && (
-          <option value="" disabled>{value}</option>
-        )}
-        {STATUS_VALUES.map((s) => (
-          <option key={s} value={s} style={{ color: "var(--text-primary)", background: "var(--bg-surface)" }}>
-            {STATUS_META[s].label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown
-        size={12}
-        style={{
-          position: "absolute",
-          right: 8,
-          top: "50%",
-          transform: "translateY(-50%)",
-          pointerEvents: "none",
-          color: meta.color,
-          opacity: 0.8,
-        }}
-      />
-    </div>
-  );
-}
 
 export default function BillingPage() {
   const router = useRouter();
@@ -103,7 +28,7 @@ export default function BillingPage() {
     setPendingStatusId(id);
     try {
       await updateStatus(id, next);
-      toast.success(`Status updated to ${STATUS_META[next]?.label ?? next}`);
+      toast.success(`Status updated to ${getInvoiceStatusMeta(next).label}`);
     } catch {
       toast.error("Couldn't update status. Please try again.");
     } finally {
@@ -323,7 +248,7 @@ export default function BillingPage() {
                   <span style={{ fontFamily: "monospace", fontSize: 13, color: "var(--text-primary)", fontWeight: 600 }}>
                     {inv.invoiceNumber}
                   </span>
-                  <StatusSelect
+                  <InvoiceStatusSelect
                     value={inv.status}
                     pending={pendingStatusId === inv.id}
                     onChange={(next) => handleStatusChange(inv.id, next)}
@@ -380,7 +305,7 @@ export default function BillingPage() {
                       <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{formatCurrency(Number(inv.total))}</span>
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <StatusSelect
+                      <InvoiceStatusSelect
                         value={inv.status}
                         pending={pendingStatusId === inv.id}
                         onChange={(next) => handleStatusChange(inv.id, next)}

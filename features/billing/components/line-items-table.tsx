@@ -15,8 +15,8 @@ interface Props {
   onItemSelect: (lineId: string, item: InventoryItem | null) => void;
 }
 
-const COLUMNS = ["Catalog Item", "Description", "Qty", "Unit Price", "Tax%", "Amount", ""];
-const GRID = "170px 1fr 70px 120px 60px 90px 36px";
+const COLUMNS = ["Catalog Item", "Description", "HSN/SAC", "Qty", "Unit Price", "Tax%", "Amount", ""];
+const GRID = "150px 1fr 84px 64px 104px 54px 84px 34px";
 
 export function LineItemsTable({
   lineItems, inventoryItems,
@@ -52,6 +52,13 @@ export function LineItemsTable({
               placeholder="Description…"
               value={item.description}
               onChange={(e) => onUpdate(item.id, { description: e.target.value })}
+            />
+
+            <input
+              className="input"
+              placeholder="HSN/SAC"
+              value={item.hsnSac ?? ""}
+              onChange={(e) => onUpdate(item.id, { hsnSac: e.target.value })}
             />
 
             <input

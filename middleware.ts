@@ -8,6 +8,9 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/api/webhooks(.*)",
+  // Public invoice share links — authorized by token (+ optional password)
+  "/i/(.*)",
+  "/api/public/(.*)",
 ]);
 
 // All role-based routing (CA vs CUSTOMER vs ADMIN) is handled by the
