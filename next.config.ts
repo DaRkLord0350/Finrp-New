@@ -43,13 +43,6 @@ const nextConfig: NextConfig = {
           { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
         ],
       },
-      // Generated PDFs — cache 1 hour, stale-while-revalidate 1 day
-      {
-        source:  "/invoices/:path*",
-        headers: [
-          { key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=86400" },
-        ],
-      },
       // Fonts: 1 year
       {
         source:  "/fonts/:path*",

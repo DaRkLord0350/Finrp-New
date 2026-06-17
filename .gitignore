@@ -40,6 +40,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# generated PDFs are produced in-memory and streamed — never stored on disk
+/public/invoices/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

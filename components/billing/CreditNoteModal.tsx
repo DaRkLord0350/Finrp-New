@@ -5,6 +5,7 @@ import { X, FileMinus, Download, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
+import { downloadPdf } from "@/lib/pdf/download-client";
 
 interface CreditNote {
   id: string;
@@ -76,16 +77,10 @@ export default function CreditNoteModal({
     }
   };
 
-  const downloadPdf = async (cnId: string) => {
+  const handleDownloadCreditNote = async (cnId: string, cnNumber: string) => {
     setPdfId(cnId);
     try {
-      const res = await fetch(`/api/credit-notes/${cnId}/pdf`, { method: "POST" });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "PDF generation failed");
-      }
-      const { pdfUrl } = (await res.json()) as { pdfUrl?: string };
-      if (pdfUrl) window.open(pdfUrl, "_blank", "noopener,noreferrer");
+      await downloadPdf(`/api/credit-notes/${cnId}/pdf`, `${cnNumber}.pdf`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "PDF generation failed");
     } finally {
@@ -144,7 +139,7 @@ export default function CreditNoteModal({
                   </p>
                 </div>
                 <span style={{ fontSize: 14, fontWeight: 700, color: "#ef4444" }}>-{formatCurrency(Number(cn.total), cn.currency || currency)}</span>
-                <button onClick={() => downloadPdf(cn.id)} disabled={pdfId === cn.id} className="btn-ghost" style={{ padding: "6px 10px", fontSize: 12 }}>
+                <button onClick={() => handleDownloadCreditNote(cn.id, cn.creditNoteNumber)} disabled={pdfId === cn.id} className="btn-ghost" style={{ padding: "6px 10px", fontSize: 12 }}>
                   <Download size={13} /> {pdfId === cn.id ? "…" : "PDF"}
                 </button>
               </div>
