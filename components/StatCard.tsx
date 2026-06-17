@@ -83,32 +83,34 @@ export default function StatCard({
         {value}
       </p>
 
-      {/* Change indicator */}
-      {change !== undefined && (
+      {/* Change indicator — percentage shown only when a real value exists */}
+      {(change !== undefined || changeLabel) && (
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 2,
-              fontSize: 12,
-              fontWeight: 600,
-              color: isPositive
-                ? "#10b981"
-                : isNegative
-                ? "#ef4444"
-                : "var(--text-muted)",
-            }}
-          >
-            {isPositive ? (
-              <TrendingUp size={13} />
-            ) : isNegative ? (
-              <TrendingDown size={13} />
-            ) : (
-              <Minus size={13} />
-            )}
-            {Math.abs(change)}%
-          </span>
+          {change !== undefined && (
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 2,
+                fontSize: 12,
+                fontWeight: 600,
+                color: isPositive
+                  ? "#10b981"
+                  : isNegative
+                  ? "#ef4444"
+                  : "var(--text-muted)",
+              }}
+            >
+              {isPositive ? (
+                <TrendingUp size={13} />
+              ) : isNegative ? (
+                <TrendingDown size={13} />
+              ) : (
+                <Minus size={13} />
+              )}
+              {Math.abs(change)}%
+            </span>
+          )}
           {changeLabel && (
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
               {changeLabel}

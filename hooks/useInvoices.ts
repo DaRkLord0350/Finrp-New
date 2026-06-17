@@ -40,11 +40,41 @@ export function useInvoices() {
   const outstanding = invoices.filter((i) => i.status === "SENT" || i.status === "OVERDUE");
   const overdue     = invoices.filter((i) => i.status === "OVERDUE");
 
+  /**
+   * Optimistically update a single invoice's status, then persist it.
+   * On failure the cache is rolled back to its previous state so the UI
+   * never shows a status the server rejected.
+   */
+  const updateStatus = async (id: string, status: string) => {
+    const previous = qc.getData<Invoice[]>(["invoices"]);
+
+    qc.setData<Invoice[]>(["invoices"], (old = []) =>
+      old.map((inv) => (inv.id === id ? { ...inv, status } : inv))
+    );
+
+    try {
+      const res = await fetch(`/api/invoices/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Failed to update status");
+      }
+    } catch (e) {
+      // Roll back the optimistic change.
+      if (previous) qc.setData<Invoice[]>(["invoices"], previous);
+      throw e;
+    }
+  };
+
   return {
     invoices,
     loading: isLoading,
     error: null as string | null,
     refetch: () => qc.invalidate(["invoices"]),
+    updateStatus,
     stats: {
       total:            invoices.length,
       paid:             paid.length,

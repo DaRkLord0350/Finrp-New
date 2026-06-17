@@ -2,10 +2,43 @@
 // FinRP Banking OS — Reconciliation Engine
 // Implements Zoho-style auto/manual/partial matching of
 // bank transactions against invoices, payments, and expenses.
+//
+// Integrity guarantees:
+//  - An entity (invoice/payment/expense) can be confirmed-matched to at
+//    most ONE bank transaction (no double settlement).
+//  - Confirming a match settles the underlying AR: it records a Payment
+//    and updates the invoice's paidAmount / balanceDue / status. Unmatching
+//    fully reverses that settlement.
+//  - All matching/settlement runs inside a DB transaction and is idempotent
+//    on a deterministic reconciliation reference.
+//  - Low-confidence auto candidates are stored as SUGGESTIONS only; they
+//    never silently settle an invoice.
+//  - Every entry point verifies the session/entity belongs to the org.
 // ============================================================
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { AutoMatchResult } from "./types";
+
+const ZERO = new Prisma.Decimal(0);
+
+// Confidence at/above which an auto-match is treated as confirmed (settles AR).
+const AUTO_CONFIRM_THRESHOLD = 0.85;
+// Below this we don't even surface a suggestion.
+const SUGGEST_THRESHOLD = 0.5;
+
+export class ReconciliationError extends Error {
+  constructor(message: string, readonly status: number = 400) {
+    super(message);
+    this.name = "ReconciliationError";
+  }
+}
+
+// Deterministic reference tying a settlement Payment to its bank transaction,
+// so settlement is idempotent and reversible.
+function reconPaymentRef(bankTransactionId: string): string {
+  return `RECON-${bankTransactionId}`;
+}
 
 // ---------------------------------------------------------------------------
 // Amount tolerance for auto-matching (0.5% or INR 1, whichever is larger)
@@ -64,18 +97,28 @@ export async function createReconcileSession(
 }
 
 // ---------------------------------------------------------------------------
+// Entities already confirmed-matched in this org → "TYPE:id" keys
+// ---------------------------------------------------------------------------
+async function loadMatchedEntityKeys(organizationId: string): Promise<Set<string>> {
+  const matched = await prisma.bankTransaction.findMany({
+    where: { organizationId, reconcileStatus: "MATCHED", entityId: { not: null }, entityType: { not: null } },
+    select: { entityType: true, entityId: true },
+  });
+  return new Set(matched.map((m) => `${m.entityType}:${m.entityId}`));
+}
+
+// ---------------------------------------------------------------------------
 // Auto-match: match unreconciled bank transactions against invoices/payments
-// Returns array of match candidates
 // ---------------------------------------------------------------------------
 export async function autoMatch(
   sessionId: string,
   organizationId: string
 ): Promise<{ matched: number; suggested: number }> {
-  const session = await prisma.bankReconciliationSession.findUnique({
-    where: { id: sessionId },
+  const session = await prisma.bankReconciliationSession.findFirst({
+    where: { id: sessionId, organizationId },
     include: { bankAccount: { select: { id: true } } },
   });
-  if (!session) throw new Error("Session not found");
+  if (!session) throw new ReconciliationError("Session not found", 404);
 
   const txns = await prisma.bankTransaction.findMany({
     where: {
@@ -87,6 +130,10 @@ export async function autoMatch(
       isIgnored: false,
     },
   });
+
+  // Entities that must not be matched again — seeded from existing matches and
+  // extended as we confirm matches in this run (prevents same-run double use).
+  const claimed = await loadMatchedEntityKeys(organizationId);
 
   let matched = 0;
   let suggested = 0;
@@ -102,6 +149,7 @@ export async function autoMatch(
       const invoices = await prisma.invoice.findMany({
         where: {
           organizationId,
+          deletedAt: null,
           status: { in: ["SENT" as const, "PARTIAL" as const] },
           dueDate: {
             gte: new Date(session.startDate.getTime() - 30 * 24 * 60 * 60 * 1000),
@@ -113,6 +161,7 @@ export async function autoMatch(
       });
 
       for (const inv of invoices) {
+        if (claimed.has(`INVOICE:${inv.id}`)) continue;
         const invAmount = Number(inv.total);
         if (!withinTolerance(amount, invAmount)) continue;
         if (!withinDateWindow(txn.transactionDate, inv.dueDate)) continue;
@@ -124,7 +173,7 @@ export async function autoMatch(
           entityId: inv.id,
           entityRef: inv.invoiceNumber,
           confidence,
-          matchType: confidence >= 0.85 ? "AUTO" : "SUGGESTED",
+          matchType: confidence >= AUTO_CONFIRM_THRESHOLD ? "AUTO" : "SUGGESTED",
         });
       }
     } else {
@@ -143,6 +192,7 @@ export async function autoMatch(
       });
 
       for (const pmt of payments) {
+        if (claimed.has(`PAYMENT:${pmt.id}`)) continue;
         const pmtAmount = Number(pmt.amount);
         if (!withinTolerance(amount, pmtAmount)) continue;
         if (!withinDateWindow(txn.transactionDate, pmt.paidAt)) continue;
@@ -154,7 +204,7 @@ export async function autoMatch(
           entityId: pmt.id,
           entityRef: pmt.reference ?? undefined,
           confidence,
-          matchType: confidence >= 0.85 ? "AUTO" : "SUGGESTED",
+          matchType: confidence >= AUTO_CONFIRM_THRESHOLD ? "AUTO" : "SUGGESTED",
         });
       }
 
@@ -173,6 +223,7 @@ export async function autoMatch(
       });
 
       for (const exp of expenses) {
+        if (claimed.has(`EXPENSE:${exp.id}`)) continue;
         const expAmount = Number(exp.amount) + Number(exp.taxAmount);
         if (!withinTolerance(amount, expAmount)) continue;
         if (!withinDateWindow(txn.transactionDate, exp.expenseDate)) continue;
@@ -185,7 +236,7 @@ export async function autoMatch(
           entityId: exp.id,
           entityRef: ref,
           confidence,
-          matchType: confidence >= 0.85 ? "AUTO" : "SUGGESTED",
+          matchType: confidence >= AUTO_CONFIRM_THRESHOLD ? "AUTO" : "SUGGESTED",
         });
       }
     }
@@ -195,27 +246,30 @@ export async function autoMatch(
     // Pick best candidate
     candidates.sort((a, b) => b.confidence - a.confidence);
     const best = candidates[0];
+    if (best.confidence < SUGGEST_THRESHOLD) continue;
 
-    if (best.confidence >= 0.5) {
-      await applyMatch(sessionId, organizationId, best);
-      if (best.matchType === "AUTO") matched++;
-      else suggested++;
+    if (best.matchType === "AUTO") {
+      // High confidence → confirm + settle. Claim the entity so it cannot be
+      // reused later in this same run.
+      await confirmMatch(organizationId, sessionId, {
+        bankTransactionId: best.bankTransactionId,
+        entityType: best.entityType,
+        entityId: best.entityId,
+        entityRef: best.entityRef,
+        matchType: "AUTO",
+        confidence: best.confidence,
+      });
+      claimed.add(`${best.entityType}:${best.entityId}`);
+      matched++;
+    } else {
+      // Low confidence → store a suggestion for the user to confirm; do NOT
+      // touch the bank transaction status or settle the invoice.
+      await storeSuggestion(sessionId, best);
+      suggested++;
     }
   }
 
-  // Update session counters
-  const matchedCount = await prisma.reconciliationMatch.count({
-    where: { sessionId },
-  });
-  const totalTxns = txns.length;
-  await prisma.bankReconciliationSession.update({
-    where: { id: sessionId },
-    data: {
-      matchedTxns: matchedCount,
-      unmatchedTxns: Math.max(0, totalTxns - matchedCount),
-    },
-  });
-
+  await refreshSessionStats(sessionId);
   return { matched, suggested };
 }
 
@@ -250,15 +304,153 @@ function computeConfidence(
 }
 
 // ---------------------------------------------------------------------------
-// Apply a match (auto or manual)
+// Settle an invoice from a matched bank credit (records a Payment + updates
+// invoice balances/status). Idempotent on the reconciliation payment ref.
 // ---------------------------------------------------------------------------
-async function applyMatch(
-  sessionId: string,
+async function settleInvoiceFromMatch(
+  tx: Prisma.TransactionClient,
   organizationId: string,
-  match: AutoMatchResult
+  invoiceId: string,
+  bankTxn: { id: string; credit: Prisma.Decimal | null; bankAccountId: string; referenceNumber: string | null; transactionDate: Date }
 ): Promise<void> {
-  await prisma.$transaction([
-    prisma.reconciliationMatch.create({
+  const invoice = await tx.invoice.findFirst({
+    where: { id: invoiceId, organizationId },
+    select: { id: true, total: true, paidAmount: true, balanceDue: true, status: true },
+  });
+  if (!invoice) throw new ReconciliationError("Matched invoice not found in this organization", 404);
+  if (invoice.status === "CANCELLED") throw new ReconciliationError("Cannot reconcile a cancelled invoice", 422);
+
+  const ref = reconPaymentRef(bankTxn.id);
+  const existing = await tx.payment.findFirst({
+    where: { invoiceId, organizationId, reference: ref, deletedAt: null },
+    select: { id: true },
+  });
+  if (existing) return; // already settled by this transaction — idempotent
+
+  const credit = bankTxn.credit ?? ZERO;
+  const balanceDue = new Prisma.Decimal(invoice.balanceDue);
+  if (balanceDue.lessThanOrEqualTo(0) || credit.lessThanOrEqualTo(0)) return;
+
+  const applied = credit.greaterThan(balanceDue) ? balanceDue : credit;
+  const newPaid = new Prisma.Decimal(invoice.paidAmount).add(applied);
+  const newBalance = new Prisma.Decimal(invoice.total).sub(newPaid);
+  const newStatus = newBalance.lessThanOrEqualTo(0) ? "PAID" : "PARTIAL";
+
+  await tx.payment.create({
+    data: {
+      invoiceId,
+      organizationId,
+      amount: applied,
+      method: "BANK_TRANSFER",
+      reference: ref,
+      bankAccountId: bankTxn.bankAccountId,
+      notes: `Reconciled from bank transaction ${bankTxn.referenceNumber ?? bankTxn.id}`,
+      paidAt: bankTxn.transactionDate,
+    },
+  });
+
+  await tx.invoice.update({
+    where: { id: invoiceId },
+    data: {
+      paidAmount: newPaid,
+      balanceDue: newBalance.lessThan(0) ? ZERO : newBalance,
+      status: newStatus,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reverse any invoice settlement created by a bank transaction's match.
+// ---------------------------------------------------------------------------
+async function reverseInvoiceSettlement(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  bankTransactionId: string
+): Promise<void> {
+  const ref = reconPaymentRef(bankTransactionId);
+  const payments = await tx.payment.findMany({
+    where: { organizationId, reference: ref, deletedAt: null },
+    select: { id: true, invoiceId: true, amount: true },
+  });
+
+  for (const p of payments) {
+    const invoice = await tx.invoice.findFirst({
+      where: { id: p.invoiceId, organizationId },
+      select: { id: true, total: true, paidAmount: true },
+    });
+    await tx.payment.delete({ where: { id: p.id } });
+
+    if (!invoice) continue;
+    const newPaidRaw = new Prisma.Decimal(invoice.paidAmount).sub(p.amount);
+    const newPaid = newPaidRaw.lessThan(0) ? ZERO : newPaidRaw;
+    const newBalance = new Prisma.Decimal(invoice.total).sub(newPaid);
+    const newStatus = newPaid.lessThanOrEqualTo(0)
+      ? "SENT"
+      : newBalance.lessThanOrEqualTo(0)
+      ? "PAID"
+      : "PARTIAL";
+
+    await tx.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        paidAmount: newPaid,
+        balanceDue: newBalance.lessThan(0) ? ZERO : newBalance,
+        status: newStatus,
+      },
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Confirm a match (AUTO or MANUAL): enforce single-use of the entity,
+// link the txn, and settle AR — all atomically.
+// ---------------------------------------------------------------------------
+async function confirmMatch(
+  organizationId: string,
+  sessionId: string,
+  match: {
+    bankTransactionId: string;
+    entityType: "INVOICE" | "PAYMENT" | "EXPENSE";
+    entityId: string;
+    entityRef?: string;
+    matchType: "AUTO" | "MANUAL";
+    confidence: number;
+    notes?: string;
+  }
+): Promise<string> {
+  return prisma.$transaction(async (tx) => {
+    // The same entity may not already be confirmed-matched to another txn.
+    const dup = await tx.bankTransaction.findFirst({
+      where: {
+        organizationId,
+        entityType: match.entityType,
+        entityId: match.entityId,
+        reconcileStatus: "MATCHED",
+        id: { not: match.bankTransactionId },
+      },
+      select: { id: true },
+    });
+    if (dup) {
+      throw new ReconciliationError(
+        `This ${match.entityType.toLowerCase()} is already reconciled to another bank transaction`,
+        409
+      );
+    }
+
+    // Verify the entity belongs to this org before settling it.
+    if (match.entityType === "PAYMENT") {
+      const p = await tx.payment.findFirst({ where: { id: match.entityId, organizationId }, select: { id: true } });
+      if (!p) throw new ReconciliationError("Matched payment not found in this organization", 404);
+    } else if (match.entityType === "EXPENSE") {
+      const e = await tx.expense.findFirst({ where: { id: match.entityId, organizationId }, select: { id: true } });
+      if (!e) throw new ReconciliationError("Matched expense not found in this organization", 404);
+    }
+
+    // Replace any prior match/settlement on this txn (idempotent re-match).
+    await reverseInvoiceSettlement(tx, organizationId, match.bankTransactionId);
+    await tx.reconciliationMatch.deleteMany({ where: { sessionId, bankTransactionId: match.bankTransactionId } });
+
+    const created = await tx.reconciliationMatch.create({
       data: {
         sessionId,
         bankTransactionId: match.bankTransactionId,
@@ -270,8 +462,9 @@ async function applyMatch(
         status: "MATCHED",
         notes: match.notes,
       },
-    }),
-    prisma.bankTransaction.update({
+    });
+
+    const bankTxn = await tx.bankTransaction.update({
       where: { id: match.bankTransactionId },
       data: {
         reconcileStatus: "MATCHED",
@@ -279,8 +472,41 @@ async function applyMatch(
         entityType: match.entityType,
         entityId: match.entityId,
       },
-    }),
-  ]);
+      select: { id: true, credit: true, bankAccountId: true, referenceNumber: true, transactionDate: true },
+    });
+
+    if (match.entityType === "INVOICE") {
+      await settleInvoiceFromMatch(tx, organizationId, match.entityId, bankTxn);
+    }
+
+    return created.id;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Store a low-confidence candidate as a suggestion (no settlement, txn stays
+// UNMATCHED). One suggestion row per (session, txn).
+// ---------------------------------------------------------------------------
+async function storeSuggestion(sessionId: string, match: AutoMatchResult): Promise<void> {
+  const existing = await prisma.reconciliationMatch.findFirst({
+    where: { sessionId, bankTransactionId: match.bankTransactionId },
+    select: { id: true },
+  });
+  if (existing) return;
+
+  await prisma.reconciliationMatch.create({
+    data: {
+      sessionId,
+      bankTransactionId: match.bankTransactionId,
+      entityType: match.entityType,
+      entityId: match.entityId,
+      entityRef: match.entityRef,
+      matchType: "SUGGESTED",
+      confidence: match.confidence,
+      status: "UNMATCHED",
+      notes: match.notes,
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -295,75 +521,69 @@ export async function manualMatch(
   entityRef?: string,
   notes?: string
 ): Promise<string> {
-  // Verify txn belongs to org
+  // Verify session + txn belong to this org before mutating anything.
+  const session = await prisma.bankReconciliationSession.findFirst({
+    where: { id: sessionId, organizationId },
+    select: { id: true, status: true },
+  });
+  if (!session) throw new ReconciliationError("Session not found", 404);
+  if (session.status === "COMPLETED") throw new ReconciliationError("Session already completed", 409);
+
   const txn = await prisma.bankTransaction.findFirst({
     where: { id: bankTransactionId, organizationId },
+    select: { id: true },
   });
-  if (!txn) throw new Error("Transaction not found");
+  if (!txn) throw new ReconciliationError("Transaction not found", 404);
 
-  // Check no existing match
-  const existing = await prisma.reconciliationMatch.findFirst({
-    where: { sessionId, bankTransactionId },
-  });
-  if (existing) {
-    // Replace existing match
-    await prisma.reconciliationMatch.delete({ where: { id: existing.id } });
-  }
-
-  const match = await prisma.reconciliationMatch.create({
-    data: {
-      sessionId,
-      bankTransactionId,
-      entityType,
-      entityId,
-      entityRef,
-      matchType: "MANUAL",
-      confidence: 1.0,
-      status: "MATCHED",
-      notes,
-    },
-  });
-
-  await prisma.bankTransaction.update({
-    where: { id: bankTransactionId },
-    data: {
-      reconcileStatus: "MATCHED",
-      status: "MATCHED",
-      entityType,
-      entityId,
-    },
+  const matchId = await confirmMatch(organizationId, sessionId, {
+    bankTransactionId,
+    entityType,
+    entityId,
+    entityRef,
+    matchType: "MANUAL",
+    confidence: 1.0,
+    notes,
   });
 
   await refreshSessionStats(sessionId);
-  return match.id;
+  return matchId;
 }
 
 // ---------------------------------------------------------------------------
-// Unmatch — remove a reconciliation match
+// Unmatch — remove a reconciliation match and reverse any settlement
 // ---------------------------------------------------------------------------
 export async function unmatch(
   sessionId: string,
   organizationId: string,
   bankTransactionId: string
 ): Promise<void> {
-  const match = await prisma.reconciliationMatch.findFirst({
-    where: { sessionId, bankTransactionId },
+  const session = await prisma.bankReconciliationSession.findFirst({
+    where: { id: sessionId, organizationId },
+    select: { id: true },
   });
-  if (!match) throw new Error("Match not found");
+  if (!session) throw new ReconciliationError("Session not found", 404);
 
-  await prisma.$transaction([
-    prisma.reconciliationMatch.delete({ where: { id: match.id } }),
-    prisma.bankTransaction.update({
+  await prisma.$transaction(async (tx) => {
+    const match = await tx.reconciliationMatch.findFirst({
+      where: { sessionId, bankTransactionId },
+      select: { id: true },
+    });
+    if (!match) throw new ReconciliationError("Match not found", 404);
+
+    await reverseInvoiceSettlement(tx, organizationId, bankTransactionId);
+    await tx.reconciliationMatch.delete({ where: { id: match.id } });
+    await tx.bankTransaction.update({
       where: { id: bankTransactionId },
       data: { reconcileStatus: "UNMATCHED", status: "REVIEWED", entityType: null, entityId: null },
-    }),
-  ]);
+    });
+  });
 
   await refreshSessionStats(sessionId);
 }
 
 // ---------------------------------------------------------------------------
-// Refresh session counters
+// Refresh session counters — "matched" counts bank transactions actually
+// marked MATCHED (suggestions, which stay UNMATCHED, are not counted).
 // ---------------------------------------------------------------------------
 export async function refreshSessionStats(sessionId: string): Promise<void> {
   const session = await prisma.bankReconciliationSession.findUnique({
@@ -372,21 +592,21 @@ export async function refreshSessionStats(sessionId: string): Promise<void> {
   });
   if (!session) return;
 
+  const periodFilter = {
+    organizationId: session.organizationId,
+    bankAccountId: session.bankAccountId,
+    transactionDate: { gte: session.startDate, lte: session.endDate },
+  };
+
   const [total, matchedCount, exceptions] = await Promise.all([
     prisma.bankTransaction.count({
-      where: {
-        bankAccountId: session.bankAccountId,
-        transactionDate: { gte: session.startDate, lte: session.endDate },
-        reconcileStatus: { not: "IGNORED" },
-      },
+      where: { ...periodFilter, reconcileStatus: { not: "IGNORED" } },
     }),
-    prisma.reconciliationMatch.count({ where: { sessionId } }),
     prisma.bankTransaction.count({
-      where: {
-        bankAccountId: session.bankAccountId,
-        transactionDate: { gte: session.startDate, lte: session.endDate },
-        reconcileStatus: "EXCEPTION",
-      },
+      where: { ...periodFilter, reconcileStatus: "MATCHED" },
+    }),
+    prisma.bankTransaction.count({
+      where: { ...periodFilter, reconcileStatus: "EXCEPTION" },
     }),
   ]);
 
@@ -408,9 +628,15 @@ export async function completeSession(
   sessionId: string,
   organizationId: string
 ): Promise<void> {
+  const session = await prisma.bankReconciliationSession.findFirst({
+    where: { id: sessionId, organizationId },
+    select: { id: true },
+  });
+  if (!session) throw new ReconciliationError("Session not found", 404);
+
   await refreshSessionStats(sessionId);
   await prisma.bankReconciliationSession.update({
-    where: { id: sessionId, organizationId },
+    where: { id: sessionId },
     data: { status: "COMPLETED", completedAt: new Date() },
   });
 }

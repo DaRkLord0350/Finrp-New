@@ -66,6 +66,7 @@ export default function CustomerForm({
           position: "fixed", inset: 0,
           background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
           zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 20, overflowY: "auto",
         }}
       >
         {/* Modal */}
@@ -77,12 +78,14 @@ export default function CustomerForm({
           onClick={(e) => e.stopPropagation()}
           style={{
             background: "var(--bg-surface)", border: "1px solid var(--border-strong)",
-            borderRadius: 16, padding: 28, width: "100%", maxWidth: 500,
+            borderRadius: 16, padding: 28, width: "100%", maxWidth: 460,
+            maxHeight: "calc(100vh - 40px)",
+            display: "flex", flexDirection: "column", overflow: "hidden",
             boxShadow: "var(--shadow-lg)",
           }}
         >
           {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{
                 width: 36, height: 36, borderRadius: 10,
@@ -107,14 +110,14 @@ export default function CustomerForm({
             <div style={{
               padding: "10px 14px", background: "rgba(239,68,68,0.1)",
               border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8,
-              color: "#ef4444", fontSize: 13, marginBottom: 16,
+              color: "#ef4444", fontSize: 13, marginBottom: 16, flexShrink: 0,
             }}>
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20, overflowY: "auto", flex: 1, minHeight: 0, paddingRight: 4, marginRight: -4 }}>
               {fields.map(({ key, label, icon: Icon, placeholder, type }) => (
                 <div key={key}>
                   <label className="label">{label}</label>
@@ -153,7 +156,7 @@ export default function CustomerForm({
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
               <button type="button" onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: "center" }}>
                 Cancel
               </button>

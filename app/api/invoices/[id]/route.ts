@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
+import { InvoiceStatus } from "@prisma/client";
+
+const VALID_STATUSES = Object.values(InvoiceStatus) as string[];
 
 export async function GET(
   _req: Request,
@@ -40,10 +43,22 @@ export async function PUT(
     const body = await req.json();
     const { items: _items, ...invoiceData } = body;
 
+    // Guard the status field: only accept values from the InvoiceStatus enum.
+    if (invoiceData.status !== undefined && !VALID_STATUSES.includes(invoiceData.status)) {
+      return NextResponse.json(
+        { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
     const invoice = await prisma.invoice.updateMany({
       where: { id, organizationId },
       data: invoiceData,
     });
+
+    if (invoice.count === 0) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     return NextResponse.json(invoice);
   } catch (error) {

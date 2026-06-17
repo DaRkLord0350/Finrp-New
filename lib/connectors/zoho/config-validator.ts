@@ -66,20 +66,49 @@ export function getDiagnostics(): ZohoConfigDiagnostics {
   };
 }
 
+/** Callback path appended to whichever origin we resolve. */
+const CALLBACK_PATH = "/api/oauth/zoho/callback";
+
 /**
- * Resolves the canonical redirect URI in priority order:
- *   1. ZOHO_REDIRECT_URI env var (explicit, most reliable)
- *   2. NEXT_PUBLIC_APP_URL + /api/oauth/zoho/callback (fallback)
- *   3. http://localhost:3000/api/oauth/zoho/callback (dev-only last resort)
+ * Resolves the redirect URI used for BOTH the authorization request and the
+ * token exchange. They MUST be byte-identical to each other and to a URI
+ * registered in the Zoho API Console, otherwise Zoho returns
+ * "Invalid Redirect Uri".
+ *
+ * Resolution priority:
+ *   1. (dev only) the live request origin — so the flow works on
+ *      http://localhost:3000 (or any preview host) without editing the
+ *      production ZOHO_REDIRECT_URI. The same request handles auth + callback,
+ *      so the value is guaranteed consistent across the round-trip.
+ *   2. ZOHO_REDIRECT_URI env var — the explicit, pinned production canonical
+ *      URL. Most reliable behind proxies where request.url is unreliable.
+ *   3. NEXT_PUBLIC_APP_URL + callback path (fallback).
+ *   4. http://localhost:3000 + callback path (dev last resort).
+ *
+ * NOTE: each origin you actually serve the app from (localhost AND the
+ * production domain) must be registered as an Authorized Redirect URI in the
+ * Zoho API Console for that exact client.
  */
-export function resolveRedirectUri(): string {
+export function resolveRedirectUri(req?: Request): string {
+  // 1. In non-production, derive from the request origin so local dev and
+  //    preview deployments "just work" against their own callback host.
+  if (process.env.NODE_ENV !== "production" && req) {
+    try {
+      const origin = new URL(req.url).origin;
+      if (origin) return `${origin}${CALLBACK_PATH}`;
+    } catch {
+      /* fall through to env-based resolution */
+    }
+  }
+
+  // 2. Production canonical (explicit, most reliable).
   if (process.env.ZOHO_REDIRECT_URI?.trim()) {
     return process.env.ZOHO_REDIRECT_URI.trim();
   }
   if (process.env.NEXT_PUBLIC_APP_URL?.trim()) {
-    return `${process.env.NEXT_PUBLIC_APP_URL.trim()}/api/oauth/zoho/callback`;
+    return `${process.env.NEXT_PUBLIC_APP_URL.trim()}${CALLBACK_PATH}`;
   }
-  return "http://localhost:3000/api/oauth/zoho/callback";
+  return `http://localhost:3000${CALLBACK_PATH}`;
 }
 
 /**

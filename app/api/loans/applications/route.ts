@@ -21,10 +21,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json([]);
     }
 
-    // Get all loans for the organization
+    // Get all loans for the organization (exclude soft-deleted)
     const loans = await prisma.loan.findMany({
       where: {
         organizationId: user.organizationId,
+        deletedAt: null,
       },
       orderBy: { createdAt: "desc" },
     });
