@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "sonner";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ export default function RootLayout({
             {children}
             <Toaster position="top-right" richColors />
           </ThemeProvider>
+          <Analytics />
         </body>
       </html>
     </ClerkProvider>
