@@ -23,7 +23,19 @@ export async function GET(request: Request) {
   // Zoho sends the accounts-server it used — tells us the exact DC
   const accountsServer = searchParams.get("accounts-server");
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  // Where to send the user's browser back to. In dev/preview stay on the live
+  // origin (so we don't bounce localhost → production); in prod use the pinned URL.
+  const requestOrigin = (() => {
+    try {
+      return new URL(request.url).origin;
+    } catch {
+      return null;
+    }
+  })();
+  const appUrl =
+    process.env.NODE_ENV !== "production" && requestOrigin
+      ? requestOrigin
+      : process.env.NEXT_PUBLIC_APP_URL ?? "https://www.finrp.org";
 
   // ── Handle OAuth errors (user denied, etc.) ──
   if (error) {
@@ -68,7 +80,8 @@ export async function GET(request: Request) {
   }
 
   // ── Resolve redirect URI — must be identical to what was sent in auth request ──
-  const redirectUri = resolveRedirectUri();
+  //    Same request-origin logic as the auth route, so the value matches byte-for-byte.
+  const redirectUri = resolveRedirectUri(request);
 
   try {
     const config = integration.config as {

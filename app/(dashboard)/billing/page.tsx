@@ -5,22 +5,36 @@ import { useRouter } from "next/navigation";
 import { Plus, Search, Download, ArrowRight, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { InvoiceStatus } from "@prisma/client";
+import { toast } from "sonner";
 // import { formatCurrency, getInvoiceStatusColor } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { getInvoiceStatusColor } from "@/lib/helpers/invoice";
 import { useInvoices } from "@/hooks/useInvoices";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { format } from "date-fns";
+import InvoiceStatusSelect from "@/components/InvoiceStatusSelect";
+import { getInvoiceStatusMeta } from "@/lib/invoice-status";
 
-const statusOptions = ["All", "DRAFT", "SENT", "PAID", "OVERDUE", "CANCELLED"];
+const statusOptions = ["All", "DRAFT", "SENT", "VIEWED", "PAID", "PARTIAL", "OVERDUE", "CANCELLED"];
 
 export default function BillingPage() {
   const router = useRouter();
-  const { invoices, loading, error, refetch, stats } = useInvoices();
+  const { invoices, loading, error, refetch, updateStatus } = useInvoices();
   const { isMobile, isTablet } = useBreakpoint();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [pendingStatusId, setPendingStatusId] = useState<string | null>(null);
+
+  const handleStatusChange = async (id: string, next: string) => {
+    setPendingStatusId(id);
+    try {
+      await updateStatus(id, next);
+      toast.success(`Status updated to ${getInvoiceStatusMeta(next).label}`);
+    } catch {
+      toast.error("Couldn't update status. Please try again.");
+    } finally {
+      setPendingStatusId(null);
+    }
+  };
 
   const filtered = invoices.filter((inv) => {
     const matchSearch =
@@ -33,6 +47,37 @@ export default function BillingPage() {
   const filteredOutstanding = filtered
     .filter((i) => i.status === "SENT" || i.status === "OVERDUE")
     .reduce((s, i) => s + Number(i.total), 0);
+
+  // Export the currently filtered invoices to a CSV download (client-side).
+  const handleExport = () => {
+    if (filtered.length === 0) {
+      toast.error("No invoices to export.");
+      return;
+    }
+    const escape = (v: unknown) => {
+      const s = String(v ?? "");
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const headers = ["Invoice #", "Customer", "Email", "Amount", "Status", "Issue Date", "Due Date"];
+    const rows = filtered.map((inv) => [
+      inv.invoiceNumber,
+      inv.customer?.name ?? "",
+      inv.customer?.email ?? "",
+      Number(inv.total),
+      inv.status,
+      format(new Date(inv.issueDate), "yyyy-MM-dd"),
+      format(new Date(inv.dueDate), "yyyy-MM-dd"),
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map(escape).join(",")).join("\r\n") + "\r\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `invoices-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${filtered.length} invoice${filtered.length === 1 ? "" : "s"}`);
+  };
 
   return (
     <div>
@@ -60,7 +105,7 @@ export default function BillingPage() {
             <RefreshCw size={14} style={loading ? { animation: "spin 1s linear infinite" } : {}} />
           </button>
           {!isMobile && (
-            <button className="btn-ghost">
+            <button className="btn-ghost" onClick={handleExport}>
               <Download size={14} /> Export
             </button>
           )}
@@ -203,9 +248,11 @@ export default function BillingPage() {
                   <span style={{ fontFamily: "monospace", fontSize: 13, color: "var(--text-primary)", fontWeight: 600 }}>
                     {inv.invoiceNumber}
                   </span>
-                  <span className={`badge ${getInvoiceStatusColor(inv.status as InvoiceStatus)}`} style={{ border: "none", fontSize: 10 }}>
-                    {inv.status}
-                  </span>
+                  <InvoiceStatusSelect
+                    value={inv.status}
+                    pending={pendingStatusId === inv.id}
+                    onChange={(next) => handleStatusChange(inv.id, next)}
+                  />
                 </div>
                 <p style={{ fontWeight: 500, fontSize: 14, color: "var(--text-primary)", marginBottom: 4 }}>
                   {inv.customer?.name ?? "—"}
@@ -257,8 +304,12 @@ export default function BillingPage() {
                     <td>
                       <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{formatCurrency(Number(inv.total))}</span>
                     </td>
-                    <td>
-                      <span className={`badge ${getInvoiceStatusColor(inv.status as InvoiceStatus)}`}>{inv.status}</span>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <InvoiceStatusSelect
+                        value={inv.status}
+                        pending={pendingStatusId === inv.id}
+                        onChange={(next) => handleStatusChange(inv.id, next)}
+                      />
                     </td>
                     {!isTablet && <td style={{ fontSize: 13 }}>{format(new Date(inv.issueDate), "MMM d, yyyy")}</td>}
                     <td style={{ fontSize: 13 }}>{format(new Date(inv.dueDate), "MMM d, yyyy")}</td>

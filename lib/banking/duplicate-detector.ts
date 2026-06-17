@@ -87,6 +87,44 @@ export async function filterDuplicates(
     rows.forEach(r => { if (r.referenceNumber) existingRefs.add(r.referenceNumber); });
   }
 
+  // Build a set of signatures that already exist in DB for this account within
+  // the batch's date window. This makes re-imports idempotent even when the
+  // statement rows carry no reference number (ref-only dedup would miss them).
+  let minTime = Infinity;
+  let maxTime = -Infinity;
+  for (const t of transactions) {
+    const ms = t.transactionDate.getTime();
+    if (ms < minTime) minTime = ms;
+    if (ms > maxTime) maxTime = ms;
+  }
+  const existingSigs = new Set<string>();
+  if (Number.isFinite(minTime) && Number.isFinite(maxTime)) {
+    const rows = await prisma.bankTransaction.findMany({
+      where: {
+        bankAccountId,
+        transactionDate: {
+          gte: new Date(minTime - 24 * 60 * 60 * 1000),
+          lte: new Date(maxTime + 24 * 60 * 60 * 1000),
+        },
+      },
+      select: { transactionDate: true, narration: true, credit: true, debit: true, referenceNumber: true, metadata: true },
+    });
+    for (const r of rows) {
+      const stored = (r.metadata as { sig?: unknown } | null)?.sig;
+      existingSigs.add(
+        typeof stored === "string"
+          ? stored
+          : computeTxnSignature(bankAccountId, {
+              transactionDate: r.transactionDate,
+              narration: r.narration,
+              credit: r.credit ? Number(r.credit) : undefined,
+              debit: r.debit ? Number(r.debit) : undefined,
+              referenceNumber: r.referenceNumber ?? undefined,
+            })
+      );
+    }
+  }
+
   // Build signatures for all parsed txns
   const sigMap = new Map<string, boolean>();
   const unique: ParsedBankTransaction[] = [];
@@ -98,7 +136,7 @@ export async function filterDuplicates(
       continue;
     }
     const sig = computeTxnSignature(bankAccountId, txn);
-    if (sigMap.has(sig)) {
+    if (existingSigs.has(sig) || sigMap.has(sig)) {
       duplicateCount++;
       continue;
     }

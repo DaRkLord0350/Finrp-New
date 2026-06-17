@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Pencil, Trash2, Package } from "lucide-react";
 import StockWarningBadge from "./StockWarningBadge";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
@@ -54,7 +55,12 @@ export default function ItemTable({ items, onEdit, onDelete }: ItemTableProps) {
           >
             {/* Row 1: name + badge */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-              <p style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", flex: 1, marginRight: 10 }}>{item.name}</p>
+              <Link
+                href={`/billing/items/${item.id}`}
+                style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", flex: 1, marginRight: 10, textDecoration: "none" }}
+              >
+                {item.name}
+              </Link>
               <StockWarningBadge stock={item.stock} lowStockAt={item.lowStockAt} />
             </div>
 
@@ -123,7 +129,12 @@ export default function ItemTable({ items, onEdit, onDelete }: ItemTableProps) {
             <tr key={item.id}>
               <td>
                 <div>
-                  <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>{item.name}</span>
+                  <Link
+                    href={`/billing/items/${item.id}`}
+                    style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14, textDecoration: "none" }}
+                  >
+                    {item.name}
+                  </Link>
                   {isTablet && item.description && (
                     <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
                       {item.description}

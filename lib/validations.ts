@@ -48,3 +48,35 @@ export const complianceTaskSchema = z.object({
 });
 
 export type ComplianceTaskInput = z.infer<typeof complianceTaskSchema>;
+
+// ─── Invoice Appearance ──────────────────────────────────────
+// All fields optional — the PUT handler upserts a partial update.
+const hexColor = z.string().regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "Enter a valid hex color");
+
+export const invoiceAppearanceSchema = z.object({
+  template: z.string().min(1).max(60).optional(),
+  accentColor: hexColor.optional(),
+  fontFamily: z.string().min(1).max(60).optional(),
+  borderRadius: z.number().int().min(0).max(40).optional(),
+  invoiceTitle: z.string().min(1).max(40).optional(),
+  footerText: z.string().max(300).optional(),
+  signatureText: z.string().max(120).nullish(),
+  signatureImageUrl: z.string().max(2000).nullish(),
+  watermarkText: z.string().max(60).nullish(),
+  draftWatermark: z.boolean().optional(),
+  logoUrl: z.string().max(2000).nullish(),
+  showLogo: z.boolean().optional(),
+  showQr: z.boolean().optional(),
+  showPaymentLink: z.boolean().optional(),
+  showDueStamp: z.boolean().optional(),
+  showGst: z.boolean().optional(),
+  showPan: z.boolean().optional(),
+  showItemDescription: z.boolean().optional(),
+  showDiscountColumn: z.boolean().optional(),
+  showTaxColumn: z.boolean().optional(),
+  showShipping: z.boolean().optional(),
+  showNotes: z.boolean().optional(),
+  showTerms: z.boolean().optional(),
+});
+
+export type InvoiceAppearanceInput = z.infer<typeof invoiceAppearanceSchema>;

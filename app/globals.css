@@ -445,7 +445,8 @@ body {
 /* Sidebar */
 .sidebar {
   width: 240px;
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
   background: var(--bg-surface);
   border-right: 1px solid var(--border);
   display: flex;
@@ -455,6 +456,41 @@ body {
   left: 0;
   top: 0;
   z-index: 50;
+  /* The sidebar frame itself stays fixed — the logo header and the
+     pinned bottom group never scroll. Only the nav region below
+     scrolls when the module list exceeds the viewport height. */
+  overflow: hidden;
+}
+
+/* Let the flex:1 nav region scroll inside a fixed-height sidebar
+   (without min-height:0 a flex child refuses to shrink below its
+   content, pushing the pinned bottom group off-screen). */
+.sidebar > nav {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  /* Thin, theme-aware scrollbar (Firefox) */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  /* small inset so the scrollbar doesn't crowd the nav items */
+  padding-right: 2px;
+}
+
+/* Thin, theme-aware scrollbar (WebKit / Chromium) */
+.sidebar > nav::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar > nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar > nav::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+.sidebar > nav::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 .sidebar-nav-item {

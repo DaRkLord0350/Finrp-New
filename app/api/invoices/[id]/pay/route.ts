@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
+import { logInvoiceActivity } from "@/lib/invoices/activity";
+
+const ZERO = new Prisma.Decimal(0);
+
+class PayError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
 
 // POST /api/invoices/[id]/pay — record a payment and deduct inventory stock
 export async function POST(
@@ -17,47 +27,42 @@ export async function POST(
     const body = await req.json();
     const { amount, method = "BANK_TRANSFER", reference, notes } = body;
 
-    if (!amount || Number(amount) <= 0) {
-      return NextResponse.json(
-        { error: "Valid payment amount is required" },
-        { status: 400 }
-      );
+    // Validate the amount as a precise decimal before touching the DB.
+    let paymentAmount: Prisma.Decimal;
+    try {
+      paymentAmount = new Prisma.Decimal(amount);
+    } catch {
+      return NextResponse.json({ error: "Valid payment amount is required" }, { status: 400 });
+    }
+    if (!paymentAmount.isFinite() || paymentAmount.lessThanOrEqualTo(0)) {
+      return NextResponse.json({ error: "Valid payment amount is required" }, { status: 400 });
     }
 
-    // Load invoice with items
-    const invoice = await prisma.invoice.findFirst({
-      where: { id, organizationId },
-      include: { items: true },
-    });
-
-    if (!invoice) {
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-    }
-    if (invoice.status === "CANCELLED") {
-      return NextResponse.json(
-        { error: "Cannot pay a cancelled invoice" },
-        { status: 400 }
-      );
-    }
-    if (invoice.status === "PAID") {
-      return NextResponse.json(
-        { error: "Invoice is already fully paid" },
-        { status: 400 }
-      );
-    }
-
-    const paymentAmount = Number(amount);
-    const currentPaid = Number(invoice.paidAmount);
-    const invoiceTotal = Number(invoice.total);
-    const newPaidAmount = currentPaid + paymentAmount;
-    const newBalance = Math.max(0, invoiceTotal - newPaidAmount);
-    const newStatus: "PAID" | "PARTIAL" = newBalance <= 0 ? "PAID" : "PARTIAL";
-    const isFullPayment = newStatus === "PAID";
-    const wasAlreadyPartiallyPaid = invoice.status === "PARTIAL";
-
+    // Everything runs inside one transaction with the invoice row locked so
+    // concurrent payments cannot both read a stale paidAmount and overpay.
     const result = await prisma.$transaction(async (tx) => {
-      // Deduct stock only when transitioning to PAID for the first time
-      if (isFullPayment && !wasAlreadyPartiallyPaid || (isFullPayment && wasAlreadyPartiallyPaid)) {
+      await tx.$queryRaw`SELECT id FROM invoices WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
+
+      const invoice = await tx.invoice.findFirst({
+        where: { id, organizationId },
+        include: { items: true },
+      });
+
+      if (!invoice) throw new PayError("Invoice not found", 404);
+      if (invoice.status === "CANCELLED") throw new PayError("Cannot pay a cancelled invoice", 400);
+      if (invoice.status === "PAID") throw new PayError("Invoice is already fully paid", 400);
+
+      // Decimal money math — never floating point.
+      const total = new Prisma.Decimal(invoice.total);
+      const currentPaid = new Prisma.Decimal(invoice.paidAmount);
+      const newPaidAmount = currentPaid.add(paymentAmount);
+      const newBalanceRaw = total.sub(newPaidAmount);
+      const newBalance = newBalanceRaw.lessThan(0) ? ZERO : newBalanceRaw;
+      const newStatus: "PAID" | "PARTIAL" = newBalance.lessThanOrEqualTo(0) ? "PAID" : "PARTIAL";
+      const isFullPayment = newStatus === "PAID";
+
+      // Deduct stock only when the invoice becomes fully paid.
+      if (isFullPayment) {
         for (const invoiceItem of invoice.items) {
           if (!invoiceItem.sku) continue;
 
@@ -65,16 +70,16 @@ export async function POST(
             where: { sku: invoiceItem.sku, organizationId },
             select: { id: true, stock: true, name: true },
           });
-
           if (!inventoryItem) continue;
 
           const qtyToDeduct = Number(invoiceItem.quantity);
 
           // Prevent negative inventory
           if (inventoryItem.stock < qtyToDeduct) {
-            throw new Error(
+            throw new PayError(
               `Insufficient stock for "${inventoryItem.name}". ` +
-              `Available: ${inventoryItem.stock}, Required: ${qtyToDeduct}`
+                `Available: ${inventoryItem.stock}, Required: ${qtyToDeduct}`,
+              422
             );
           }
 
@@ -132,15 +137,25 @@ export async function POST(
       return { payment, invoice: updatedInvoice };
     });
 
+    await logInvoiceActivity({
+      invoiceId: id,
+      organizationId,
+      type: "PAYMENT_RECORDED",
+      message: `Payment of ${result.payment.amount.toString()} recorded`,
+      metadata: {
+        amount: Number(result.payment.amount),
+        method: result.payment.method,
+        status: result.invoice.status,
+      },
+    });
+
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof PayError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error("[INVOICE_PAY]", error);
-    const message =
-      error instanceof Error ? error.message : "Internal server error";
-    const isStockError = message.includes("Insufficient stock");
-    return NextResponse.json(
-      { error: message },
-      { status: isStockError ? 422 : 500 }
-    );
+    const message = error instanceof Error ? error.message : "Internal server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

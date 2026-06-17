@@ -2,8 +2,9 @@
 
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
-import { Bell, ChevronRight, Menu } from "lucide-react";
+import { ChevronRight, Menu } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import NotificationBell from "@/components/firm/NotificationBell";
 
 const routeLabels: Record<string, string> = {
   "/firm":             "Dashboard",
@@ -12,6 +13,8 @@ const routeLabels: Record<string, string> = {
   "/firm/assignments": "Assignments",
   "/firm/tasks":       "Tasks",
   "/firm/documents":   "Documents",
+  "/firm/calendar":    "Calendar",
+  "/firm/notifications": "Notifications",
   "/firm/reports":     "Reports",
   "/firm/settings":    "Settings",
 };
@@ -57,11 +60,7 @@ export default function FirmHeader({ onMenuClick }: FirmHeaderProps) {
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
         <ThemeToggle />
-        <button
-          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", display: "flex", alignItems: "center", position: "relative" }}
-        >
-          <Bell size={18} />
-        </button>
+        <NotificationBell />
         <UserButton appearance={{ elements: { avatarBox: { width: 30, height: 30 } } }} />
       </div>
     </header>

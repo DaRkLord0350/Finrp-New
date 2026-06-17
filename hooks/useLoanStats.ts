@@ -4,10 +4,11 @@ import { useQuery, useQueryClient } from "@/lib/queryCache";
 
 export interface LoanStatsData {
   annualTurnover: number;
-  turnoverGrowth: number;
+  // null = no real baseline / score available — never a fabricated default.
+  turnoverGrowth: number | null;
   monthlyCashFlow: number;
   outstandingLoans: number;
-  creditScore: number;
+  creditScore: number | null;
   loanApplications: Array<{
     id: string; type: string; amount: number; bank: string;
     interestRate: number; tenure: number;
@@ -20,6 +21,7 @@ export interface LoanStatsData {
   cmaReport: {
     generatedDate: string; annualTurnover: number;
     profitMargin: number; financialHealth: "Good" | "Fair" | "Poor" | "Excellent";
+    insufficientData?: boolean;
   } | null;
   cashFlow: {
     inflows: Array<{ label: string; amount: number }>;
@@ -29,8 +31,8 @@ export interface LoanStatsData {
 }
 
 const DEFAULT: LoanStatsData = {
-  annualTurnover: 5_000_000, turnoverGrowth: 15, monthlyCashFlow: 423_000,
-  outstandingLoans: 2_500_000, creditScore: 750,
+  annualTurnover: 0, turnoverGrowth: null, monthlyCashFlow: 0,
+  outstandingLoans: 0, creditScore: null,
   loanApplications: [], loanProducts: [], cmaReport: null,
   cashFlow: { inflows: [], outflows: [], netCashFlow: 0 },
 };

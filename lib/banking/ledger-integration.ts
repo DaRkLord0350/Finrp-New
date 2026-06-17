@@ -3,21 +3,35 @@
 // Every banking action creates double-entry journal entries.
 // Uses the existing JournalEntry + JournalLine + Account models.
 // Accounts are looked up by code; missing accounts are auto-created.
+//
+// Integrity guarantees:
+//  - Posting is idempotent: a given source action maps to a stable
+//    `reference`; if a JournalEntry with that reference already exists
+//    for the org, we do not post a duplicate.
+//  - Posting never fails silently: errors propagate to the caller so a
+//    failed ledger write cannot be mistaken for success. Pass a
+//    transaction client to make the posting atomic with the source rows.
+//  - All money math uses Prisma.Decimal (never JS floating point).
 // ============================================================
 
+import { Prisma, type AccountType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { AccountType } from "@prisma/client";
+
+type LedgerClient = Prisma.TransactionClient | typeof prisma;
+
+const ZERO = new Prisma.Decimal(0);
 
 // ---------------------------------------------------------------------------
 // Find or create a ledger account by code within an organization
 // ---------------------------------------------------------------------------
 async function resolveAccount(
+  client: LedgerClient,
   organizationId: string,
   code: string,
   name: string,
   type: AccountType
 ): Promise<string> {
-  const account = await prisma.account.upsert({
+  const account = await client.account.upsert({
     where: { organizationId_code: { organizationId, code } },
     create: {
       organizationId,
@@ -34,49 +48,68 @@ async function resolveAccount(
 }
 
 // ---------------------------------------------------------------------------
+// Idempotency guard — true when a posting with this reference already exists
+// ---------------------------------------------------------------------------
+async function alreadyPosted(
+  client: LedgerClient,
+  organizationId: string,
+  reference: string
+): Promise<boolean> {
+  const existing = await client.journalEntry.findFirst({
+    where: { organizationId, reference, deletedAt: null },
+    select: { id: true },
+  });
+  return existing !== null;
+}
+
+// ---------------------------------------------------------------------------
 // Create journal entry for a bank credit (money received)
 // Dr: Bank Account   Cr: Accounts Receivable
 // ---------------------------------------------------------------------------
 export async function createCreditJournalEntry(
   organizationId: string,
   bankAccountId: string,
-  amount: number,
+  amount: Prisma.Decimal.Value,
   narration: string,
   transactionDate: Date,
-  entityType?: string,
-  entityId?: string
+  opts: { reference?: string; entityType?: string; entityId?: string; client?: LedgerClient } = {}
 ): Promise<void> {
-  try {
-    const bankAccount = await prisma.bankAccount.findUnique({
-      where: { id: bankAccountId },
-      select: { accountName: true },
-    });
-    if (!bankAccount) return;
+  const client = opts.client ?? prisma;
+  const value = new Prisma.Decimal(amount);
 
-    const [bankAccId, arAccId] = await Promise.all([
-      resolveAccount(organizationId, "1010", bankAccount.accountName, "ASSET" as AccountType),
-      resolveAccount(organizationId, "1200", "Accounts Receivable", "ASSET" as AccountType),
-    ]);
+  const bankAccount = await client.bankAccount.findFirst({
+    where: { id: bankAccountId, organizationId },
+    select: { accountName: true },
+  });
+  if (!bankAccount) throw new Error(`Bank account ${bankAccountId} not found in organization`);
 
-    await prisma.journalEntry.create({
-      data: {
-        organizationId,
-        entryDate: transactionDate,
-        reference: `BANK-CR-${Date.now()}`,
-        description: narration.slice(0, 255),
-        totalDebit: amount,
-        totalCredit: amount,
-        lines: {
-          create: [
-            { accountId: bankAccId, type: "DEBIT", amount, description: narration.slice(0, 255) },
-            { accountId: arAccId, type: "CREDIT", amount, description: narration.slice(0, 255) },
-          ],
-        },
+  const reference =
+    opts.reference ??
+    (opts.entityId ? `BANK-CR-${opts.entityType ?? "TXN"}-${opts.entityId}` : `BANK-CR-${bankAccountId}-${transactionDate.getTime()}`);
+
+  if (await alreadyPosted(client, organizationId, reference)) return;
+
+  const [bankAccId, arAccId] = await Promise.all([
+    resolveAccount(client, organizationId, "1010", bankAccount.accountName, "ASSET" as AccountType),
+    resolveAccount(client, organizationId, "1200", "Accounts Receivable", "ASSET" as AccountType),
+  ]);
+
+  await client.journalEntry.create({
+    data: {
+      organizationId,
+      entryDate: transactionDate,
+      reference,
+      description: narration.slice(0, 255),
+      totalDebit: value,
+      totalCredit: value,
+      lines: {
+        create: [
+          { accountId: bankAccId, type: "DEBIT", amount: value, description: narration.slice(0, 255) },
+          { accountId: arAccId, type: "CREDIT", amount: value, description: narration.slice(0, 255) },
+        ],
       },
-    });
-  } catch (err) {
-    console.error("[ledger] createCreditJournalEntry failed:", (err as Error).message);
-  }
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -86,46 +119,49 @@ export async function createCreditJournalEntry(
 export async function createDebitJournalEntry(
   organizationId: string,
   bankAccountId: string,
-  amount: number,
+  amount: Prisma.Decimal.Value,
   narration: string,
   transactionDate: Date,
-  category?: string,
-  _entityType?: string,
-  _entityId?: string
+  opts: { category?: string; reference?: string; entityType?: string; entityId?: string; client?: LedgerClient } = {}
 ): Promise<void> {
-  try {
-    const bankAccount = await prisma.bankAccount.findUnique({
-      where: { id: bankAccountId },
-      select: { accountName: true },
-    });
-    if (!bankAccount) return;
+  const client = opts.client ?? prisma;
+  const value = new Prisma.Decimal(amount);
 
-    const expenseInfo = resolveExpenseAccount(category);
+  const bankAccount = await client.bankAccount.findFirst({
+    where: { id: bankAccountId, organizationId },
+    select: { accountName: true },
+  });
+  if (!bankAccount) throw new Error(`Bank account ${bankAccountId} not found in organization`);
 
-    const [expAccId, bankAccId] = await Promise.all([
-      resolveAccount(organizationId, expenseInfo.code, expenseInfo.name, expenseInfo.type as AccountType),
-      resolveAccount(organizationId, "1010", bankAccount.accountName, "ASSET" as AccountType),
-    ]);
+  const reference =
+    opts.reference ??
+    (opts.entityId ? `BANK-DR-${opts.entityType ?? "TXN"}-${opts.entityId}` : `BANK-DR-${bankAccountId}-${transactionDate.getTime()}`);
 
-    await prisma.journalEntry.create({
-      data: {
-        organizationId,
-        entryDate: transactionDate,
-        reference: `BANK-DR-${Date.now()}`,
-        description: narration.slice(0, 255),
-        totalDebit: amount,
-        totalCredit: amount,
-        lines: {
-          create: [
-            { accountId: expAccId, type: "DEBIT", amount, description: narration.slice(0, 255) },
-            { accountId: bankAccId, type: "CREDIT", amount, description: narration.slice(0, 255) },
-          ],
-        },
+  if (await alreadyPosted(client, organizationId, reference)) return;
+
+  const expenseInfo = resolveExpenseAccount(opts.category);
+
+  const [expAccId, bankAccId] = await Promise.all([
+    resolveAccount(client, organizationId, expenseInfo.code, expenseInfo.name, expenseInfo.type as AccountType),
+    resolveAccount(client, organizationId, "1010", bankAccount.accountName, "ASSET" as AccountType),
+  ]);
+
+  await client.journalEntry.create({
+    data: {
+      organizationId,
+      entryDate: transactionDate,
+      reference,
+      description: narration.slice(0, 255),
+      totalDebit: value,
+      totalCredit: value,
+      lines: {
+        create: [
+          { accountId: expAccId, type: "DEBIT", amount: value, description: narration.slice(0, 255) },
+          { accountId: bankAccId, type: "CREDIT", amount: value, description: narration.slice(0, 255) },
+        ],
       },
-    });
-  } catch (err) {
-    console.error("[ledger] createDebitJournalEntry failed:", (err as Error).message);
-  }
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -136,78 +172,82 @@ export async function createTransferJournalEntry(
   organizationId: string,
   fromAccountId: string,
   toAccountId: string,
-  amount: number,
+  amount: Prisma.Decimal.Value,
   narration: string,
-  transferDate: Date
+  transferDate: Date,
+  opts: { reference?: string; client?: LedgerClient } = {}
 ): Promise<void> {
-  try {
-    const [fromAccount, toAccount] = await Promise.all([
-      prisma.bankAccount.findUnique({ where: { id: fromAccountId }, select: { accountName: true } }),
-      prisma.bankAccount.findUnique({ where: { id: toAccountId }, select: { accountName: true } }),
-    ]);
-    if (!fromAccount || !toAccount) return;
+  const client = opts.client ?? prisma;
+  const value = new Prisma.Decimal(amount);
 
-    // Use unique codes to avoid collision between bank accounts
-    const fromCode = `BA-${fromAccountId.slice(-8)}`;
-    const toCode = `BA-${toAccountId.slice(-8)}`;
+  const [fromAccount, toAccount] = await Promise.all([
+    client.bankAccount.findFirst({ where: { id: fromAccountId, organizationId }, select: { accountName: true } }),
+    client.bankAccount.findFirst({ where: { id: toAccountId, organizationId }, select: { accountName: true } }),
+  ]);
+  if (!fromAccount) throw new Error(`Source bank account ${fromAccountId} not found in organization`);
+  if (!toAccount) throw new Error(`Destination bank account ${toAccountId} not found in organization`);
 
-    const [fromAccId, toAccId] = await Promise.all([
-      resolveAccount(organizationId, fromCode, fromAccount.accountName, "ASSET" as AccountType),
-      resolveAccount(organizationId, toCode, toAccount.accountName, "ASSET" as AccountType),
-    ]);
+  // Stable, caller-supplied reference makes the posting idempotent.
+  const reference = opts.reference ?? `BANK-TRF-${fromAccountId}-${toAccountId}-${transferDate.getTime()}`;
+  if (await alreadyPosted(client, organizationId, reference)) return;
 
-    await prisma.journalEntry.create({
-      data: {
-        organizationId,
-        entryDate: transferDate,
-        reference: `BANK-TRF-${Date.now()}`,
-        description: narration.slice(0, 255),
-        totalDebit: amount,
-        totalCredit: amount,
-        lines: {
-          create: [
-            { accountId: toAccId, type: "DEBIT", amount, description: `Transfer from ${fromAccount.accountName}` },
-            { accountId: fromAccId, type: "CREDIT", amount, description: `Transfer to ${toAccount.accountName}` },
-          ],
-        },
+  // Use unique codes to avoid collision between bank accounts
+  const fromCode = `BA-${fromAccountId.slice(-8)}`;
+  const toCode = `BA-${toAccountId.slice(-8)}`;
+
+  const [fromAccId, toAccId] = await Promise.all([
+    resolveAccount(client, organizationId, fromCode, fromAccount.accountName, "ASSET" as AccountType),
+    resolveAccount(client, organizationId, toCode, toAccount.accountName, "ASSET" as AccountType),
+  ]);
+
+  await client.journalEntry.create({
+    data: {
+      organizationId,
+      entryDate: transferDate,
+      reference,
+      description: narration.slice(0, 255),
+      totalDebit: value,
+      totalCredit: value,
+      lines: {
+        create: [
+          { accountId: toAccId, type: "DEBIT", amount: value, description: `Transfer from ${fromAccount.accountName}` },
+          { accountId: fromAccId, type: "CREDIT", amount: value, description: `Transfer to ${toAccount.accountName}` },
+        ],
       },
-    });
-  } catch (err) {
-    console.error("[ledger] createTransferJournalEntry failed:", (err as Error).message);
-  }
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Recompute and update bank account balance from all transactions
+// Recompute and update bank account balance from all transactions.
+// Decimal arithmetic only. Errors propagate so a stale balance is never
+// silently left behind.
 // ---------------------------------------------------------------------------
 export async function updateAccountBalance(
   bankAccountId: string,
-  organizationId: string
+  organizationId: string,
+  client: LedgerClient = prisma
 ): Promise<void> {
-  try {
-    const [account, agg] = await Promise.all([
-      prisma.bankAccount.findUnique({
-        where: { id: bankAccountId },
-        select: { openingBalance: true },
-      }),
-      prisma.bankTransaction.aggregate({
-        where: { bankAccountId, organizationId, isIgnored: false, isDuplicate: false },
-        _sum: { credit: true, debit: true },
-      }),
-    ]);
-    if (!account) return;
+  const [account, agg] = await Promise.all([
+    client.bankAccount.findFirst({
+      where: { id: bankAccountId, organizationId },
+      select: { openingBalance: true },
+    }),
+    client.bankTransaction.aggregate({
+      where: { bankAccountId, organizationId, isIgnored: false, isDuplicate: false },
+      _sum: { credit: true, debit: true },
+    }),
+  ]);
+  if (!account) throw new Error(`Bank account ${bankAccountId} not found in organization`);
 
-    const totalCredit = Number(agg._sum.credit ?? 0);
-    const totalDebit = Number(agg._sum.debit ?? 0);
-    const computed = Number(account.openingBalance) + totalCredit - totalDebit;
+  const totalCredit = agg._sum.credit ?? ZERO;
+  const totalDebit = agg._sum.debit ?? ZERO;
+  const computed = new Prisma.Decimal(account.openingBalance).add(totalCredit).sub(totalDebit);
 
-    await prisma.bankAccount.update({
-      where: { id: bankAccountId },
-      data: { currentBalance: computed, availableBalance: computed },
-    });
-  } catch (err) {
-    console.error("[ledger] updateAccountBalance failed:", (err as Error).message);
-  }
+  await client.bankAccount.update({
+    where: { id: bankAccountId },
+    data: { currentBalance: computed, availableBalance: computed },
+  });
 }
 
 // ---------------------------------------------------------------------------

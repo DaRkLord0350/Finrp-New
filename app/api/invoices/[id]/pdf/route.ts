@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { getTenantId } from "@/lib/auth/tenant";
 import { generateInvoicePdf } from "@/lib/pdf/generateInvoicePdf";
+import { logInvoiceActivity } from "@/lib/invoices/activity";
 
 // POST /api/invoices/[id]/pdf — generate and store PDF for an invoice
 export async function POST(
@@ -17,6 +18,14 @@ export async function POST(
 
     const { id } = await params;
     const { pdfUrl, pdfFileName } = await generateInvoicePdf(id, organizationId);
+
+    await logInvoiceActivity({
+      invoiceId: id,
+      organizationId,
+      type: "PDF_GENERATED",
+      message: "Invoice PDF generated",
+      metadata: { pdfFileName },
+    });
 
     return NextResponse.json({ pdfUrl, pdfFileName });
   } catch (error) {

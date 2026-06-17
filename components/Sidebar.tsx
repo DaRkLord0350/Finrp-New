@@ -25,6 +25,8 @@ import {
   Receipt,
   Percent,
   Eye,
+  Sparkles,
+  FilePlus2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SidebarNavGroup, type NavGroupConfig } from "@/components/SidebarNavGroup";
@@ -43,13 +45,23 @@ const navGroups: NavGroupConfig[] = [
     items: [
       { label: "Overview",   href: "/dashboard",  icon: LayoutDashboard },
       { label: "CRM",        href: "/crm",        icon: Users },
-      { label: "Billing",    href: "/billing",    icon: FileText },
       { label: "Finance",    href: "/finance",    icon: BarChart3 },
       { label: "Accounting", href: "/accounting/chart-of-accounts", icon: Wallet, activePrefix: "/accounting" },
       { label: "ERP",        href: "/erp",        icon: Boxes },
       { label: "Compliance", href: "/compliance", icon: ShieldCheck },
       { label: "Reports",    href: "/reports",    icon: BarChart2 },
-      { label: "AI Advisor", href: "/advisor",    icon: Bot },
+    ],
+  },
+  {
+    id: "billing",
+    section: "Billing",
+    label: "Billing",
+    icon: Receipt,
+    basePath: "/billing",
+    items: [
+      { label: "Invoices",         href: "/billing",       icon: FileText, exact: true },
+      { label: "New Invoice",      href: "/billing/new",    icon: FilePlus2 },
+      { label: "Items & Services", href: "/billing/items",  icon: Boxes },
     ],
   },
   {
@@ -84,6 +96,18 @@ const navGroups: NavGroupConfig[] = [
       { label: "Settlements", href: "/customer/treds/settlements", icon: Wallet },
       { label: "Reports",     href: "/customer/treds/reports",     icon: BarChart3 },
       { label: "Integration", href: "/customer/treds/integration", icon: Plug },
+    ],
+  },
+  {
+    id: "ai-bot",
+    section: "AI Bot",
+    label: "AI Bot",
+    icon: Bot,
+    badge: { text: "AI", background: "rgba(16,185,129,0.15)", color: "#34d399" },
+    basePath: "/ai-bot",
+    items: [
+      { label: "Overview",   href: "/ai-bot",  icon: Sparkles, exact: true },
+      { label: "AI Advisor", href: "/advisor", icon: Bot },
     ],
   },
 ];

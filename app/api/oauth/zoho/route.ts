@@ -111,8 +111,9 @@ export async function GET(request: Request) {
     );
   }
 
-  // Use canonical redirect URI — must match Zoho API Console and callback route exactly
-  const redirectUri = resolveRedirectUri();
+  // Use canonical redirect URI — must match Zoho API Console and callback route exactly.
+  // Passing the request lets dev/preview derive the live origin; prod uses the pinned env var.
+  const redirectUri = resolveRedirectUri(request);
 
   console.log("[ZohoAuth] Starting authorization flow:", {
     integrationId,

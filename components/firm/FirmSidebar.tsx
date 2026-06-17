@@ -19,7 +19,7 @@ import {
   PenLine,
   Palette,
   Bell,
-  Scale,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +34,7 @@ const practiceItems = [
 ];
 
 const operationsItems = [
+  { label: "Calendar",    href: "/firm/calendar",     icon: CalendarDays },
   { label: "Workload",     href: "/firm/workload",     icon: Activity },
   { label: "Analytics",   href: "/firm/analytics",    icon: TrendingUp },
   { label: "Reports",     href: "/firm/reports",      icon: BarChart3 },
@@ -42,7 +43,7 @@ const operationsItems = [
 
 const settingsItems = [
   { label: "Branding",    href: "/firm/branding",     icon: Palette },
-  { label: "Notifications", href: "/firm/settings/notifications", icon: Bell },
+  { label: "Notifications", href: "/firm/notifications", icon: Bell },
   { label: "Settings",    href: "/firm/settings",     icon: Settings, exact: true },
 ];
 
@@ -117,27 +118,6 @@ export default function FirmSidebar({ open = false, onClose }: FirmSidebarProps)
             <X size={18} />
           </button>
         </div>
-
-        {/* CA Hub launcher */}
-        <Link
-          href="/ca-hub"
-          onClick={onClose}
-          style={{
-            display: "flex", alignItems: "center", gap: 10, textDecoration: "none",
-            margin: "0 2px 12px", padding: "11px 12px", borderRadius: 11,
-            background: "linear-gradient(135deg, rgba(99,102,241,0.16), rgba(14,165,233,0.16))",
-            border: "1px solid rgba(99,102,241,0.3)",
-          }}
-        >
-          <div style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: "linear-gradient(135deg,#6366f1,#0ea5e9)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Scale size={16} color="white" />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>CA Hub</p>
-            <p style={{ fontSize: 10, color: "var(--text-muted)" }}>Practice Operating System</p>
-          </div>
-          <span style={{ fontSize: 8.5, fontWeight: 800, color: "#818cf8", background: "rgba(99,102,241,0.2)", padding: "2px 6px", borderRadius: 5, letterSpacing: "0.04em" }}>NEW</span>
-        </Link>
 
         {/* Navigation */}
         <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>

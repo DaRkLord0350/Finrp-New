@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { format } from "date-fns";
 import { Users, Plus, Search, Mail, Phone, X } from "lucide-react";
 
@@ -165,7 +166,12 @@ export default function FirmCustomersPage() {
                 <tr key={c.id}>
                   <td>
                     <div>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{c.name}</p>
+                      <Link
+                        href={`/firm/customers/${c.id}`}
+                        style={{ fontSize: 13, fontWeight: 600, color: "var(--brand-400)", textDecoration: "none" }}
+                      >
+                        {c.name}
+                      </Link>
                       {c.company && <p style={{ fontSize: 11, color: "var(--text-muted)" }}>{c.company}</p>}
                     </div>
                   </td>

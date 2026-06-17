@@ -19,7 +19,10 @@ export async function GET(
       include: {
         invoices: {
           orderBy: { createdAt: "desc" },
-          include: { items: true },
+          include: {
+            items: true,
+            payments: { orderBy: { paidAt: "desc" } },
+          },
         },
       },
     });

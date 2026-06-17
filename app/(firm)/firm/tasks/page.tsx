@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { format } from "date-fns";
-import { ClipboardList, Plus, X, Filter } from "lucide-react";
+import { ClipboardList, Plus, X } from "lucide-react";
 
 interface FirmTask {
   id: string;
@@ -186,7 +187,9 @@ export default function FirmTasksPage() {
               {filtered.map((task) => (
                 <tr key={task.id}>
                   <td>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{task.title}</p>
+                    <Link href={`/firm/tasks/${task.id}`} style={{ fontSize: 13, fontWeight: 600, color: "var(--brand-400)", textDecoration: "none" }}>
+                      {task.title}
+                    </Link>
                     {task.description && (
                       <p style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 240, whiteSpace: "nowrap" }}>
                         {task.description}

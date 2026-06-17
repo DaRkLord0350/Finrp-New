@@ -128,6 +128,7 @@ export function useInvoiceForm() {
               quantity: i.quantity,
               unitPrice: i.unitPrice,
               sku: i.sku,
+              hsnSac: i.hsnSac,
               taxPercent: i.taxPercent,
             })),
             status,

@@ -10,7 +10,28 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  ShieldCheck,
+  Activity,
 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import Link from "next/link";
+
+const ACTIVITY_LABEL: Record<string, string> = {
+  MEMBER_INVITED: "invited",
+  MEMBER_JOINED: "joined",
+  MEMBER_UPDATED: "updated member",
+  MEMBER_DEACTIVATED: "deactivated",
+  MEMBER_REACTIVATED: "reactivated",
+  MEMBERS_IMPORTED: "imported members",
+  PERMISSIONS_UPDATED: "updated permissions",
+  INVITE_RESENT: "resent invite",
+  INVITE_REVOKED: "revoked invite",
+  CA_ASSIGNED: "assigned a CA",
+  CA_REASSIGNED: "reassigned a CA",
+  CA_UNASSIGNED: "removed an assignment",
+  CUSTOMER_LINKED: "linked a customer",
+  CUSTOMER_UNLINKED: "unlinked a customer",
+};
 
 async function getFirmDashboardData(userId: string, orgId: string) {
   const [
@@ -22,6 +43,8 @@ async function getFirmDashboardData(userId: string, orgId: string) {
     recentTasks,
     upcomingDeadlines,
     recentCustomers,
+    overdueByCustomer,
+    recentActivity,
   ] = await Promise.all([
     prisma.customer.count({ where: { organizationId: orgId, deletedAt: null } }),
     prisma.user.count({ where: { organizationId: orgId, userRole: "CA" } }),
@@ -71,6 +94,16 @@ async function getFirmDashboardData(userId: string, orgId: string) {
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
+    // Customers with at least one overdue, open task → "at risk"
+    prisma.firmTask.groupBy({
+      by: ["customerId"],
+      where: { organizationId: orgId, status: { not: "COMPLETED" }, dueDate: { lt: new Date() } },
+    }),
+    prisma.teamActivityLog.findMany({
+      where: { organizationId: orgId },
+      orderBy: { createdAt: "desc" },
+      take: 7,
+    }),
   ]);
 
   return {
@@ -82,6 +115,8 @@ async function getFirmDashboardData(userId: string, orgId: string) {
     recentTasks,
     upcomingDeadlines,
     recentCustomers,
+    atRiskCustomers: overdueByCustomer.length,
+    recentActivity,
   };
 }
 
@@ -228,15 +263,15 @@ export default async function FirmDashboardPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
               <ClipboardList size={16} color="#6366f1" />
               <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>Recent Tasks</h2>
-              <a href="/firm/tasks" style={{ marginLeft: "auto", fontSize: 12, color: "var(--brand-400)", textDecoration: "none" }}>
+              <Link href="/firm/tasks" style={{ marginLeft: "auto", fontSize: 12, color: "var(--brand-400)", textDecoration: "none" }}>
                 View all
-              </a>
+              </Link>
             </div>
             {data.recentTasks.length === 0 ? (
               <div className="empty-state" style={{ padding: "32px 24px" }}>
                 <ClipboardList size={32} color="var(--text-muted)" />
                 <p style={{ fontSize: 14, color: "var(--text-muted)" }}>No tasks yet</p>
-                <a href="/firm/tasks" style={{ fontSize: 12, color: "var(--brand-400)" }}>Create a task</a>
+                <Link href="/firm/tasks" style={{ fontSize: 12, color: "var(--brand-400)" }}>Create a task</Link>
               </div>
             ) : (
               <table className="data-table">
@@ -286,9 +321,9 @@ export default async function FirmDashboardPage() {
                 <Users size={16} color="#6366f1" />
                 <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>Customers</h2>
               </div>
-              <a href="/firm/customers" style={{ fontSize: 12, color: "var(--brand-400)", textDecoration: "none" }}>
+              <Link href="/firm/customers" style={{ fontSize: 12, color: "var(--brand-400)", textDecoration: "none" }}>
                 View all
-              </a>
+              </Link>
             </div>
             {data.recentCustomers.length === 0 ? (
               <div className="empty-state" style={{ padding: "24px 16px" }}>
@@ -296,7 +331,7 @@ export default async function FirmDashboardPage() {
                 <p style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center" }}>
                   No customers yet
                 </p>
-                <a href="/firm/customers" style={{ fontSize: 12, color: "var(--brand-400)" }}>Add customers</a>
+                <Link href="/firm/customers" style={{ fontSize: 12, color: "var(--brand-400)" }}>Add customers</Link>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -329,6 +364,54 @@ export default async function FirmDashboardPage() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Compliance status + recent activity */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 24 }} className="firm-dash-bottom">
+        <div className="section-card">
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+            <ShieldCheck size={16} color="#10b981" />
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>Compliance Status</h2>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+            {[
+              { label: "On Track", value: Math.max(0, data.totalCustomers - data.atRiskCustomers), color: "#10b981" },
+              { label: "At Risk", value: data.atRiskCustomers, color: "#ef4444" },
+              { label: "Overdue Tasks", value: data.overdueTasksCount, color: "#f59e0b" },
+            ].map((s) => (
+              <div key={s.label} style={{ padding: "14px 12px", background: "var(--bg-elevated)", borderRadius: 10, textAlign: "center" }}>
+                <p style={{ fontSize: 24, fontWeight: 700, color: s.color }}>{s.value}</p>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="section-card">
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+            <Activity size={16} color="#6366f1" />
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>Recent Activity</h2>
+          </div>
+          {data.recentActivity.length === 0 ? (
+            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>No recent activity.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {data.recentActivity.map((a) => (
+                <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#6366f1", flexShrink: 0 }} />
+                  <p style={{ flex: 1, fontSize: 12.5, color: "var(--text-secondary)", minWidth: 0 }}>
+                    <strong style={{ color: "var(--text-primary)" }}>{a.actorName ?? "Someone"}</strong>{" "}
+                    {ACTIVITY_LABEL[a.action] ?? a.action.toLowerCase().replace(/_/g, " ")}
+                    {a.targetEmail ? ` · ${a.targetEmail}` : ""}
+                  </p>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
+                    {formatDistanceToNow(a.createdAt, { addSuffix: true })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

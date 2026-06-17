@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import * as Sentry from "@sentry/nextjs";
 import { getTenantId } from "@/lib/auth/tenant";
 import { prisma } from "@/lib/prisma";
-import { manualMatch, unmatch, completeSession } from "@/lib/banking/reconciliation-engine";
+import { manualMatch, unmatch, completeSession, ReconciliationError } from "@/lib/banking/reconciliation-engine";
 import { manualMatchSchema } from "@/lib/banking/validations";
 
 export async function GET(
@@ -89,6 +89,9 @@ export async function POST(
 
     return NextResponse.json({ matchId }, { status: 201 });
   } catch (err) {
+    if (err instanceof ReconciliationError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     Sentry.captureException(err, { tags: { area: "banking", action: "manual-match" } });
     const message = err instanceof Error ? err.message : "Internal server error";
     return NextResponse.json({ error: message }, { status: 500 });

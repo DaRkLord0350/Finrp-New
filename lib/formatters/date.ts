@@ -18,6 +18,24 @@ import {
   parseISO,
 } from "date-fns";
 
+/**
+ * Safely coerce a value into a Date.
+ *
+ * Prisma `DateTime` fields arrive as ISO strings once a record has been
+ * JSON-serialized by an API route, but as real `Date` objects when read
+ * directly in a server component. This helper accepts either form (plus
+ * epoch numbers) and always returns a `Date`, so it is safe to call
+ * `.getTime()`, `.toLocaleDateString()`, etc. on the result.
+ *
+ * Returns `null` for nullish or unparseable input.
+ */
+export function toDate(value: Date | string | number | null | undefined): Date | null {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return "—";
   return format(new Date(date), "dd MMM yyyy");

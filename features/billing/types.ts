@@ -21,6 +21,7 @@ export interface LineItem {
   id: string;
   itemId?: string;
   sku?: string;
+  hsnSac?: string;
   description: string;
   quantity: number;
   unitPrice: number;

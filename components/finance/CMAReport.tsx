@@ -8,6 +8,7 @@ interface CMAReportData {
   annualTurnover: number;
   profitMargin: number;
   financialHealth: "Good" | "Fair" | "Poor" | "Excellent";
+  insufficientData?: boolean;
 }
 
 interface CMAReportProps {
@@ -52,6 +53,24 @@ export default function CMAReport({ report, isLoading = false, onDownload }: CMA
             />
             <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 16 }}>Generating report...</p>
           </div>
+        </div>
+      ) : report && report.insufficientData ? (
+        <div
+          style={{
+            padding: "48px 20px",
+            textAlign: "center",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+          }}
+        >
+          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
+            Insufficient financial data
+          </p>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6, maxWidth: 380, margin: "0 auto" }}>
+            A CMA report needs at least one booked invoice in the last 12 months. Record sales
+            and expenses to generate accurate turnover and profit-margin figures.
+          </p>
         </div>
       ) : report ? (
         <motion.div
@@ -142,7 +161,7 @@ export default function CMAReport({ report, isLoading = false, onDownload }: CMA
           <div style={{ marginTop: 24, padding: "16px 20px", background: "var(--bg-elevated)", borderRadius: "var(--radius-md)", borderLeft: "3px solid #6366f1" }}>
             <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Report Summary</p>
             <p style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.6 }}>
-              This CMA report provides a comprehensive analysis of your organization's financial health, suitable for loan applications and bank submissions.
+              This CMA report provides a comprehensive analysis of your organization&apos;s financial health, suitable for loan applications and bank submissions.
             </p>
           </div>
         </motion.div>

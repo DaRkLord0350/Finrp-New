@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { logTaskActivity } from "@/lib/firm/tasks";
 
 async function getFirmUser() {
   const { userId } = await auth();
@@ -30,8 +31,10 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const updated = await prisma.firmTask.updateMany({
-    where: { id, organizationId: user.organizationId },
+  const statusChanged = !!status && status !== task.status;
+
+  await prisma.firmTask.update({
+    where: { id },
     data: {
       ...(status && { status }),
       ...(notes !== undefined && { notes }),
@@ -39,7 +42,34 @@ export async function PATCH(
     },
   });
 
-  return NextResponse.json({ updated });
+  if (statusChanged) {
+    await logTaskActivity({
+      taskId: id,
+      actorId: user.id,
+      actorName: user.name ?? user.email,
+      action: "STATUS_CHANGED",
+      fromStatus: task.status,
+      toStatus: status,
+    });
+    // Notify the task creator when work completes (skip self-notify).
+    if (status === "COMPLETED" && task.createdById !== user.id) {
+      await prisma.notification
+        .create({
+          data: {
+            organizationId: user.organizationId,
+            userId: task.createdById,
+            type: "SYSTEM",
+            title: "Task completed",
+            message: `"${task.title}" was marked completed.`,
+            referenceId: id,
+            referenceType: "firm_task",
+          },
+        })
+        .catch(() => {});
+    }
+  }
+
+  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
 import { generateNextInvoiceNumber } from "@/lib/generators/invoice-number";
+import { logInvoiceActivity } from "@/lib/invoices/activity";
 
 export async function GET(req: Request) {
   try {
@@ -60,6 +61,7 @@ interface IncomingItem {
   quantity: number;
   unitPrice: number;
   sku?: string;
+  hsnSac?: string;
   taxPercent?: number;
   itemId?: string;
 }
@@ -117,12 +119,21 @@ export async function POST(req: Request) {
             unitPrice: item.unitPrice,
             amount: item.quantity * item.unitPrice,
             sku: item.sku ?? null,
+            hsnSac: item.hsnSac ?? null,
             taxPercent: item.taxPercent ?? 0,
             taxAmount: item.quantity * item.unitPrice * ((item.taxPercent ?? 0) / 100),
           })),
         },
       },
       include: { customer: true, items: true },
+    });
+
+    await logInvoiceActivity({
+      invoiceId: invoice.id,
+      organizationId: tenantId,
+      type: "CREATED",
+      message: `Invoice ${invoice.invoiceNumber} created`,
+      metadata: { total: Number(invoice.total), customer: invoice.customer.name },
     });
 
     return NextResponse.json(invoice, { status: 201 });
