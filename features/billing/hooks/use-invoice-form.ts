@@ -142,11 +142,9 @@ export function useInvoiceForm() {
 
         const invoice = await res.json();
 
-        let pdfUrl: string | undefined;
-        try {
-          const pdfRes = await fetch(`/api/invoices/${invoice.id}/pdf`, { method: "POST" });
-          if (pdfRes.ok) pdfUrl = (await pdfRes.json()).pdfUrl;
-        } catch { /* non-critical */ }
+        // PDF is generated on demand and streamed straight from the API —
+        // no pre-generation, no stored file. The link downloads it directly.
+        const pdfUrl = `/api/invoices/${invoice.id}/pdf`;
 
         setSuccess({ invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, pdfUrl });
       } catch (err) {

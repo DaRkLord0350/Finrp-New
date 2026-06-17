@@ -1,11 +1,18 @@
 // ============================================================
 // lib/pdf/generateInvoicePdf.ts
-// Server-side PDF generation and file storage.
+// Server-side, in-memory PDF generation.
+//
+// IMPORTANT: PDFs are NEVER written to disk. Serverless/edge file
+// systems (e.g. Vercel's /var/task) are read-only, so every renderer
+// here returns an in-memory Buffer. API routes stream that buffer
+// straight to the client (see app/api/invoices/[id]/pdf/route.ts).
+// If durable storage is ever needed, upload the buffer to object
+// storage (S3 / R2 / Supabase Storage / Vercel Blob) — never the
+// local filesystem.
+//
 // Call from API route handlers only (Node.js runtime).
 // ============================================================
 
-import path from "path";
-import { writeFile, mkdir } from "fs/promises";
 import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 import React from "react";
 import { prisma } from "@/lib/prisma";
@@ -13,14 +20,20 @@ import { InvoicePDF } from "@/components/pdf/InvoicePDF";
 import type { InvoicePDFData } from "@/components/pdf/InvoicePDF";
 import { getInvoiceAppearance } from "@/lib/invoices/appearance";
 
+/** Build a safe, human-friendly download filename from a document number. */
+export function pdfFileNameFor(documentNumber: string): string {
+  const safe = documentNumber.replace(/[^a-zA-Z0-9-_]/g, "_") || "document";
+  return `${safe}.pdf`;
+}
+
 /**
  * Render an invoice to a PDF buffer (no disk write, no DB update).
- * Used directly for email attachments and as the core of generateInvoicePdf.
+ * Used for direct download/print streaming and email attachments.
  */
 export async function renderInvoicePdfBuffer(
   invoiceId: string,
   organizationId: string
-): Promise<{ buffer: Buffer; pdfFileName: string }> {
+): Promise<{ buffer: Buffer; pdfFileName: string; invoiceNumber: string }> {
   // Fetch full invoice data
   const invoice = await prisma.invoice.findFirst({
     where: { id: invoiceId, organizationId },
@@ -105,36 +118,11 @@ export async function renderInvoicePdfBuffer(
     React.createElement(InvoicePDF, { data: pdfData, appearance }) as React.ReactElement<DocumentProps>
   );
 
-  const pdfFileName = `${invoice.invoiceNumber.replace(/[^a-zA-Z0-9-]/g, "_")}-${invoiceId.slice(0, 8)}.pdf`;
-  return { buffer: pdfBuffer as Buffer, pdfFileName };
-}
-
-/**
- * Generate a PDF for an invoice, save it to /public/invoices/,
- * update the invoice record with pdfUrl, and return the public URL.
- */
-export async function generateInvoicePdf(
-  invoiceId: string,
-  organizationId: string
-): Promise<{ pdfUrl: string; pdfFileName: string }> {
-  const { buffer, pdfFileName } = await renderInvoicePdfBuffer(invoiceId, organizationId);
-
-  // Save to /public/invoices/
-  const invoicesDir = path.join(process.cwd(), "public", "invoices");
-  await mkdir(invoicesDir, { recursive: true });
-
-  const pdfPath = path.join(invoicesDir, pdfFileName);
-  await writeFile(pdfPath, buffer);
-
-  const pdfUrl = `/invoices/${pdfFileName}`;
-
-  // Update invoice record with generated PDF details.
-  await prisma.invoice.update({
-    where: { id: invoiceId },
-    data: { pdfUrl, pdfFileName, pdfGeneratedAt: new Date() },
-  });
-
-  return { pdfUrl, pdfFileName };
+  return {
+    buffer: pdfBuffer as Buffer,
+    pdfFileName: pdfFileNameFor(invoice.invoiceNumber),
+    invoiceNumber: invoice.invoiceNumber,
+  };
 }
 
 interface SnapshotItem {
@@ -148,13 +136,13 @@ interface SnapshotItem {
 }
 
 /**
- * Generate a PDF for a credit note, reusing the invoice renderer with a
- * "CREDIT NOTE" title. Saved to /public/invoices/.
+ * Render a credit note to a PDF buffer (no disk write), reusing the invoice
+ * renderer with a "CREDIT NOTE" title.
  */
-export async function generateCreditNotePdf(
+export async function renderCreditNotePdfBuffer(
   creditNoteId: string,
   organizationId: string
-): Promise<{ pdfUrl: string; pdfFileName: string }> {
+): Promise<{ buffer: Buffer; pdfFileName: string; creditNoteNumber: string }> {
   const cn = await prisma.creditNote.findFirst({
     where: { id: creditNoteId, organizationId },
     include: { customer: true },
@@ -227,10 +215,9 @@ export async function generateCreditNotePdf(
     React.createElement(InvoicePDF, { data: pdfData, appearance: cnAppearance }) as React.ReactElement<DocumentProps>
   );
 
-  const invoicesDir = path.join(process.cwd(), "public", "invoices");
-  await mkdir(invoicesDir, { recursive: true });
-  const pdfFileName = `${cn.creditNoteNumber.replace(/[^a-zA-Z0-9-]/g, "_")}-${creditNoteId.slice(0, 8)}.pdf`;
-  await writeFile(path.join(invoicesDir, pdfFileName), pdfBuffer);
-
-  return { pdfUrl: `/invoices/${pdfFileName}`, pdfFileName };
+  return {
+    buffer: pdfBuffer as Buffer,
+    pdfFileName: pdfFileNameFor(cn.creditNoteNumber),
+    creditNoteNumber: cn.creditNoteNumber,
+  };
 }

@@ -38,6 +38,7 @@ import ShareModal from "@/components/billing/ShareModal";
 import VersionHistoryModal from "@/components/billing/VersionHistoryModal";
 import CreditNoteModal from "@/components/billing/CreditNoteModal";
 import MakeRecurringModal from "@/components/billing/MakeRecurringModal";
+import { downloadPdf, printPdf } from "@/lib/pdf/download-client";
 
 interface LineItem {
   id: string;
@@ -94,6 +95,7 @@ export default function InvoiceWorkspacePage() {
   const [missing, setMissing] = useState(false);
   const [pending, setPending] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [printLoading, setPrintLoading] = useState(false);
   const [showPay, setShowPay] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -158,19 +160,24 @@ export default function InvoiceWorkspacePage() {
   const handleDownloadPdf = async () => {
     setPdfLoading(true);
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}/pdf`, { method: "POST" });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "PDF generation failed");
-      }
-      const { pdfUrl } = (await res.json()) as { pdfUrl?: string };
-      if (!pdfUrl) throw new Error("PDF URL missing");
-      window.open(pdfUrl, "_blank", "noopener,noreferrer");
+      const fallback = `${invoice?.invoiceNumber ?? "invoice"}.pdf`;
+      await downloadPdf(`/api/invoices/${invoiceId}/pdf`, fallback);
       setActivityKey((k) => k + 1);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "PDF generation failed");
     } finally {
       setPdfLoading(false);
+    }
+  };
+
+  const handlePrint = async () => {
+    setPrintLoading(true);
+    try {
+      await printPdf(`/api/invoices/${invoiceId}/pdf`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't open the PDF for printing");
+    } finally {
+      setPrintLoading(false);
     }
   };
 
@@ -243,8 +250,8 @@ export default function InvoiceWorkspacePage() {
       <button onClick={handleDownloadPdf} disabled={pdfLoading} className="btn-ghost" style={{ padding: "8px 12px", cursor: pdfLoading ? "wait" : "pointer" }}>
         {pdfLoading ? <RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Download size={14} />} PDF
       </button>
-      <button onClick={() => window.print()} className="btn-ghost" style={{ padding: "8px 12px" }}>
-        <Printer size={14} /> Print
+      <button onClick={handlePrint} disabled={printLoading} className="btn-ghost" style={{ padding: "8px 12px", cursor: printLoading ? "wait" : "pointer" }}>
+        {printLoading ? <RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Printer size={14} />} Print
       </button>
       {!isPaid && (
         <button onClick={() => setShowPay(true)} className="btn-ghost" style={{ padding: "8px 12px" }}>
