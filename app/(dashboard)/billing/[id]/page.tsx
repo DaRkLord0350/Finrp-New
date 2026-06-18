@@ -253,6 +253,9 @@ export default function InvoiceWorkspacePage() {
       <button onClick={handlePrint} disabled={printLoading} className="btn-ghost" style={{ padding: "8px 12px", cursor: printLoading ? "wait" : "pointer" }}>
         {printLoading ? <RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Printer size={14} />} Print
       </button>
+      <button onClick={() => setShowEmail(true)} className="btn-ghost" style={{ padding: "8px 12px" }}>
+        <Mail size={14} /> Email
+      </button>
       {!isPaid && (
         <button onClick={() => setShowPay(true)} className="btn-ghost" style={{ padding: "8px 12px" }}>
           <CreditCard size={14} /> Record Payment

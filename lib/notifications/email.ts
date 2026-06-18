@@ -20,46 +20,76 @@ interface SendEmailOptions {
   attachments?: EmailAttachment[];
 }
 
+const RESEND_ENDPOINT = "https://api.resend.com/emails";
+const MAX_ATTEMPTS = 3;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Send a transactional email via Resend.
+ *
+ * - Env values are trimmed (a stray space in RESEND_FROM_EMAIL makes
+ *   Resend reject the request), and the sender falls back to the
+ *   verified production address.
+ * - Transient failures (network errors, 429, 5xx) are retried with
+ *   backoff. Permanent failures (4xx, e.g. an unverified domain) are
+ *   surfaced immediately with Resend's real message — never swallowed.
+ */
 export async function sendEmail(opts: SendEmailOptions): Promise<{ success: boolean; error?: string }> {
-  const apiKey = process.env.RESEND_API_KEY;
+  const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) {
-    console.warn("[email] RESEND_API_KEY not configured — email skipped");
+    console.error("[email] RESEND_API_KEY not configured — cannot send email");
     return { success: false, error: "Email is not configured. Set RESEND_API_KEY to enable sending." };
   }
 
-  try {
-    const body: Record<string, unknown> = {
-      from: opts.from ?? process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
-      to: Array.isArray(opts.to) ? opts.to : [opts.to],
-      subject: opts.subject,
-      html: opts.html,
-    };
-    if (opts.cc?.length) body.cc = opts.cc;
-    if (opts.bcc?.length) body.bcc = opts.bcc;
-    if (opts.replyTo) body.reply_to = opts.replyTo;
-    if (opts.attachments?.length) body.attachments = opts.attachments;
+  const from = (opts.from ?? process.env.RESEND_FROM_EMAIL ?? "noreply@finrp.org").trim();
+  const recipients = Array.isArray(opts.to) ? opts.to : [opts.to];
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+  const body: Record<string, unknown> = {
+    from,
+    to: recipients,
+    subject: opts.subject,
+    html: opts.html,
+  };
+  if (opts.cc?.length) body.cc = opts.cc;
+  if (opts.bcc?.length) body.bcc = opts.bcc;
+  if (opts.replyTo) body.reply_to = opts.replyTo;
+  if (opts.attachments?.length) body.attachments = opts.attachments;
 
-    if (!res.ok) {
-      const err = await res.text();
-      console.error("[email] Resend error:", err);
-      return { success: false, error: err };
+  let lastError = "Unknown error";
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(RESEND_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        if (attempt > 1) console.info(`[email] Sent to ${recipients.join(", ")} on attempt ${attempt}`);
+        return { success: true };
+      }
+
+      lastError = (await res.text()) || `Resend responded ${res.status}`;
+      const transient = res.status === 429 || res.status >= 500;
+      console.error(
+        `[email] Resend error (status ${res.status}, attempt ${attempt}/${MAX_ATTEMPTS}, from=${from}, to=${recipients.join(", ")}): ${lastError}`
+      );
+      // 4xx (bad sender / unverified domain / invalid recipient) won't fix on retry.
+      if (!transient) return { success: false, error: lastError };
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : "Unknown network error";
+      console.error(`[email] Send failed (attempt ${attempt}/${MAX_ATTEMPTS}): ${lastError}`);
     }
 
-    return { success: true };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error("[email] Send failed:", msg);
-    return { success: false, error: msg };
+    if (attempt < MAX_ATTEMPTS) await sleep(attempt * 400);
   }
+
+  return { success: false, error: lastError };
 }
 
 export function buildInvoiceEmail(params: {
@@ -174,6 +204,40 @@ export function buildTeamInviteEmail(params: {
       </a>
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px;" />
       <p style="color: #9ca3af; font-size: 12px;">FinRP — Practice Management Platform</p>
+    </div>
+  `;
+}
+
+export function buildInviteEmail(params: {
+  inviteeName?: string;
+  workspaceName: string;
+  inviterName: string;
+  roleLabel: string;
+  inviteUrl: string;
+}): string {
+  const greeting = params.inviteeName ? `Hi ${params.inviteeName},` : "Hello,";
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #111827;">
+      <h2 style="color: #111827; margin-bottom: 8px;">You've been invited to ${params.workspaceName}</h2>
+      <p style="color: #555; margin-bottom: 20px;">${greeting}</p>
+      <div style="background: #f8f9fa; border-left: 4px solid #6366f1; padding: 16px; border-radius: 6px; margin-bottom: 20px;">
+        <p style="margin: 0; color: #111827; font-size: 14px; line-height: 1.6;">
+          ${params.inviterName} has invited you to join <strong>${params.workspaceName}</strong> on FinRP as
+          <strong>${params.roleLabel}</strong>.
+        </p>
+      </div>
+      <p style="color: #555; font-size: 14px; margin-bottom: 20px;">
+        Accept the invitation by creating your account with this email address — you'll get immediate access to the workspace.
+      </p>
+      <a href="${params.inviteUrl}" style="display: inline-block; background: #6366f1; color: #fff; text-decoration: none; padding: 11px 22px; border-radius: 8px; font-size: 14px; font-weight: 600;">
+        Accept Invitation
+      </a>
+      <p style="color: #9ca3af; font-size: 12px; margin-top: 18px;">
+        If the button doesn't work, copy and paste this link into your browser:<br/>
+        <span style="color: #6366f1; word-break: break-all;">${params.inviteUrl}</span>
+      </p>
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px;" />
+      <p style="color: #9ca3af; font-size: 12px;">${params.workspaceName} · Powered by FinRP</p>
     </div>
   `;
 }

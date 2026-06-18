@@ -107,6 +107,11 @@ export default function SendEmailModal({
           <div>
             <label style={labelStyle}>To *</label>
             <input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="customer@email.com" style={inputStyle} />
+            {!defaultTo && (
+              <p style={{ fontSize: 12, color: "#f59e0b", marginTop: 6 }}>
+                This customer has no email on file. Enter an address to send to, or add one on the customer record.
+              </p>
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>

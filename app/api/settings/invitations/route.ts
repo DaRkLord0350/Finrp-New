@@ -2,6 +2,16 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
+import { sendEmail, buildInviteEmail } from "@/lib/notifications/email";
+import { appUrl } from "@/lib/url";
+
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: "Admin",
+  MANAGER: "Manager",
+  ACCOUNTANT: "Accountant",
+  STAFF: "Staff",
+  VIEWER: "Viewer",
+};
 
 export async function POST(req: Request) {
   try {
@@ -23,8 +33,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "email and role required" }, { status: 400 });
     }
 
+    const normalizedEmail = String(email).toLowerCase().trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    if (!emailRegex.test(normalizedEmail)) {
       return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
     }
 
@@ -35,41 +46,86 @@ export async function POST(req: Request) {
 
     // Check if user already exists in this org
     const existingUser = await prisma.user.findFirst({
-      where: { email, organizationId: tenantId },
+      where: { email: normalizedEmail, organizationId: tenantId },
     });
     if (existingUser) {
       return NextResponse.json({ error: "User is already a member" }, { status: 409 });
     }
 
-    // Check for existing pending invitation
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7-day expiry
+
+    // Reuse a still-valid pending invite (acts as resend + duplicate guard)
+    // instead of erroring, so a second click re-delivers the email.
     const existingInvite = await prisma.invitation.findFirst({
       where: {
-        email,
+        email: normalizedEmail,
         organizationId: tenantId,
         acceptedAt: null,
         expiresAt: { gt: new Date() },
       },
     });
-    if (existingInvite) {
-      return NextResponse.json({ error: "Invitation already sent" }, { status: 409 });
-    }
+    const isResend = !!existingInvite;
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7-day expiry
+    const invitation = existingInvite
+      ? await prisma.invitation.update({
+          where: { id: existingInvite.id },
+          // Re-open: refresh expiry and role, and re-arm the acceptance webhook
+          // (which keys off status === "PENDING").
+          data: { role, expiresAt, status: "PENDING", revokedAt: null },
+        })
+      : await prisma.invitation.create({
+          data: {
+            organizationId: tenantId,
+            email: normalizedEmail,
+            role,
+            expiresAt,
+            invitedBy: dbUser.id,
+            status: "PENDING",
+            // Platform-level portal role: a teammate invited from the business
+            // dashboard must land in the SAME dashboard (CUSTOMER portal), not
+            // the CA portal that the webhook would otherwise default to.
+            userRole: "CUSTOMER",
+          },
+        });
 
-    const invitation = await prisma.invitation.create({
-      data: {
-        organizationId: tenantId,
-        email: email.toLowerCase().trim(),
-        role,
-        expiresAt,
-        invitedBy: dbUser.id,
-      },
+    // ── Send the invitation email (Grant Access) ──────────────────────────
+    const org = await prisma.organization.findUnique({
+      where: { id: tenantId },
+      select: { name: true, businessProfile: { select: { businessName: true } } },
+    });
+    const workspaceName = org?.businessProfile?.businessName ?? org?.name ?? "your workspace";
+    const inviterName = dbUser.name ?? dbUser.email;
+    const roleLabel = ROLE_LABELS[role] ?? role;
+    const inviteUrl = appUrl(`/sign-up?email=${encodeURIComponent(normalizedEmail)}`);
+    const subject = `You're invited to join ${workspaceName} on FinRP`;
+
+    const emailResult = await sendEmail({
+      to: normalizedEmail,
+      subject,
+      html: buildInviteEmail({ workspaceName, inviterName, roleLabel, inviteUrl }),
     });
 
-    // TODO: Send invitation email via email provider
+    if (!emailResult.success) {
+      // Don't leave a phantom "pending" row claiming an email went out.
+      // (Keep a pre-existing invite from an earlier successful send.)
+      if (!isResend) {
+        await prisma.invitation.delete({ where: { id: invitation.id } }).catch(() => {});
+      }
+      console.error(
+        `[SETTINGS_INVITATIONS_POST] Email send failed for ${normalizedEmail} (org ${tenantId}): ${emailResult.error}`
+      );
+      return NextResponse.json(
+        { error: `Couldn't send the invitation email: ${emailResult.error ?? "unknown error"}` },
+        { status: 502 }
+      );
+    }
 
-    return NextResponse.json(invitation, { status: 201 });
+    console.info(
+      `[SETTINGS_INVITATIONS_POST] Invitation ${isResend ? "re-sent" : "sent"} to ${normalizedEmail} (org ${tenantId}, role ${role})`
+    );
+
+    return NextResponse.json({ ...invitation, resent: isResend }, { status: 201 });
   } catch (error) {
     console.error("[SETTINGS_INVITATIONS_POST]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
