@@ -13,6 +13,7 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -68,6 +69,7 @@ export default function UsersSettingsClient({ initialMembers, initialInvitations
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("STAFF");
   const [inviting, setInviting] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   async function fetchUsers() {
     try {
@@ -93,7 +95,7 @@ export default function UsersSettingsClient({ initialMembers, initialInvitations
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast.success(`Invitation sent to ${inviteEmail}`);
+      toast.success(data.resent ? `Invitation re-sent to ${inviteEmail}` : `Invitation sent to ${inviteEmail}`);
       setShowInvite(false);
       setInviteEmail("");
       setInviteRole("STAFF");
@@ -137,6 +139,25 @@ export default function UsersSettingsClient({ initialMembers, initialInvitations
       fetchUsers();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to remove member");
+    }
+  }
+
+  async function handleResendInvite(inv: Invitation) {
+    try {
+      setResendingId(inv.id);
+      const res = await fetch("/api/settings/invitations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: inv.email, role: inv.role }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(`Invitation re-sent to ${inv.email}`);
+      fetchUsers();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to resend invitation");
+    } finally {
+      setResendingId(null);
     }
   }
 
@@ -548,6 +569,25 @@ export default function UsersSettingsClient({ initialMembers, initialInvitations
               >
                 {inv.role}
               </span>
+              <button
+                onClick={() => handleResendInvite(inv)}
+                disabled={resendingId === inv.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "6px 12px",
+                  background: "#6366f120",
+                  color: "#6366f1",
+                  border: "none",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  cursor: resendingId === inv.id ? "not-allowed" : "pointer",
+                }}
+              >
+                <Send size={12} />
+                {resendingId === inv.id ? "Sending…" : "Resend"}
+              </button>
               <button
                 onClick={() => handleCancelInvite(inv.id)}
                 style={{

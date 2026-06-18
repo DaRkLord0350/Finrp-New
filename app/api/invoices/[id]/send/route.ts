@@ -13,6 +13,36 @@ import { sendEmail, buildInvoiceEmail } from "@/lib/notifications/email";
 import { getInvoiceAppearance } from "@/lib/invoices/appearance";
 import { logInvoiceActivity } from "@/lib/invoices/activity";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { generateShareToken } from "@/lib/invoices/share";
+import { appUrl } from "@/lib/url";
+
+// Reuse a live public link for the invoice, or mint one, so every
+// emailed invoice carries a working "View Invoice Online" / pay link.
+async function ensureShareUrl(invoiceId: string, organizationId: string): Promise<string | undefined> {
+  try {
+    let link = await prisma.invoiceShareLink.findFirst({
+      where: {
+        invoiceId,
+        organizationId,
+        isActive: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      orderBy: { createdAt: "desc" },
+      select: { token: true },
+    });
+    if (!link) {
+      link = await prisma.invoiceShareLink.create({
+        data: { invoiceId, organizationId, token: generateShareToken() },
+        select: { token: true },
+      });
+    }
+    return appUrl(`/i/${link.token}`);
+  } catch (err) {
+    // A missing link must not block delivery — log and send without it.
+    console.error("[INVOICE_SEND] Could not resolve share link:", err);
+    return undefined;
+  }
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const validEmails = (arr: unknown): string[] =>
@@ -43,13 +73,18 @@ export async function POST(
     const cc = validEmails(body.cc);
     const bcc = validEmails(body.bcc);
     const message = typeof body.message === "string" ? body.message : undefined;
-    const shareUrl = typeof body.shareUrl === "string" ? body.shareUrl : undefined;
 
     const invoice = await prisma.invoice.findFirst({
       where: { id, organizationId },
       include: { customer: { select: { name: true } } },
     });
     if (!invoice) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+
+    // Caller may pass an explicit link; otherwise mint/reuse a public one.
+    const shareUrl =
+      typeof body.shareUrl === "string" && body.shareUrl.trim()
+        ? body.shareUrl.trim()
+        : await ensureShareUrl(id, organizationId);
 
     const [profile, org, appearance] = await Promise.all([
       prisma.businessProfile.findUnique({ where: { organizationId }, select: { businessName: true } }),
