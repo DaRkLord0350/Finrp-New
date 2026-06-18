@@ -17,6 +17,10 @@ export function startAnalyticsWorker() {
     async (job) => {
       const data = job.data;
 
+      // Tenant invariant: every per-org job carries organizationId in its
+      // payload and each compute function scopes its queries to that org.
+      // `all_orgs` is the ONLY cross-tenant path and is an internal
+      // maintenance recompute (never enqueued from user input).
       switch (data.type) {
         case "dashboard":
           await computeDashboardSnapshot(data.organizationId);

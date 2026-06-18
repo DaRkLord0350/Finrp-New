@@ -1,9 +1,15 @@
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/auth/tenant";
+import { guardModule } from "@/lib/auth/require-module";
 import { prisma } from "@/lib/prisma";
 import UsersSettingsClient from "./UsersSettingsClient";
 
 export default async function UsersSettingsPage() {
+  // Only OWNER/ADMIN manage users (defense-in-depth on top of the
+  // settings-area guard + the API-level checks).
+  const denied = await guardModule("users");
+  if (denied) return denied;
+
   const organizationId = await getTenantId();
   if (!organizationId) redirect("/sign-in");
 

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
+import { requirePermission } from "@/lib/auth/middleware";
 import { logInvoiceActivity } from "@/lib/invoices/activity";
+import { createAuditLog } from "@/lib/audit";
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -18,6 +20,16 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // RBAC: recording / approving a payment requires the write action.
+    let actorId: string | undefined;
+    try {
+      const { user } = await requirePermission("payments.write");
+      actorId = user.id;
+    } catch (authErr) {
+      if (authErr instanceof NextResponse) return authErr;
+      throw authErr;
+    }
+
     const organizationId = await getTenantId();
     if (!organizationId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -146,6 +158,21 @@ export async function POST(
         amount: Number(result.payment.amount),
         method: result.payment.method,
         status: result.invoice.status,
+      },
+    });
+
+    // Compliance audit trail for payment approval/recording.
+    await createAuditLog({
+      organizationId,
+      userId: actorId,
+      action: "UPDATE",
+      entity: "payment",
+      entityId: result.payment.id,
+      description: `Recorded payment of ${result.payment.amount.toString()} on invoice ${result.invoice.invoiceNumber}`,
+      newValue: {
+        amount: result.payment.amount.toString(),
+        method: result.payment.method,
+        invoiceStatus: result.invoice.status,
       },
     });
 

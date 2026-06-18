@@ -25,6 +25,7 @@ export const TTL = {
   ANALYTICS:    900,    // 15 min — precomputed snapshots
   ORG_SETTINGS: 3600,   // 1 hour — org settings (rarely change)
   NOTIFICATIONS: 30,    // 30 sec — unread counts
+  ROLE_PERMS:   1800,   // 30 min — resolved per-org role permission set
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,8 @@ export const CacheKey = {
   analytics:   (orgId: string, p: string)    => `finrp:analytics:${orgId}:${p}`,
   orgSettings: (orgId: string)               => `finrp:org:${orgId}:settings`,
   notifCount:  (userId: string)              => `finrp:notif:${userId}:unread`,
+  rolePerms:   (orgId: string, role: string) => `finrp:perms:${orgId}:${role}`,
+  rolePermsPattern: (orgId: string)          => `finrp:perms:${orgId}:*`,
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -25,7 +25,7 @@ export const GET = withTenant(async (req, { organizationId }) => {
   });
 
   return NextResponse.json(result);
-});
+}, { permission: "customers.read" });
 
 // ---------------------------------------------------------------------------
 // POST /api/customers — create a new customer
@@ -57,4 +57,4 @@ export const POST = withTenant(async (req, { organizationId }) => {
     }
     throw err; // re-throw for withTenant to handle
   }
-});
+}, { permission: "customers.write" });

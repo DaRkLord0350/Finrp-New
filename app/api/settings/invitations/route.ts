@@ -2,6 +2,8 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
+import { hasActionPermission } from "@/lib/auth/rbac";
+import { createAuditLog } from "@/lib/audit";
 import { sendEmail, buildInviteEmail } from "@/lib/notifications/email";
 import { appUrl } from "@/lib/url";
 
@@ -22,7 +24,7 @@ export async function POST(req: Request) {
     if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const dbUser = await prisma.user.findUnique({ where: { clerkId: userId } });
-    if (!dbUser || !["OWNER", "ADMIN"].includes(dbUser.role)) {
+    if (!dbUser || !hasActionPermission(dbUser.role, "users", "manage")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -125,6 +127,16 @@ export async function POST(req: Request) {
       `[SETTINGS_INVITATIONS_POST] Invitation ${isResend ? "re-sent" : "sent"} to ${normalizedEmail} (org ${tenantId}, role ${role})`
     );
 
+    await createAuditLog({
+      organizationId: tenantId,
+      userId: dbUser.id,
+      action: "CREATE",
+      entity: "invitation",
+      entityId: invitation.id,
+      description: `${isResend ? "Re-sent" : "Sent"} invitation to ${normalizedEmail} as ${role}`,
+      newValue: { email: normalizedEmail, role },
+    });
+
     return NextResponse.json({ ...invitation, resent: isResend }, { status: 201 });
   } catch (error) {
     console.error("[SETTINGS_INVITATIONS_POST]", error);
@@ -141,7 +153,7 @@ export async function DELETE(req: Request) {
     if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const dbUser = await prisma.user.findUnique({ where: { clerkId: userId } });
-    if (!dbUser || !["OWNER", "ADMIN"].includes(dbUser.role)) {
+    if (!dbUser || !hasActionPermission(dbUser.role, "users", "manage")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

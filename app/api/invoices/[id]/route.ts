@@ -4,6 +4,7 @@ import { getTenantId } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/middleware";
 import { logInvoiceActivity } from "@/lib/invoices/activity";
 import { getInvoiceStatusMeta } from "@/lib/invoice-status";
+import { createAuditLog } from "@/lib/audit";
 import { InvoiceStatus, Prisma } from "@prisma/client";
 
 const VALID_STATUSES = Object.values(InvoiceStatus) as string[];
@@ -273,14 +274,45 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // RBAC: deleting an invoice requires the delete action (OWNER/ADMIN).
+    let actorId: string | undefined;
+    try {
+      const { user } = await requirePermission("invoices.delete");
+      actorId = user.id;
+    } catch (authErr) {
+      if (authErr instanceof NextResponse) return authErr;
+      throw authErr;
+    }
+
     const organizationId = await getTenantId();
     if (!organizationId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
-    await prisma.invoice.deleteMany({
+    // Snapshot for the audit trail before deletion.
+    const invoice = await prisma.invoice.findFirst({
       where: { id, organizationId },
+      select: { id: true, invoiceNumber: true, total: true, status: true },
+    });
+    if (!invoice) {
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    }
+
+    await prisma.invoice.deleteMany({ where: { id, organizationId } });
+
+    await createAuditLog({
+      organizationId,
+      userId: actorId,
+      action: "DELETE",
+      entity: "invoice",
+      entityId: invoice.id,
+      description: `Deleted invoice ${invoice.invoiceNumber}`,
+      oldValue: {
+        invoiceNumber: invoice.invoiceNumber,
+        total: invoice.total.toString(),
+        status: invoice.status,
+      },
     });
 
     return NextResponse.json({ message: "Deleted" });
