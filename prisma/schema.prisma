@@ -28,6 +28,7 @@ model Organization {
   users                   User[]
   memberships             Membership[]
   invitations             Invitation[]
+  rolePermissions         RolePermission[]
   integrations            Integration[]
   importJobs              ImportJob[]
   fieldMappings           FieldMapping[]
@@ -1805,6 +1806,37 @@ model Membership {
   @@unique([userId, organizationId])
   @@index([organizationId])
   @@map("memberships")
+}
+
+// ============================================================
+// ROLE PERMISSION (Per-org custom-role overrides)
+//
+// Optional, organization-scoped overrides of the static code
+// matrix in lib/auth/permissions.ts. When NO rows exist for an
+// (organizationId, role) pair, the resolver falls back to the
+// code defaults — so this table is purely additive and safe to
+// leave empty. One row per (org, role, module) holds the CRUD
+// flags; lib/auth/permission-resolver.ts expands them back into
+// the flat `<resource>.<action>` permission list. OWNER is never
+// customizable (always full access).
+// ============================================================
+model RolePermission {
+  id             String   @id @default(cuid())
+  organizationId String
+  role           Role
+  module         String // AppModule string (crm, billing, finance, ...)
+  canView        Boolean  @default(false)
+  canCreate      Boolean  @default(false)
+  canEdit        Boolean  @default(false)
+  canDelete      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, role, module])
+  @@index([organizationId])
+  @@map("role_permissions")
 }
 
 // ============================================================

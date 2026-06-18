@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Webhook } from "svix";
 import { seedSystemAccounts } from "@/lib/accounting/system-accounts";
+import { joinOrganizationFromInvite } from "@/lib/auth/invitations";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -136,82 +137,33 @@ async function handleUserCreated(
   }
 
   // ── Invite acceptance ──────────────────────────────────────
-  // If a firm admin has a PENDING, non-expired invite for this
-  // email, provision the user INTO that firm's organization
-  // (instead of spinning up a brand-new org). This is what makes
-  // "Add Team Member → Send Invite" actually land the CA in the firm.
-  if (email) {
-    const pendingInvite = await prisma.invitation.findFirst({
-      where: {
-        email: { equals: email, mode: "insensitive" },
-        status: "PENDING",
-        expiresAt: { gt: new Date() },
+  // If anyone (firm admin OR org owner/admin) has a PENDING, non-expired
+  // invite for this email, provision the user INTO that organization
+  // with the invited role — instead of spinning up a brand-new org.
+  // This is what makes "Invite Member → Send Invite" actually land the
+  // invitee in the inviter's organization. Shared with autoProvision()
+  // so the invariant holds no matter which path runs first.
+  const joined = await joinOrganizationFromInvite({
+    clerkId,
+    email,
+    name,
+    avatarUrl: data.image_url ?? null,
+    phone: data.phone_numbers?.[0]?.phone_number ?? null,
+  });
+
+  if (joined) {
+    console.log(
+      `[Clerk webhook] User ${joined.id} (${email}) joined org ${joined.organizationId} via invitation`
+    );
+
+    return NextResponse.json(
+      {
+        message: "User joined organization via invitation",
+        userId: joined.id,
+        organizationId: joined.organizationId,
       },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (pendingInvite) {
-      const joined = await prisma.$transaction(async (tx) => {
-        const user = await tx.user.create({
-          data: {
-            clerkId,
-            email,
-            name: pendingInvite.name ?? name,
-            role: pendingInvite.role,
-            userRole: pendingInvite.userRole ?? "CA",
-            avatarUrl: data.image_url ?? null,
-            phone: pendingInvite.phone ?? data.phone_numbers?.[0]?.phone_number ?? null,
-            isActive: true,
-            organizationId: pendingInvite.organizationId,
-            firmId: pendingInvite.firmId,
-            firmRole: pendingInvite.firmRole,
-            specialization: pendingInvite.specialization,
-            joiningDate: pendingInvite.joiningDate ?? new Date(),
-          },
-        });
-
-        await tx.membership.create({
-          data: {
-            userId: user.id,
-            organizationId: pendingInvite.organizationId,
-            role: pendingInvite.role,
-            invitedBy: pendingInvite.invitedBy,
-          },
-        });
-
-        await tx.invitation.update({
-          where: { id: pendingInvite.id },
-          data: { status: "ACCEPTED", acceptedAt: new Date() },
-        });
-
-        await tx.teamActivityLog.create({
-          data: {
-            organizationId: pendingInvite.organizationId,
-            actorId: pendingInvite.invitedBy,
-            targetUserId: user.id,
-            targetEmail: email,
-            action: "MEMBER_JOINED",
-            module: "TEAM",
-            metadata: { event: "invite_accepted", inviteId: pendingInvite.id },
-          },
-        });
-
-        return user;
-      });
-
-      console.log(
-        `[Clerk webhook] User ${joined.id} (${email}) joined firm org ${pendingInvite.organizationId} via invite ${pendingInvite.id}`
-      );
-
-      return NextResponse.json(
-        {
-          message: "User joined firm via invitation",
-          userId: joined.id,
-          organizationId: pendingInvite.organizationId,
-        },
-        { status: 201 }
-      );
-    }
+      { status: 201 }
+    );
   }
 
   // Create everything in a single transaction

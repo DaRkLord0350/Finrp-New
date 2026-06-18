@@ -3,28 +3,26 @@
 // Returns computed metrics, alerts, suggestions, projects
 // ============================================================
 
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { erpService } from "@/services/erpService";
-import { getTenantId } from "@/lib/auth/tenant";
+import { requirePermission } from "@/lib/auth/middleware";
 import { withCache, TTL } from "@/lib/cache";
 
 export async function GET() {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const tenantId = await getTenantId();
-    if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // RBAC: ERP module is restricted (e.g. ACCOUNTANT / VIEWER get 403).
+    const { organizationId } = await requirePermission("erp.read");
 
     const data = await withCache(
-      `finrp:erp:dashboard:${tenantId}`,
+      `finrp:erp:dashboard:${organizationId}`,
       TTL.ANALYTICS,
-      () => erpService.getDashboard(tenantId)
+      () => erpService.getDashboard(organizationId)
     );
 
     return NextResponse.json(data);
   } catch (error) {
+    // requirePermission throws a NextResponse (401/403) — pass it through.
+    if (error instanceof NextResponse) return error;
     console.error("[GET /api/erp]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

@@ -25,6 +25,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { cacheGet, cacheSet, cacheDel, CacheKey, TTL } from "@/lib/cache";
 import { acquireLock, releaseLock } from "@/lib/redis";
+import { joinOrganizationFromInvite } from "./invitations";
 
 // ---------------------------------------------------------------------------
 // Return type — explicit Prisma payload to avoid circular type inference
@@ -141,6 +142,45 @@ async function autoProvision(userId: string) {
     const name =
       [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
       email.split("@")[0];
+
+    // ── Invite acceptance — join, don't fork ───────────────────────────────
+    // If a PENDING invite exists for this email, provision the user INTO the
+    // inviter's organization with the invited role instead of creating a new
+    // org. Mirrors the Clerk webhook so the invariant holds even when the
+    // webhook is delayed or never fires (local dev / webhook downtime).
+    try {
+      const joinedViaInvite = await joinOrganizationFromInvite({
+        clerkId: userId,
+        email,
+        name,
+        avatarUrl: clerkUser.imageUrl ?? null,
+        phone: clerkUser.phoneNumbers?.[0]?.phoneNumber ?? null,
+      });
+
+      if (joinedViaInvite) {
+        await cacheSet(CacheKey.user(userId), joinedViaInvite, TTL.USER_SESSION);
+        await cacheSet(CacheKey.tenant(userId), joinedViaInvite.organizationId, TTL.TENANT_ID);
+        console.log(
+          `[session] user ${joinedViaInvite.id} (${email}) joined org ${joinedViaInvite.organizationId} via invitation`
+        );
+        return joinedViaInvite;
+      }
+    } catch (inviteErr: unknown) {
+      // A concurrent path (the Clerk webhook) may have created the user first.
+      const e = inviteErr as { code?: string; meta?: { target?: string[] | string } };
+      const isClerkIdRace =
+        e?.code === "P2002" &&
+        JSON.stringify(e?.meta?.target ?? "").includes("clerkId");
+      if (isClerkIdRace) {
+        const raceWinner = await fetchUserFromDb(userId);
+        if (raceWinner) {
+          await cacheSet(CacheKey.user(userId), raceWinner, TTL.USER_SESSION);
+          await cacheSet(CacheKey.tenant(userId), raceWinner.organizationId, TTL.TENANT_ID);
+          return raceWinner;
+        }
+      }
+      throw inviteErr;
+    }
 
     // ── Single transaction: create org → user → membership ─────────────────
     // If user.create throws P2002 (concurrent winner), the transaction rolls

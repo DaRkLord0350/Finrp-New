@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ChevronDown, type LucideIcon } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Lock, type LucideIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
+import type { AppModule } from "@/lib/auth/rbac";
 
 // ── Shared collapsible sidebar group (Banking OS accordion) ───
 // The customer Sidebar, the CA portal CASidebar and the CA Hub
@@ -22,6 +23,9 @@ export interface NavBadge {
 export interface NavLeaf {
   label: string;
   href: string;
+  /** RBAC module this item belongs to. When set and the user lacks
+   *  access, the row renders locked (lock icon, non-clickable). */
+  module?: AppModule;
   /** optional — deep sub-items render as text-only rows */
   icon?: LucideIcon;
   /** match only the exact href (for index routes with sibling children) */
@@ -42,6 +46,9 @@ export interface NavGroupConfig {
   /** optional uppercase section heading rendered above the group (depth 0 only) */
   section?: string;
   label: string;
+  /** RBAC module the whole group maps to (optional). When set and the
+   *  user lacks access, the entire group renders locked. */
+  module?: AppModule;
   icon: LucideIcon;
   badge?: NavBadge;
   /** paths beyond the child hrefs that count as "inside" the group (e.g. its index page) */
@@ -72,6 +79,31 @@ export function isGroupActive(pathname: string, group: NavGroupConfig): boolean 
   if (group.basePath && pathname.startsWith(group.basePath)) return true;
   return group.items.some((item) =>
     isNavGroup(item) ? isGroupActive(pathname, item) : isLeafActive(pathname, item)
+  );
+}
+
+// ── Permission gating ─────────────────────────────────────────
+// `canAccess(module)` decides whether a module is reachable. Untagged
+// items (no `module`) are always accessible — only spec-governed
+// modules are gated, so Banking / TReDS / AI nav is unaffected.
+export type CanAccess = (module?: AppModule) => boolean;
+
+export function isLeafAccessible(item: NavLeaf, canAccess: CanAccess): boolean {
+  return item.module ? canAccess(item.module) : true;
+}
+
+export function isGroupAccessible(
+  group: NavGroupConfig,
+  canAccess: CanAccess
+): boolean {
+  // A group explicitly tied to a module is locked when that module
+  // is inaccessible, regardless of children.
+  if (group.module && !canAccess(group.module)) return false;
+  // Otherwise the group is reachable if ANY descendant is reachable.
+  return group.items.some((item) =>
+    isNavGroup(item)
+      ? isGroupAccessible(item, canAccess)
+      : isLeafAccessible(item, canAccess)
   );
 }
 
@@ -145,27 +177,78 @@ function NavIcon({
   return <Icon size={compact ? 13 : 16} strokeWidth={1.75} />;
 }
 
+// Disabled, non-clickable row with a lock icon — used for modules the
+// current role cannot access. Shown (not hidden) per product spec.
+function LockedRow({
+  label,
+  icon,
+  compact,
+  isGroup,
+}: {
+  label: string;
+  icon?: LucideIcon;
+  compact: boolean;
+  isGroup?: boolean;
+}) {
+  return (
+    <div
+      className="sidebar-nav-item"
+      aria-disabled="true"
+      title="You don't have access to this module"
+      style={{
+        ...(compact ? leafStyle : undefined),
+        opacity: 0.45,
+        cursor: "not-allowed",
+        ...(isGroup ? { width: "100%", textAlign: "left" as const, marginTop: compact ? 0 : 4 } : {}),
+      }}
+    >
+      <NavIcon icon={icon} active={false} compact={compact} />
+      <span style={labelStyle}>{label}</span>
+      <Lock size={12} style={{ flexShrink: 0, opacity: 0.7 }} />
+    </div>
+  );
+}
+
 export function SidebarNavGroup({
   group,
   pathname,
   onNavigate,
   depth = 0,
+  canAccess = () => true,
 }: {
   group: NavGroupConfig;
   pathname: string;
   onNavigate?: () => void;
   /** 0 = top-level group; deeper levels render compact rows */
   depth?: number;
+  /** permission predicate; defaults to "everything accessible" */
+  canAccess?: CanAccess;
 }) {
   const isActive = isGroupActive(pathname, group);
   const [open, setOpen] = useState(isActive);
 
-  // auto-expand whenever navigation lands on a child route
-  useEffect(() => {
+  // Auto-expand whenever navigation lands on a child route, while still
+  // allowing manual toggle. Adjusting state during render (the documented
+  // "store info from previous render" pattern) avoids an effect-driven
+  // cascading render. See https://react.dev/reference/react/useState
+  const [prevActive, setPrevActive] = useState(isActive);
+  if (isActive !== prevActive) {
+    setPrevActive(isActive);
     if (isActive) setOpen(true);
-  }, [isActive]);
+  }
 
   const compact = depth > 0;
+
+  // Entire group inaccessible → show a locked, non-expandable header
+  // (the module stays visible but is not clickable — no route exposed).
+  if (!isGroupAccessible(group, canAccess)) {
+    return (
+      <div style={{ marginTop: compact ? 0 : 4 }}>
+        {depth === 0 && group.section && <p style={sectionTitleStyle}>{group.section}</p>}
+        <LockedRow label={group.label} icon={group.icon} compact={compact} isGroup />
+      </div>
+    );
+  }
 
   return (
     <div style={{ marginTop: compact ? 0 : 4 }}>
@@ -214,7 +297,15 @@ export function SidebarNavGroup({
                   pathname={pathname}
                   onNavigate={onNavigate}
                   depth={depth + 1}
+                  canAccess={canAccess}
                 />
+              );
+            }
+
+            // Locked leaf — module the role can't access. Shown but not clickable.
+            if (!isLeafAccessible(item, canAccess)) {
+              return (
+                <LockedRow key={item.href} label={item.label} icon={item.icon} compact />
               );
             }
 

@@ -16,6 +16,7 @@ import {
   Send,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Can } from "@/components/auth/Can";
 
 const ROLES = ["OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "STAFF", "VIEWER"] as const;
 type Role = (typeof ROLES)[number];
@@ -214,25 +215,27 @@ export default function UsersSettingsClient({ initialMembers, initialInvitations
             <Shield size={14} />
             Permissions
           </button>
-          <button
-            onClick={() => setShowInvite(true)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "9px 16px",
-              background: "#6366f1",
-              color: "white",
-              border: "none",
-              borderRadius: 8,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            <UserPlus size={14} />
-            Invite Member
-          </button>
+          <Can permission="users.manage">
+            <button
+              onClick={() => setShowInvite(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "9px 16px",
+                background: "#6366f1",
+                color: "white",
+                border: "none",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              <UserPlus size={14} />
+              Invite Member
+            </button>
+          </Can>
         </div>
       </motion.div>
 

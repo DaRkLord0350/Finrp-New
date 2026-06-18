@@ -72,3 +72,25 @@ export function tenantWhere(organizationId: string) {
 export function scopeId(id: string, organizationId: string) {
   return { id, organizationId } as const;
 }
+
+/**
+ * Load a tenant-owned resource by id, scoped to the organization in ONE
+ * query — the safe replacement for `findUnique({ where: { id } })`, which
+ * can leak across tenants (IDOR). Returns null when the id doesn't exist
+ * OR belongs to another org (callers should 404 in both cases).
+ *
+ * @example
+ * const invoice = await findByIdInOrg(prisma.invoice, id, organizationId);
+ * if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
+ */
+export async function findByIdInOrg<T>(
+  model: {
+    findFirst: (args: {
+      where: { id: string; organizationId: string };
+    }) => Promise<T | null>;
+  },
+  id: string,
+  organizationId: string
+): Promise<T | null> {
+  return model.findFirst({ where: { id, organizationId } });
+}

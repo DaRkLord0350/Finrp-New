@@ -19,6 +19,7 @@
 // ============================================================
 
 import { getCurrentUser } from "@/lib/auth/session";
+import { resolvePermissions } from "@/lib/auth/permission-resolver";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
@@ -90,11 +91,19 @@ export default async function DashboardLayout({
     );
   }
 
-  // ── Customer flow (unchanged) ─────────────────────────────────
+  // ── Customer flow ─────────────────────────────────────────────
   const done = await isOnboardingComplete(user.organizationId);
   if (!done) {
     redirect("/onboarding/customer");
   }
 
-  return <DashboardShell>{children}</DashboardShell>;
+  // Drive the dynamic sidebar + client permission gates from the
+  // user's EFFECTIVE permissions (custom-role overrides → code defaults).
+  // Server stays the source of truth; this is UX.
+  const permissions = await resolvePermissions(user.organizationId, user.role);
+  return (
+    <DashboardShell role={user.role} permissions={permissions}>
+      {children}
+    </DashboardShell>
+  );
 }

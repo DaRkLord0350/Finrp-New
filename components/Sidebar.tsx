@@ -27,9 +27,11 @@ import {
   Eye,
   Sparkles,
   FilePlus2,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SidebarNavGroup, type NavGroupConfig } from "@/components/SidebarNavGroup";
+import { hasModuleAccessFromList, type AppModule } from "@/lib/auth/rbac";
 
 // ── Sidebar group configuration ───────────────────────────────
 // Every major module is a collapsible group rendered by the
@@ -43,13 +45,13 @@ const navGroups: NavGroupConfig[] = [
     label: "Dashboard",
     icon: LayoutDashboard,
     items: [
-      { label: "Overview",   href: "/dashboard",  icon: LayoutDashboard },
-      { label: "CRM",        href: "/crm",        icon: Users },
-      { label: "Finance",    href: "/finance",    icon: BarChart3 },
-      { label: "Accounting", href: "/accounting/chart-of-accounts", icon: Wallet, activePrefix: "/accounting" },
-      { label: "ERP",        href: "/erp",        icon: Boxes },
-      { label: "Compliance", href: "/compliance", icon: ShieldCheck },
-      { label: "Reports",    href: "/reports",    icon: BarChart2 },
+      { label: "Overview",   href: "/dashboard",  icon: LayoutDashboard, module: "dashboard" },
+      { label: "CRM",        href: "/crm",        icon: Users, module: "crm" },
+      { label: "Finance",    href: "/finance",    icon: BarChart3, module: "finance" },
+      { label: "Accounting", href: "/accounting/chart-of-accounts", icon: Wallet, activePrefix: "/accounting", module: "accounting" },
+      { label: "ERP",        href: "/erp",        icon: Boxes, module: "erp" },
+      { label: "Compliance", href: "/compliance", icon: ShieldCheck, module: "compliance" },
+      { label: "Reports",    href: "/reports",    icon: BarChart2, module: "reports" },
     ],
   },
   {
@@ -57,11 +59,12 @@ const navGroups: NavGroupConfig[] = [
     section: "Billing",
     label: "Billing",
     icon: Receipt,
+    module: "billing",
     basePath: "/billing",
     items: [
-      { label: "Invoices",         href: "/billing",       icon: FileText, exact: true },
-      { label: "New Invoice",      href: "/billing/new",    icon: FilePlus2 },
-      { label: "Items & Services", href: "/billing/items",  icon: Boxes },
+      { label: "Invoices",         href: "/billing",       icon: FileText, exact: true, module: "billing" },
+      { label: "New Invoice",      href: "/billing/new",    icon: FilePlus2, module: "billing" },
+      { label: "Items & Services", href: "/billing/items",  icon: Boxes, module: "inventory" },
     ],
   },
   {
@@ -157,10 +160,22 @@ interface SidebarProps {
   onClose?: () => void;
   /** present when a CA is viewing a client workspace */
   workspace?: SidebarWorkspace;
+  /** resolved permission strings for the current user (RBAC). When
+   *  omitted, every module is shown (back-compat / loading). */
+  permissions?: string[];
 }
 
-export default function Sidebar({ open = false, onClose, workspace }: SidebarProps) {
+export default function Sidebar({ open = false, onClose, workspace, permissions }: SidebarProps) {
   const pathname = usePathname();
+
+  // Module-access predicate driving the dynamic sidebar. Without a
+  // permission list (e.g. mid-hydration) everything stays visible.
+  const canAccess = (module?: AppModule): boolean => {
+    if (!module) return true;
+    if (!permissions) return true;
+    return hasModuleAccessFromList(permissions, module);
+  };
+  const settingsLocked = !canAccess("settings");
 
   // ── Workspace mode: client-scoped module nav ────────────────
   if (workspace) {
@@ -381,6 +396,7 @@ export default function Sidebar({ open = false, onClose, workspace }: SidebarPro
               group={group}
               pathname={pathname}
               onNavigate={onClose}
+              canAccess={canAccess}
             />
           ))}
         </nav>
@@ -396,17 +412,30 @@ export default function Sidebar({ open = false, onClose, workspace }: SidebarPro
             gap: 2,
           }}
         >
-          <Link
-            href="/settings"
-            className={cn("sidebar-nav-item", pathname.startsWith("/settings") && "active")}
-            onClick={onClose}
-          >
-            <Settings size={16} strokeWidth={1.75} />
-            <span>Settings</span>
-            {pathname.startsWith("/settings") && (
-              <ChevronRight size={12} style={{ marginLeft: "auto", opacity: 0.5 }} />
-            )}
-          </Link>
+          {settingsLocked ? (
+            <div
+              className="sidebar-nav-item"
+              aria-disabled="true"
+              title="You don't have access to Settings"
+              style={{ opacity: 0.45, cursor: "not-allowed" }}
+            >
+              <Settings size={16} strokeWidth={1.75} />
+              <span>Settings</span>
+              <Lock size={12} style={{ marginLeft: "auto", opacity: 0.7 }} />
+            </div>
+          ) : (
+            <Link
+              href="/settings"
+              className={cn("sidebar-nav-item", pathname.startsWith("/settings") && "active")}
+              onClick={onClose}
+            >
+              <Settings size={16} strokeWidth={1.75} />
+              <span>Settings</span>
+              {pathname.startsWith("/settings") && (
+                <ChevronRight size={12} style={{ marginLeft: "auto", opacity: 0.5 }} />
+              )}
+            </Link>
+          )}
 
           {/* AI Badge */}
           <div

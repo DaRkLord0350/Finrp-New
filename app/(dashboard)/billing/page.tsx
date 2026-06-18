@@ -13,6 +13,7 @@ import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { format } from "date-fns";
 import InvoiceStatusSelect from "@/components/InvoiceStatusSelect";
 import { getInvoiceStatusMeta } from "@/lib/invoice-status";
+import { Can } from "@/components/auth/Can";
 
 const statusOptions = ["All", "DRAFT", "SENT", "VIEWED", "PAID", "PARTIAL", "OVERDUE", "CANCELLED"];
 
@@ -109,9 +110,11 @@ export default function BillingPage() {
               <Download size={14} /> Export
             </button>
           )}
-          <Link href="/billing/new" className="btn-brand">
-            <Plus size={15} /> {isMobile ? "New" : "New Invoice"}
-          </Link>
+          <Can permission="invoices.write">
+            <Link href="/billing/new" className="btn-brand">
+              <Plus size={15} /> {isMobile ? "New" : "New Invoice"}
+            </Link>
+          </Can>
           <button
             onClick={() => router.push("/billing/items")}
             style={{

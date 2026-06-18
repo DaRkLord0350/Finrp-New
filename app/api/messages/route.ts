@@ -42,9 +42,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "receiverId and content are required" }, { status: 400 });
   }
 
-  // Verify receiver is in the same org or is a CA assigned to this user's org
-  const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
-  if (!receiver) return NextResponse.json({ error: "Receiver not found" }, { status: 404 });
+  // Tenant isolation: the receiver must be in the SAME organization, or a
+  // CA with an active ClientAssignment to this user's org. Prevents sending
+  // (and notifying / probing existence of) users in other organizations.
+  const receiver = await prisma.user.findFirst({
+    where: {
+      id: receiverId,
+      OR: [
+        { organizationId: user.organizationId },
+        {
+          clientAssignments: {
+            some: { organizationId: user.organizationId, isActive: true },
+          },
+        },
+      ],
+    },
+    select: { id: true },
+  });
+  if (!receiver) {
+    return NextResponse.json(
+      { error: "Receiver not found in your organization" },
+      { status: 404 }
+    );
+  }
 
   const message = await prisma.message.create({
     data: {

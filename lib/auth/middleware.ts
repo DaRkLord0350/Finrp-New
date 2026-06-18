@@ -15,7 +15,8 @@
 
 import { NextResponse } from "next/server";
 import { getCurrentUser, readCurrentUser } from "./session";
-import { rolePermissions } from "./permissions";
+import { canFromList } from "./rbac";
+import { resolvePermissions } from "./permission-resolver";
 import { resolveWorkspaceTenant } from "@/lib/workspace/context";
 import { Role } from "@prisma/client";
 
@@ -62,11 +63,11 @@ export async function requireAuthReadOnly() {
 export async function requirePermission(permission: string) {
   const { user, organizationId } = await requireAuth();
 
-  const permissions = rolePermissions[user.role];
-  const allowed =
-    permissions.includes("*") || permissions.includes(permission);
+  // Effective permissions: custom-role overrides for the user's home org,
+  // falling back to the static matrix.
+  const permissions = await resolvePermissions(user.organizationId, user.role);
 
-  if (!allowed) {
+  if (!canFromList(permissions, permission)) {
     throw NextResponse.json(
       { error: `Forbidden — requires permission: ${permission}` },
       { status: 403 }

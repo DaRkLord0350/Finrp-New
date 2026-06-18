@@ -1,14 +1,12 @@
 import { getCurrentUser } from "./session";
-import { rolePermissions } from "./permissions";
+import { canFromList } from "./rbac";
+import { resolvePermissions } from "./permission-resolver";
 
 export async function hasPermission(permission: string) {
   const user = await getCurrentUser();
 
-  const permissions = rolePermissions[user.role];
+  // Effective permissions (custom-role overrides → static defaults).
+  const permissions = await resolvePermissions(user.organizationId, user.role);
 
-  if (permissions.includes("*")) {
-    return true;
-  }
-
-  return permissions.includes(permission);
+  return canFromList(permissions, permission);
 }

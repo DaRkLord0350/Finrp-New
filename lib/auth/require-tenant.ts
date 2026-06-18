@@ -13,11 +13,22 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import type { Role } from "@prisma/client";
 import { getTenantId } from "@/lib/auth/tenant";
+import { readCurrentUser } from "@/lib/auth/session";
+import { canFromList } from "@/lib/auth/rbac";
+import { resolvePermissions } from "@/lib/auth/permission-resolver";
 
 export type TenantContext = {
   userId: string;
   organizationId: string;
+  /** The authenticated user's RBAC role (OWNER..VIEWER). */
+  role: Role;
+};
+
+export type RequireTenantOptions = {
+  /** When set, throws ForbiddenError (HTTP 403) unless the role grants it. */
+  permission?: string;
 };
 
 export class UnauthorizedError extends Error {
@@ -37,18 +48,42 @@ export class ForbiddenError extends Error {
 }
 
 /**
- * Authenticate the current request and resolve the organizationId.
- * Throws UnauthorizedError when not authenticated or tenant not found.
- * Use inside API route handlers.
+ * Authenticate the current request and resolve the organizationId + role.
+ * Throws UnauthorizedError when not authenticated or tenant not found,
+ * ForbiddenError when the account is deactivated or lacks `opts.permission`.
+ *
+ * Pass `{ permission }` to enforce RBAC in one line — every protected
+ * API route should verify permissions independently of the UI.
+ *
+ * @example
+ *   const { organizationId } = await requireTenant({ permission: "customers.write" });
  */
-export async function requireTenant(): Promise<TenantContext> {
+export async function requireTenant(
+  opts?: RequireTenantOptions
+): Promise<TenantContext> {
   const { userId } = await auth();
   if (!userId) throw new UnauthorizedError();
 
+  // Read-only fetch (never provisions) — gives us role + active state.
+  const dbUser = await readCurrentUser();
+  if (!dbUser) throw new UnauthorizedError("Organization not found");
+  if (!dbUser.isActive) throw new ForbiddenError("Account is deactivated");
+
+  // Honors the Client Workspace (CA impersonation) tenant override.
   const organizationId = await getTenantId();
   if (!organizationId) throw new UnauthorizedError("Organization not found");
 
-  return { userId, organizationId };
+  if (opts?.permission) {
+    // Resolve against the user's HOME org so custom-role overrides apply.
+    const perms = await resolvePermissions(dbUser.organizationId, dbUser.role);
+    if (!canFromList(perms, opts.permission)) {
+      throw new ForbiddenError(
+        `Forbidden — requires permission: ${opts.permission}`
+      );
+    }
+  }
+
+  return { userId, organizationId, role: dbUser.role };
 }
 
 /**
@@ -64,11 +99,12 @@ export async function requireTenant(): Promise<TenantContext> {
  * });
  */
 export function withTenant(
-  handler: (req: Request, ctx: TenantContext) => Promise<NextResponse>
+  handler: (req: Request, ctx: TenantContext) => Promise<NextResponse>,
+  opts?: RequireTenantOptions
 ) {
   return async function (req: Request): Promise<NextResponse> {
     try {
-      const ctx = await requireTenant();
+      const ctx = await requireTenant(opts);
       return await handler(req, ctx);
     } catch (err) {
       if (err instanceof UnauthorizedError) {
