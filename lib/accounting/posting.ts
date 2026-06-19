@@ -93,6 +93,11 @@ async function postSystemJournal(
 }
 
 // ── Invoice: Dr A/R, Cr Income (+ Cr Tax Payable) ──────────
+// With TDS/TCS the entry stays balanced because the stored `total` already
+// reflects −TDS / +TCS:
+//   TDS  → Dr A/R(total) + Dr TDS Receivable(tds); income = total − tax + tds
+//   TCS  → Dr A/R(total);                            income = total − tax − tcs;  Cr TCS Payable(tcs)
+// When no TDS/TCS, this reduces exactly to the original Dr A/R / Cr Income / Cr Tax.
 export async function postInvoiceToLedger(organizationId: string, invoiceId: string, actor: Actor, canOverride = false) {
   const inv = await prisma.invoice.findFirst({ where: { id: invoiceId, organizationId, deletedAt: null } });
   if (!inv) throw new PostingError("Invoice not found", 404);
@@ -100,20 +105,30 @@ export async function postInvoiceToLedger(organizationId: string, invoiceId: str
 
   const total = new Prisma.Decimal(inv.total);
   const tax = new Prisma.Decimal(inv.taxAmount);
-  const revenue = total.sub(tax);
+  const isTds = inv.tdsTcsType === "TDS";
+  const isTcs = inv.tdsTcsType === "TCS";
+  const tdsTcs = new Prisma.Decimal(inv.tdsTcsAmount ?? 0);
+  const tds = isTds ? tdsTcs : ZERO;
+  const tcs = isTcs ? tdsTcs : ZERO;
+  // income absorbs revenue + shipping + adjustment + round-off (everything that is not GST/withholding).
+  const revenue = total.sub(tax).add(tds).sub(tcs);
 
   const result = await prisma.$transaction(async (tx) => {
     const ar = await resolveAccount(tx, organizationId, "1100", "Accounts Receivable", "ASSET");
     const income = inv.incomeAccountId ?? (await resolveAccount(tx, organizationId, "4000", "Sales", "INCOME"));
     const taxAcc = await resolveAccount(tx, organizationId, "2100", "Tax Payable", "TAX");
-    return { ar, income, taxAcc };
+    const tdsAcc = isTds ? await resolveAccount(tx, organizationId, "1310", "TDS Receivable", "ASSET") : null;
+    const tcsAcc = isTcs ? await resolveAccount(tx, organizationId, "2110", "TCS Payable", "TAX") : null;
+    return { ar, income, taxAcc, tdsAcc, tcsAcc };
   });
 
   const lines: Line[] = [
     { accountId: result.ar, type: "DEBIT", amount: total, description: `Invoice ${inv.invoiceNumber}` },
-    { accountId: result.income, type: "CREDIT", amount: revenue, description: `Invoice ${inv.invoiceNumber} revenue` },
   ];
+  if (result.tdsAcc && tds.gt(0)) lines.push({ accountId: result.tdsAcc, type: "DEBIT", amount: tds, description: `Invoice ${inv.invoiceNumber} TDS (${inv.tdsTcsRate}%)` });
+  lines.push({ accountId: result.income, type: "CREDIT", amount: revenue, description: `Invoice ${inv.invoiceNumber} revenue` });
   if (tax.gt(0)) lines.push({ accountId: result.taxAcc, type: "CREDIT", amount: tax, description: `Invoice ${inv.invoiceNumber} tax` });
+  if (result.tcsAcc && tcs.gt(0)) lines.push({ accountId: result.tcsAcc, type: "CREDIT", amount: tcs, description: `Invoice ${inv.invoiceNumber} TCS (${inv.tdsTcsRate}%)` });
 
   const posted = await postSystemJournal(organizationId, actor, { source: "INVOICE", sourceId: invoiceId, entryDate: inv.issueDate, description: `Invoice ${inv.invoiceNumber}`, lines, canOverride });
   if (!posted.alreadyPosted) await prisma.invoice.update({ where: { id: invoiceId }, data: { journalEntryId: posted.journalId } });

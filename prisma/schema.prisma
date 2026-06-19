@@ -117,6 +117,8 @@ model Organization {
   invoiceActivities InvoiceActivity[]
   invoiceVersions   InvoiceVersion[]
   creditNotes       CreditNote[]
+  tdsTcsSections    TdsTcsSection[]
+  invoiceAttachments InvoiceAttachment[]
 
   // ── Accounting (fiscal years, periods, settings) ─
   fiscalYears          FiscalYear[]
@@ -359,10 +361,19 @@ model Invoice {
 
   // Amounts
   subtotal   Decimal @db.Decimal(12, 2)
-  discount   Decimal @default(0) @db.Decimal(12, 2)
+  discount   Decimal @default(0) @db.Decimal(12, 2) // computed invoice-level discount amount
+  discountType  String  @default("FIXED") // FIXED | PERCENT — how discountValue is interpreted
+  discountValue Decimal @default(0) @db.Decimal(12, 2) // raw entered value (% or amount)
   shipping   Decimal @default(0) @db.Decimal(12, 2)
+  adjustment Decimal @default(0) @db.Decimal(12, 2) // arbitrary +/- adjustment
+  roundOff   Decimal @default(0) @db.Decimal(12, 2) // rounding difference applied to grand total
   taxRate    Decimal @default(0) @db.Decimal(5, 2)
   taxAmount  Decimal @default(0) @db.Decimal(12, 2)
+  // TDS / TCS (Indian withholding / collected tax)
+  tdsTcsType    String? // TDS | TCS | null
+  tdsTcsSectionId String? // selected TdsTcsSection
+  tdsTcsRate    Decimal @default(0) @db.Decimal(5, 2)
+  tdsTcsAmount  Decimal @default(0) @db.Decimal(12, 2)
   total      Decimal @db.Decimal(12, 2)
   paidAmount Decimal @default(0) @db.Decimal(12, 2)
   balanceDue Decimal @db.Decimal(12, 2)
@@ -374,11 +385,17 @@ model Invoice {
 
   // Metadata
   currency       String    @default("INR")
+  paymentTerms    String? // DUE_ON_RECEIPT | NET_15 | NET_30 | NET_45 | NET_60 | CUSTOM
+  salesperson     String?
+  orderNumber     String?
+  referenceNumber String?
+  subject         String?
   notes          String?
   terms          String?
   internalNotes  String? // private — never shown on PDF / public link
   customFields   Json? // [{ label, value }] extra fields rendered on the invoice
   invoicePdf     String?
+  recurringInvoiceId String? // schedule that generated this invoice (if any)
   sentAt         DateTime?
   viewedAt       DateTime?
   exchangeRate     Decimal?  @db.Decimal(16, 6)
@@ -392,12 +409,14 @@ model Invoice {
   customer      Customer           @relation(fields: [customerId], references: [id])
   createdBy     User?              @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
   incomeAccount Account?           @relation("InvoiceIncomeAccount", fields: [incomeAccountId], references: [id])
+  tdsTcsSection TdsTcsSection?     @relation(fields: [tdsTcsSectionId], references: [id])
   items         InvoiceItem[]
   payments     Payment[]
   shareLinks   InvoiceShareLink[]
   activities   InvoiceActivity[]
   versions     InvoiceVersion[]
   creditNotes  CreditNote[]
+  attachments  InvoiceAttachment[]
 
   @@unique([organizationId, invoiceNumber])
   @@index([organizationId, status])
@@ -406,6 +425,7 @@ model Invoice {
   @@index([organizationId, createdAt])
   @@index([organizationId])
   @@index([customerId])
+  @@index([tdsTcsSectionId])
   @@map("invoices")
 }
 
@@ -417,6 +437,7 @@ enum InvoiceStatus {
   PARTIAL
   OVERDUE
   CANCELLED
+  VOID
 }
 
 // ============================================================
@@ -428,6 +449,7 @@ model InvoiceItem {
   description String
   sku         String?
   hsnSac      String? // HSN (goods) / SAC (services) code for GST
+  unit        String? // unit of measure (pcs, hrs, kg…)
   quantity    Decimal @db.Decimal(10, 2)
   unitPrice   Decimal @db.Decimal(12, 2)
   costPrice   Decimal @default(0) @db.Decimal(12, 2)
@@ -652,6 +674,48 @@ model InvoiceVersion {
   @@unique([invoiceId, version])
   @@index([invoiceId])
   @@map("invoice_versions")
+}
+
+// Configurable TDS / TCS sections + rates (per organization).
+// Seeded with common Indian sections on first read; fully editable.
+model TdsTcsSection {
+  id             String   @id @default(cuid())
+  organizationId String
+  type           String // TDS | TCS
+  code           String // e.g. 194C, 206C(1H)
+  name           String // e.g. Payment to Contractors
+  rate           Decimal  @db.Decimal(5, 2)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices     Invoice[]
+
+  @@unique([organizationId, type, code])
+  @@index([organizationId, type])
+  @@map("tds_tcs_sections")
+}
+
+// Invoice file attachments — stored binary-in-DB (mirrors ComplianceDocument).
+model InvoiceAttachment {
+  id             String   @id @default(cuid())
+  invoiceId      String
+  organizationId String
+  fileName       String
+  mimeType       String
+  fileSize       Int
+  checksum       String
+  binaryData     Bytes
+  uploadedById   String?
+  createdAt      DateTime @default(now())
+
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@map("invoice_attachments")
 }
 
 // ============================================================
@@ -1519,11 +1583,15 @@ model RecurringInvoice {
 
   customerId String
 
-  frequency String
+  frequency String // WEEKLY | MONTHLY | QUARTERLY | YEARLY | CUSTOM
+
+  customIntervalDays Int? // used when frequency = CUSTOM
 
   nextRunDate DateTime
 
   lastRunDate DateTime?
+
+  endDate DateTime? // stop generating after this date (inclusive)
 
   isActive Boolean @default(true)
 

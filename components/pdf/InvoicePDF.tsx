@@ -38,8 +38,13 @@ export interface InvoicePDFData {
   subtotal: number;
   discount: number;
   shipping: number;
+  adjustment?: number;
+  roundOff?: number;
   taxRate: number;
   taxAmount: number;
+  tdsTcsType?: "TDS" | "TCS" | null;
+  tdsTcsAmount?: number;
+  tdsTcsLabel?: string | null;
   total: number;
   paidAmount: number;
   balanceDue: number;
@@ -376,10 +381,28 @@ export function InvoicePDF({ data, appearance }: { data: InvoicePDFData; appeara
                 <Text style={styles.totalsValue}>{fmt(Number(data.shipping), curr)}</Text>
               </View>
             )}
+            {!!Number(data.adjustment) && (
+              <View style={styles.totalsRow}>
+                <Text style={styles.totalsLabel}>Adjustment</Text>
+                <Text style={styles.totalsValue}>{(Number(data.adjustment) < 0 ? "− " : "+ ")}{fmt(Math.abs(Number(data.adjustment)), curr)}</Text>
+              </View>
+            )}
             {a.showTaxColumn && (
               <View style={styles.totalsRow}>
                 <Text style={styles.totalsLabel}>Tax ({Number(data.taxRate).toFixed(1)}%)</Text>
                 <Text style={styles.totalsValue}>{fmt(data.taxAmount, curr)}</Text>
+              </View>
+            )}
+            {data.tdsTcsType && !!Number(data.tdsTcsAmount) && (
+              <View style={styles.totalsRow}>
+                <Text style={styles.totalsLabel}>{data.tdsTcsLabel || data.tdsTcsType}</Text>
+                <Text style={styles.totalsValue}>{(data.tdsTcsType === "TDS" ? "− " : "+ ")}{fmt(Number(data.tdsTcsAmount), curr)}</Text>
+              </View>
+            )}
+            {!!Number(data.roundOff) && (
+              <View style={styles.totalsRow}>
+                <Text style={styles.totalsLabel}>Round Off</Text>
+                <Text style={styles.totalsValue}>{(Number(data.roundOff) < 0 ? "− " : "+ ")}{fmt(Math.abs(Number(data.roundOff)), curr)}</Text>
               </View>
             )}
 
