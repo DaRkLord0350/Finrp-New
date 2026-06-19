@@ -219,6 +219,61 @@ export const accountRepository = {
     return count > 0;
   },
 
+  /**
+   * Per-account-type rollup for the accounting dashboard:
+   * opening balances (from accounts) + posted ledger movement (from journal lines).
+   * Kept as two aggregates so the journal-line JOIN never multiplies opening balances.
+   * NOTE: once JournalEntry.status exists (Phase 1) the movement query filters POSTED.
+   */
+  async getTypeRollup(organizationId: string): Promise<{
+    openings: { type: AccountType; opening: Prisma.Decimal; count: number }[];
+    movements: { type: AccountType; debit: Prisma.Decimal; credit: Prisma.Decimal }[];
+  }> {
+    const [openingRows, movementRows] = await Promise.all([
+      prisma.account.groupBy({
+        by: ["type"],
+        where: { organizationId, deletedAt: null },
+        _sum: { openingBalance: true },
+        _count: { _all: true },
+      }),
+      prisma.$queryRaw<{ type: AccountType; debit: string; credit: string }[]>`
+        SELECT a.type AS type,
+          COALESCE(SUM(CASE WHEN jl.type = 'DEBIT'  THEN jl.amount ELSE 0 END), 0)::text AS debit,
+          COALESCE(SUM(CASE WHEN jl.type = 'CREDIT' THEN jl.amount ELSE 0 END), 0)::text AS credit
+        FROM accounts a
+        JOIN journal_lines jl   ON jl."accountId" = a.id
+        JOIN journal_entries je  ON je.id = jl."journalEntryId"
+          AND je."organizationId" = ${organizationId}
+          AND je."deletedAt" IS NULL
+        WHERE a."organizationId" = ${organizationId}
+          AND a."deletedAt" IS NULL
+        GROUP BY a.type
+      `,
+    ]);
+
+    return {
+      openings: openingRows.map((r) => ({
+        type: r.type,
+        opening: r._sum.openingBalance ?? new Prisma.Decimal(0),
+        count: r._count._all,
+      })),
+      movements: movementRows.map((r) => ({
+        type: r.type,
+        debit: new Prisma.Decimal(r.debit),
+        credit: new Prisma.Decimal(r.credit),
+      })),
+    };
+  },
+
+  /** Active / inactive account counts for the dashboard. */
+  async countByStatus(organizationId: string): Promise<{ active: number; inactive: number; total: number }> {
+    const [active, total] = await Promise.all([
+      prisma.account.count({ where: { organizationId, deletedAt: null, isActive: true } }),
+      prisma.account.count({ where: { organizationId, deletedAt: null } }),
+    ]);
+    return { active, inactive: total - active, total };
+  },
+
   /** Sum of journal-line debits/credits for an account within an optional date range. */
   async getLedgerActivity(organizationId: string, id: string, range?: { from?: Date; to?: Date }) {
     const lines = await prisma.journalLine.findMany({

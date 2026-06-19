@@ -16,6 +16,7 @@
 
 import { Prisma, type AccountType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { recomputeAccountBalances } from "@/lib/accounting/balances";
 
 type LedgerClient = Prisma.TransactionClient | typeof prisma;
 
@@ -97,6 +98,11 @@ export async function createCreditJournalEntry(
   await client.journalEntry.create({
     data: {
       organizationId,
+      status: "POSTED",
+      journalType: "SYSTEM",
+      source: opts.entityType ?? "BANK",
+      sourceId: opts.entityId ?? null,
+      postedAt: transactionDate,
       entryDate: transactionDate,
       reference,
       description: narration.slice(0, 255),
@@ -110,6 +116,8 @@ export async function createCreditJournalEntry(
       },
     },
   });
+
+  await recomputeAccountBalances(client, organizationId, [bankAccId, arAccId]);
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +157,11 @@ export async function createDebitJournalEntry(
   await client.journalEntry.create({
     data: {
       organizationId,
+      status: "POSTED",
+      journalType: "SYSTEM",
+      source: opts.entityType ?? "BANK",
+      sourceId: opts.entityId ?? null,
+      postedAt: transactionDate,
       entryDate: transactionDate,
       reference,
       description: narration.slice(0, 255),
@@ -162,6 +175,8 @@ export async function createDebitJournalEntry(
       },
     },
   });
+
+  await recomputeAccountBalances(client, organizationId, [expAccId, bankAccId]);
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +218,10 @@ export async function createTransferJournalEntry(
   await client.journalEntry.create({
     data: {
       organizationId,
+      status: "POSTED",
+      journalType: "SYSTEM",
+      source: "BANK_TRANSFER",
+      postedAt: transferDate,
       entryDate: transferDate,
       reference,
       description: narration.slice(0, 255),
@@ -216,6 +235,8 @@ export async function createTransferJournalEntry(
       },
     },
   });
+
+  await recomputeAccountBalances(client, organizationId, [toAccId, fromAccId]);
 }
 
 // ---------------------------------------------------------------------------

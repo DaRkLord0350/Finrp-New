@@ -26,6 +26,15 @@ export const REPORTS: ReportDefinition[] = [
     enabled: true,
   },
   {
+    id: "balance-sheet",
+    slug: "balance-sheet",
+    category: "business_overview",
+    name: "Balance Sheet",
+    description: "Assets, liabilities and equity as of a date",
+    icon: "Scale",
+    enabled: true,
+  },
+  {
     id: "sales-summary",
     slug: "sales-summary",
     category: "business_overview",

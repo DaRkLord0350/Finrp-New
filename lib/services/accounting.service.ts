@@ -9,10 +9,15 @@
 // ============================================================
 
 import { Prisma, type Account, type AccountType } from "@prisma/client";
-import { accountRepository, type AccountListItem } from "@/lib/repositories/account.repository";
+import { accountRepository } from "@/lib/repositories/account.repository";
 import { createAuditLog } from "@/lib/audit";
 import { ACCOUNT_SUBTYPES } from "@/lib/validators/chart-of-accounts";
-import type { CreateAccountInput, UpdateAccountInput } from "@/lib/validators/chart-of-accounts";
+import type {
+  CreateAccountInput,
+  UpdateAccountInput,
+  ImportAccountRow,
+  ImportAccountsResult,
+} from "@/lib/validators/chart-of-accounts";
 
 export type NormalBalance = "DEBIT" | "CREDIT";
 
@@ -42,9 +47,19 @@ export type PostingAccountInfo = {
 // Pure helpers — exposed for the Journal Entry / GL / reporting modules
 // ---------------------------------------------------------------------------
 
-/** ASSET, EXPENSE, COGS and STOCK accounts increase with a debit; the rest with a credit. */
+/**
+ * ASSET, EXPENSE, COGS, STOCK, BANK and CASH accounts increase with a debit;
+ * the rest (LIABILITY, EQUITY, INCOME, TAX) increase with a credit.
+ * TAX is modelled as a tax *liability* (GST/TDS payable) — credit-normal.
+ * Input-tax-credit / refunds belong under ASSET ("Tax Receivable").
+ */
 export function normalBalanceForType(type: AccountType): NormalBalance {
-  return type === "ASSET" || type === "EXPENSE" || type === "COGS" || type === "STOCK"
+  return type === "ASSET" ||
+    type === "EXPENSE" ||
+    type === "COGS" ||
+    type === "STOCK" ||
+    type === "BANK" ||
+    type === "CASH"
     ? "DEBIT"
     : "CREDIT";
 }
@@ -132,6 +147,64 @@ export const accountingService = {
       throw new AccountingError(`"${account.name}" is a parent account — post to one of its sub-accounts instead`, 422);
     }
     return toPostingAccountInfo(account);
+  },
+
+  /**
+   * accountingService.getDashboardSummary() — real-data KPIs for the
+   * Accounting overview. Buckets per-type opening balances + posted ledger
+   * movement into Assets / Liabilities / Equity / Income / Expense, all in
+   * each type's normal direction, so the accounting equation holds.
+   */
+  async getDashboardSummary(organizationId: string): Promise<{
+    accounts: { active: number; inactive: number; total: number };
+    assets: number;
+    liabilities: number;
+    equity: number;
+    income: number;
+    expense: number;
+    netIncome: number;
+    equationDelta: number;
+  }> {
+    const [{ openings, movements }, accounts] = await Promise.all([
+      accountRepository.getTypeRollup(organizationId),
+      accountRepository.countByStatus(organizationId),
+    ]);
+
+    // type → net balance in its own normal direction (opening + movement)
+    const netByType = new Map<AccountType, number>();
+    for (const o of openings) {
+      netByType.set(o.type, (netByType.get(o.type) ?? 0) + Number(o.opening));
+    }
+    for (const m of movements) {
+      const debit = Number(m.debit);
+      const credit = Number(m.credit);
+      const normal = normalBalanceForType(m.type);
+      const movementNormal = normal === "DEBIT" ? debit - credit : credit - debit;
+      netByType.set(m.type, (netByType.get(m.type) ?? 0) + movementNormal);
+    }
+
+    const sum = (types: AccountType[]) =>
+      types.reduce((s, t) => s + (netByType.get(t) ?? 0), 0);
+
+    const assets = sum(["ASSET", "BANK", "CASH", "STOCK"]);
+    const liabilities = sum(["LIABILITY", "TAX"]);
+    const equity = sum(["EQUITY"]);
+    const income = sum(["INCOME"]);
+    const expense = sum(["EXPENSE", "COGS"]);
+    const netIncome = income - expense;
+
+    return {
+      accounts,
+      assets,
+      liabilities,
+      equity,
+      income,
+      expense,
+      netIncome,
+      // Assets = Liabilities + Equity + (Income − Expense); delta ≈ 0 when balanced
+      equationDelta:
+        Math.round((assets - (liabilities + equity + netIncome)) * 100) / 100,
+    };
   },
 
   /** accountingService.getAccountTree() — full hierarchy for the tree view. */
@@ -306,6 +379,121 @@ export const accountingService = {
       description: `Deleted account "${existing.name}" (${existing.code})`,
       oldValue: serializeAccount(existing),
     });
+  },
+
+  /**
+   * accountingService.importAccounts() — upsert accounts from a parsed CSV.
+   * Two passes so parent codes can reference accounts defined later in the file.
+   * System-generated accounts are never modified; account *type* is never changed
+   * by an import (would corrupt ledger normalization) — only name/subtype/parent.
+   */
+  async importAccounts(
+    organizationId: string,
+    actor: { userId: string | null },
+    rows: ImportAccountRow[]
+  ): Promise<ImportAccountsResult> {
+    const result: ImportAccountsResult = {
+      total: rows.length,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: [],
+    };
+
+    const codeToId = new Map<string, string>();
+
+    // Pass 1 — create or update each account (without parent links).
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNum = i + 2; // 1-based + header line
+      try {
+        if (codeToId.has(row.code)) {
+          throw new AccountingError(`Duplicate code "${row.code}" within the file`);
+        }
+        if (row.subType && !ACCOUNT_SUBTYPES[row.type]?.includes(row.subType)) {
+          throw new AccountingError(`"${row.subType}" is not a valid subtype for ${row.type}`);
+        }
+
+        const existing = await accountRepository.findByCode(organizationId, row.code);
+        if (existing) {
+          if (existing.isSystemGenerated) {
+            codeToId.set(row.code, existing.id);
+            result.skipped++;
+            continue;
+          }
+          const updated = await accountRepository.update(organizationId, existing.id, {
+            name: row.name,
+            accountSubType: row.subType ?? null,
+            updatedBy: actor.userId,
+          });
+          if (updated) {
+            codeToId.set(row.code, updated.id);
+            result.updated++;
+          }
+        } else {
+          const created = await accountRepository.create(organizationId, {
+            code: row.code,
+            name: row.name,
+            type: row.type,
+            accountSubType: row.subType ?? null,
+            openingBalance: row.openingBalance,
+            createdBy: actor.userId,
+          });
+          codeToId.set(row.code, created.id);
+          result.created++;
+        }
+      } catch (err) {
+        result.errors.push({
+          row: rowNum,
+          code: row.code,
+          message: err instanceof Error ? err.message : "Import failed",
+        });
+      }
+    }
+
+    // Pass 2 — wire up parent relationships (codes may resolve to existing or just-imported accounts).
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row.parentCode) continue;
+      const rowNum = i + 2;
+      const childId = codeToId.get(row.code);
+      if (!childId) continue; // failed in pass 1
+
+      try {
+        if (row.parentCode === row.code) {
+          throw new AccountingError("An account cannot be its own parent");
+        }
+        const parent =
+          (await accountRepository.findByCode(organizationId, row.parentCode)) ?? null;
+        if (!parent) {
+          throw new AccountingError(`Parent code "${row.parentCode}" not found`);
+        }
+        if (parent.type !== row.type) {
+          throw new AccountingError("A sub-account must have the same account type as its parent");
+        }
+        await accountRepository.update(organizationId, childId, {
+          parentAccount: { connect: { id: parent.id } },
+          updatedBy: actor.userId,
+        });
+      } catch (err) {
+        result.errors.push({
+          row: rowNum,
+          code: row.code,
+          message: err instanceof Error ? err.message : "Failed to set parent",
+        });
+      }
+    }
+
+    await createAuditLog({
+      organizationId,
+      userId: actor.userId ?? undefined,
+      action: "IMPORT",
+      entity: "account",
+      description: `Imported chart of accounts: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped, ${result.errors.length} error(s)`,
+      newValue: { created: result.created, updated: result.updated, skipped: result.skipped, errors: result.errors.length },
+    });
+
+    return result;
   },
 
   async setActiveStatus(

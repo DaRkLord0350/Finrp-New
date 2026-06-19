@@ -21,16 +21,18 @@ export type SystemAccountSeed = {
 };
 
 export const SYSTEM_ACCOUNTS: SystemAccountSeed[] = [
-  { code: "1000", name: "Cash",                  type: "ASSET",     accountSubType: "Cash",                  description: "Cash on hand" },
-  { code: "1010", name: "Bank",                  type: "ASSET",     accountSubType: "Bank",                  description: "Primary operating bank account" },
+  { code: "1000", name: "Cash",                  type: "CASH",      accountSubType: "Cash on Hand",          description: "Cash on hand" },
+  { code: "1010", name: "Bank",                  type: "BANK",      accountSubType: "Current Account",       description: "Primary operating bank account" },
   { code: "1100", name: "Accounts Receivable",   type: "ASSET",     accountSubType: "Accounts Receivable",   description: "Amounts owed to the business by customers" },
   { code: "1200", name: "Inventory Asset",       type: "ASSET",     accountSubType: "Inventory Asset",       description: "Value of goods held for sale" },
   { code: "2000", name: "Accounts Payable",      type: "LIABILITY", accountSubType: "Accounts Payable",      description: "Amounts the business owes to vendors" },
-  { code: "2100", name: "Tax Payable",           type: "LIABILITY", accountSubType: "Tax Payable",           description: "GST/TDS and other tax liabilities owed" },
+  { code: "2100", name: "Tax Payable",           type: "TAX",       accountSubType: "Tax Payable",           description: "GST/TDS and other tax liabilities owed" },
   { code: "3000", name: "Owner Equity",          type: "EQUITY",    accountSubType: "Owner Equity",          description: "Owner's stake in the business" },
   { code: "3100", name: "Retained Earnings",     type: "EQUITY",    accountSubType: "Retained Earnings",     description: "Accumulated profits retained in the business" },
   { code: "4000", name: "Sales",                 type: "INCOME",    accountSubType: "Sales",                 description: "Revenue from sale of goods and services" },
+  { code: "4900", name: "Foreign Exchange Gain/Loss", type: "INCOME", accountSubType: "Other Income",       description: "Unrealized/realized currency revaluation gains and losses" },
   { code: "5000", name: "Cost of Goods Sold",    type: "COGS",      accountSubType: "Materials",             description: "Direct cost of goods and services sold" },
+  { code: "5950", name: "Rounding Off",          type: "EXPENSE",   accountSubType: "Other Expense",         description: "Rounding differences on postings" },
 ];
 
 type Tx = Prisma.TransactionClient | PrismaClient;

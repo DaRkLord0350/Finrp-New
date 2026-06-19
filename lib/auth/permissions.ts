@@ -51,6 +51,8 @@ export const rolePermissions: Record<Role, string[]> = {
     "accounting.write",
     "accounting.delete",
     "accounting.export",
+    "accounting.post",
+    "accounting.manage",
     "loans.read",
     "loans.write",
     // Inventory
@@ -102,6 +104,7 @@ export const rolePermissions: Record<Role, string[]> = {
     "accounting.read",
     "accounting.write",
     "accounting.export",
+    "accounting.post",
     "loans.read",
     // Inventory
     "inventory.read",
@@ -134,6 +137,9 @@ export const rolePermissions: Record<Role, string[]> = {
     "finance.write",
     "accounting.read",
     "accounting.write",
+    "accounting.export",
+    "accounting.post",
+    "accounting.manage",
     "loans.read",
     // Compliance
     "compliance.read",

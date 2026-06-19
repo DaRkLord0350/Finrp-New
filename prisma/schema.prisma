@@ -118,6 +118,11 @@ model Organization {
   invoiceVersions   InvoiceVersion[]
   creditNotes       CreditNote[]
 
+  // ── Accounting (fiscal years, periods, settings) ─
+  fiscalYears        FiscalYear[]
+  fiscalPeriods      FiscalPeriod[]
+  accountingSettings AccountingSettings?
+
   @@index([slug])
   @@map("organizations")
 }
@@ -169,6 +174,7 @@ model User {
   purchases               Purchase[]           @relation("PurchaseCreatedBy")
   expenses                Expense[]            @relation("ExpenseCreatedBy")
   journalEntries          JournalEntry[]       @relation("JournalEntryCreatedBy")
+  journalEntriesPosted    JournalEntry[]       @relation("JournalEntryPostedBy")
   leads                   Lead[]               @relation("LeadAssignedTo")
   caClients               CAClient[]           @relation("CAManagedClients")
   caMessages              CAMessage[]          @relation("CASentMessages")
@@ -239,6 +245,9 @@ enum AccountType {
   EXPENSE
   COGS
   STOCK
+  BANK
+  CASH
+  TAX
 }
 
 enum EntryType {
@@ -939,32 +948,81 @@ model Account {
   @@map("accounts")
 }
 
+enum JournalStatus {
+  DRAFT
+  POSTED
+  VOID
+}
+
+enum JournalType {
+  MANUAL
+  SYSTEM
+  OPENING
+  CLOSING
+  FOREX
+  ADJUSTMENT
+}
+
 model JournalEntry {
   id String @id @default(cuid())
 
   organizationId String
 
+  // Human-facing sequence number (e.g. JN-2026-000001) — manual/posted entries.
+  journalNumber String?
+
+  status      JournalStatus @default(POSTED)
+  journalType JournalType   @default(MANUAL)
+
   reference   String?
   description String?
 
+  // Origin of the entry for system/integration postings (INVOICE/PAYMENT/EXPENSE/BANK/…).
+  source   String?
+  sourceId String?
+
   entryDate DateTime @default(now())
+
+  // Multi-currency: amounts are stored in base currency; these document the source rate.
+  currency     String  @default("INR")
+  exchangeRate Decimal @default(1) @db.Decimal(18, 8)
+
+  notes String?
 
   totalDebit Decimal @default(0) @db.Decimal(16, 2)
 
   totalCredit Decimal @default(0) @db.Decimal(16, 2)
 
   createdById String?
+  postedById  String?
+  postedAt    DateTime?
+
+  // Reversal linkage — a VOID/reversing entry points back at the original.
+  reversalOfId String?
+
+  // Fiscal period the entry posts into (resolved at post time).
+  fiscalYearId   String?
+  fiscalPeriodId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   deletedAt DateTime?
 
-  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdByUser User?         @relation("JournalEntryCreatedBy", fields: [createdById], references: [id])
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdByUser User?          @relation("JournalEntryCreatedBy", fields: [createdById], references: [id])
+  postedByUser  User?          @relation("JournalEntryPostedBy", fields: [postedById], references: [id])
+  reversalOf    JournalEntry?  @relation("JournalReversal", fields: [reversalOfId], references: [id])
+  reversals     JournalEntry[] @relation("JournalReversal")
+  fiscalYear    FiscalYear?    @relation(fields: [fiscalYearId], references: [id])
+  fiscalPeriod  FiscalPeriod?  @relation(fields: [fiscalPeriodId], references: [id])
   lines         JournalLine[]
 
+  @@unique([organizationId, journalNumber])
   @@index([organizationId, entryDate])
+  @@index([organizationId, status])
+  @@index([organizationId, journalType])
+  @@index([organizationId, source, sourceId])
   @@map("journal_entries")
 }
 
@@ -981,12 +1039,121 @@ model JournalLine {
 
   description String?
 
+  lineOrder Int @default(0)
+
   journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   account      Account      @relation(fields: [accountId], references: [id])
 
   @@index([journalEntryId])
   @@index([accountId])
   @@map("journal_lines")
+}
+
+model JournalNumberCounter {
+  id String @id @default(cuid())
+
+  organizationId String
+  prefix         String
+  year           Int
+  lastNumber     Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, prefix, year])
+  @@map("journal_number_counters")
+}
+
+// ============================================================
+// FISCAL YEARS, PERIODS & ACCOUNTING SETTINGS
+// ============================================================
+enum FiscalYearStatus {
+  OPEN
+  CLOSED
+}
+
+enum FiscalPeriodStatus {
+  OPEN
+  CLOSED
+  LOCKED
+}
+
+model FiscalYear {
+  id String @id @default(cuid())
+
+  organizationId String
+
+  name      String // e.g. "FY 2026-27"
+  startDate DateTime
+  endDate   DateTime
+
+  status FiscalYearStatus @default(OPEN)
+
+  closedAt    DateTime?
+  closedById  String?
+  // Journal entries created by the year-end close (closing + opening).
+  closingJournalId String?
+  openingJournalId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  periods      FiscalPeriod[]
+  journals     JournalEntry[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, status])
+  @@map("fiscal_years")
+}
+
+model FiscalPeriod {
+  id String @id @default(cuid())
+
+  organizationId String
+  fiscalYearId   String
+
+  name         String // e.g. "Apr 2026"
+  periodNumber Int
+  startDate    DateTime
+  endDate      DateTime
+
+  status FiscalPeriodStatus @default(OPEN)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fiscalYear   FiscalYear     @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+  journals     JournalEntry[]
+
+  @@unique([fiscalYearId, periodNumber])
+  @@index([organizationId, startDate, endDate])
+  @@map("fiscal_periods")
+}
+
+model AccountingSettings {
+  id String @id @default(cuid())
+
+  organizationId String @unique
+
+  baseCurrency String @default("INR")
+
+  // Transaction locking — postings on/before this date are blocked
+  // unless the actor holds `accounting.manage`.
+  lockDate   DateTime?
+  lockReason String?
+
+  // System account mappings used by closing / forex / rounding postings.
+  retainedEarningsAccountId String?
+  forexGainLossAccountId    String?
+  roundingAccountId         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("accounting_settings")
 }
 
 // ============================================================
@@ -1283,6 +1450,11 @@ enum AuditAction {
   DELETE
   LOGIN
   EXPORT
+  IMPORT
+  POST
+  REVERSE
+  LOCK
+  CLOSE
   SETTINGS_CHANGE
 }
 

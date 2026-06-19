@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Plus, RefreshCw, Wallet, Download, ListTree, Table as TableIcon,
+  Plus, RefreshCw, Wallet, Download, Upload, ListTree, Table as TableIcon,
   CheckCircle2, XCircle,
 } from "lucide-react";
 import { SearchBar } from "@/components/ui/SearchBar";
@@ -21,6 +21,7 @@ import { ACCOUNT_TYPES } from "@/lib/validators/chart-of-accounts";
 import { AccountsTable } from "./AccountsTable";
 import { AccountTreeView } from "./AccountTreeView";
 import { AccountFormModal } from "./AccountFormModal";
+import { ImportAccountsModal } from "./ImportAccountsModal";
 
 type ViewMode = "table" | "tree";
 
@@ -38,6 +39,7 @@ export default function ChartOfAccountsPage() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingAccount, setEditingAccount] = useState<ChartAccount | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -177,6 +179,10 @@ export default function ChartOfAccountsPage() {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={refetch} className="btn-ghost" style={{ padding: "8px 12px" }} title="Refresh">
             <RefreshCw size={15} style={loading ? { animation: "spin 1s linear infinite" } : {}} />
+          </button>
+          <button onClick={() => setShowImport(true)} className="btn-ghost" style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
+            <Upload size={15} />
+            {isMobile ? "" : "Import"}
           </button>
           <button onClick={handleExport} className="btn-ghost" style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
             <Download size={15} />
@@ -365,6 +371,13 @@ export default function ChartOfAccountsPage() {
           onClose={handleFormClose}
           onCreate={createAccount}
           onUpdate={updateAccount}
+        />
+      )}
+
+      {showImport && (
+        <ImportAccountsModal
+          onClose={() => setShowImport(false)}
+          onImported={refetch}
         />
       )}
 

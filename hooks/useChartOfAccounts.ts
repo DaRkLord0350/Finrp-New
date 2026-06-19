@@ -8,7 +8,7 @@
 import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@/lib/queryCache";
 
-export type AccountType = "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE" | "COGS" | "STOCK";
+export type AccountType = "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE" | "COGS" | "STOCK" | "BANK" | "CASH" | "TAX";
 
 export interface ChartAccount {
   id: string;
