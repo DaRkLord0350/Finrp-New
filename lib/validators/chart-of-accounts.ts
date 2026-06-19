@@ -12,6 +12,9 @@ export const ACCOUNT_TYPES = [
   "EXPENSE",
   "COGS",
   "STOCK",
+  "BANK",
+  "CASH",
+  "TAX",
 ] as const;
 
 export const AccountTypeEnum = z.enum(ACCOUNT_TYPES);
@@ -68,6 +71,28 @@ export const ACCOUNT_SUBTYPES: Record<(typeof ACCOUNT_TYPES)[number], string[]> 
   ],
   STOCK: [
     "Inventory Asset",
+  ],
+  BANK: [
+    "Bank",
+    "Current Account",
+    "Savings Account",
+    "Overdraft",
+    "Credit Card",
+    "Other Bank",
+  ],
+  CASH: [
+    "Cash",
+    "Petty Cash",
+    "Cash on Hand",
+    "Undeposited Funds",
+  ],
+  TAX: [
+    "Tax Payable",
+    "GST Payable",
+    "TDS Payable",
+    "Input Tax Credit",
+    "Output Tax",
+    "Other Tax",
   ],
 };
 
@@ -128,6 +153,26 @@ export const BulkUpdateAccountsSchema = z.object({
   accountIds: z.array(z.string().min(1)).min(1, "Select at least one account").max(500),
   action: z.enum(["activate", "deactivate"]),
 });
+
+// One parsed row of an uploaded Chart of Accounts CSV.
+export const ImportAccountRowSchema = z.object({
+  code: accountCodeSchema,
+  name: z.string().trim().min(2, "Account name must be at least 2 characters").max(120),
+  type: AccountTypeEnum,
+  subType: z.string().trim().max(60).optional().nullable(),
+  parentCode: z.string().trim().max(20).optional().nullable(),
+  openingBalance: z.coerce.number().finite().default(0),
+});
+
+export type ImportAccountRow = z.infer<typeof ImportAccountRowSchema>;
+
+export type ImportAccountsResult = {
+  total: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: { row: number; code: string; message: string }[];
+};
 
 export const ExportAccountsQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),

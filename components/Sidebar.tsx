@@ -48,7 +48,7 @@ const navGroups: NavGroupConfig[] = [
       { label: "Overview",   href: "/dashboard",  icon: LayoutDashboard, module: "dashboard" },
       { label: "CRM",        href: "/crm",        icon: Users, module: "crm" },
       { label: "Finance",    href: "/finance",    icon: BarChart3, module: "finance" },
-      { label: "Accounting", href: "/accounting/chart-of-accounts", icon: Wallet, activePrefix: "/accounting", module: "accounting" },
+      { label: "Accounting", href: "/accounting", icon: Wallet, activePrefix: "/accounting", module: "accounting" },
       { label: "ERP",        href: "/erp",        icon: Boxes, module: "erp" },
       { label: "Compliance", href: "/compliance", icon: ShieldCheck, module: "compliance" },
       { label: "Reports",    href: "/reports",    icon: BarChart2, module: "reports" },

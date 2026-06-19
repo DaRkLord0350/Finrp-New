@@ -18,6 +18,7 @@ import { generateApAging }          from "./ap-aging";
 import { generateVendorBalance }    from "./vendor-balance";
 import { generateTrialBalance }     from "./trial-balance";
 import { generateGeneralLedger }    from "./general-ledger";
+import { generateBalanceSheet }     from "./balance-sheet";
 import { generateActivityLogs }     from "./activity-logs";
 
 const REPORT_TTL_SECONDS = 300; // 5-minute cache TTL
@@ -40,6 +41,7 @@ const GENERATORS: Record<string, Generator> = {
   "vendor-balance":   generateVendorBalance,
   "trial-balance":    generateTrialBalance,
   "general-ledger":   generateGeneralLedger,
+  "balance-sheet":    generateBalanceSheet,
   "activity-logs":    generateActivityLogs,
 };
 
