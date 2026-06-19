@@ -119,9 +119,13 @@ model Organization {
   creditNotes       CreditNote[]
 
   // ── Accounting (fiscal years, periods, settings) ─
-  fiscalYears        FiscalYear[]
-  fiscalPeriods      FiscalPeriod[]
-  accountingSettings AccountingSettings?
+  fiscalYears          FiscalYear[]
+  fiscalPeriods        FiscalPeriod[]
+  accountingSettings   AccountingSettings?
+  budgets               Budget[]
+  orgExchangeRates      OrgExchangeRate[]
+  currencyRevaluations  CurrencyRevaluation[]
+  bulkAccountUpdateJobs BulkAccountUpdateJob[]
 
   @@index([slug])
   @@map("organizations")
@@ -377,16 +381,18 @@ model Invoice {
   invoicePdf     String?
   sentAt         DateTime?
   viewedAt       DateTime?
-  exchangeRate   Decimal?  @db.Decimal(16, 6)
-  baseCurrency   String? // For multi-currency tracking
-  journalEntryId String? // Link to general ledger
+  exchangeRate     Decimal?  @db.Decimal(16, 6)
+  baseCurrency     String? // For multi-currency tracking
+  journalEntryId   String? // Link to general ledger
+  incomeAccountId  String? // default income account for ledger posting
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  customer     Customer           @relation(fields: [customerId], references: [id])
-  createdBy    User?              @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
-  items        InvoiceItem[]
+  organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer      Customer           @relation(fields: [customerId], references: [id])
+  createdBy     User?              @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  incomeAccount Account?           @relation("InvoiceIncomeAccount", fields: [incomeAccountId], references: [id])
+  items         InvoiceItem[]
   payments     Payment[]
   shareLinks   InvoiceShareLink[]
   activities   InvoiceActivity[]
@@ -431,9 +437,13 @@ model InvoiceItem {
   amount      Decimal @db.Decimal(12, 2)
   profit      Decimal @default(0) @db.Decimal(12, 2)
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  incomeAccountId String?
+
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  incomeAccount Account? @relation("InvoiceItemIncomeAccount", fields: [incomeAccountId], references: [id])
 
   @@index([invoiceId])
+  @@index([incomeAccountId])
   @@map("invoice_items")
 }
 
@@ -457,12 +467,14 @@ model CreditNote {
   items            Json // snapshot of credited line items
   issueDate        DateTime @default(now())
   createdById      String?
+  accountId        String? // account the credit posts against
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   customer     Customer     @relation(fields: [customerId], references: [id])
+  account      Account?     @relation("CreditNoteAccount", fields: [accountId], references: [id])
 
   @@unique([organizationId, creditNoteNumber])
   @@index([invoiceId])
@@ -491,11 +503,13 @@ model Payment {
   bankAccountId  String?
   createdById    String?
   journalEntryId String? // Link to general ledger
+  depositToAccountId String? // ledger account funds are deposited to
 
-  bankAccount  BankAccount? @relation("BankAccountPayments", fields: [bankAccountId], references: [id])
-  invoice      Invoice      @relation(fields: [invoiceId], references: [id])
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User?        @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  bankAccount     BankAccount? @relation("BankAccountPayments", fields: [bankAccountId], references: [id])
+  invoice         Invoice      @relation(fields: [invoiceId], references: [id])
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       User?        @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  depositToAccount Account?    @relation("PaymentDepositAccount", fields: [depositToAccountId], references: [id])
 
   @@index([organizationId])
   @@index([invoiceId])
@@ -866,13 +880,15 @@ model Vendor {
   notes              String?
   isActive           Boolean   @default(true)
   organizationId     String
+  payableAccountId   String? // default A/P account for this vendor
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   deletedAt          DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  purchases    Purchase[]
-  items        Item[]
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  purchases      Purchase[]
+  items          Item[]
+  payableAccount Account?     @relation("VendorPayableAccount", fields: [payableAccountId], references: [id])
 
   @@unique([organizationId, vendorCode])
   @@index([organizationId])
@@ -937,8 +953,18 @@ model Account {
   organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   journalLines JournalLine[]
   loans        Loan[]
+  budgetLines  BudgetLine[]
 
   expenses Expense[] @relation("ExpensePaymentAccount")
+
+  // Source-document account references (used by Bulk Account Update + posting)
+  invoiceIncomeLinks       Invoice[]      @relation("InvoiceIncomeAccount")
+  invoiceItemIncomeLinks   InvoiceItem[]  @relation("InvoiceItemIncomeAccount")
+  paymentDepositLinks      Payment[]      @relation("PaymentDepositAccount")
+  purchaseExpenseLinks     Purchase[]     @relation("PurchaseExpenseAccount")
+  purchaseItemExpenseLinks PurchaseItem[] @relation("PurchaseItemExpenseAccount")
+  vendorPayableLinks       Vendor[]       @relation("VendorPayableAccount")
+  creditNoteLinks          CreditNote[]   @relation("CreditNoteAccount")
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -1100,6 +1126,7 @@ model FiscalYear {
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   periods      FiscalPeriod[]
   journals     JournalEntry[]
+  budgets      Budget[]
 
   @@unique([organizationId, name])
   @@index([organizationId, status])
@@ -1154,6 +1181,173 @@ model AccountingSettings {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("accounting_settings")
+}
+
+// ============================================================
+// BUDGETS
+// ============================================================
+enum BudgetGranularity {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum BudgetStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model Budget {
+  id String @id @default(cuid())
+
+  organizationId String
+  fiscalYearId   String
+
+  name        String
+  granularity BudgetGranularity @default(MONTHLY)
+  status      BudgetStatus      @default(DRAFT)
+
+  createdById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fiscalYear   FiscalYear   @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+  lines        BudgetLine[]
+
+  @@unique([organizationId, fiscalYearId, name])
+  @@index([organizationId, status])
+  @@map("budgets")
+}
+
+model BudgetLine {
+  id String @id @default(cuid())
+
+  budgetId    String
+  accountId   String
+  periodIndex Int // 0-based; 0-11 monthly, 0-3 quarterly, 0 yearly
+  amount      Decimal @default(0) @db.Decimal(16, 2)
+
+  budget  Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@unique([budgetId, accountId, periodIndex])
+  @@index([budgetId])
+  @@index([accountId])
+  @@map("budget_lines")
+}
+
+// ============================================================
+// CURRENCY — org rate book + revaluation runs
+// ============================================================
+enum RevaluationStatus {
+  DRAFT
+  POSTED
+}
+
+model OrgExchangeRate {
+  id String @id @default(cuid())
+
+  organizationId String
+
+  baseCurrency   String
+  targetCurrency String
+  rate           Decimal  @db.Decimal(18, 8)
+  asOfDate       DateTime
+  source         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, baseCurrency, targetCurrency, asOfDate])
+  @@index([organizationId, targetCurrency, asOfDate])
+  @@map("org_exchange_rates")
+}
+
+model CurrencyRevaluation {
+  id String @id @default(cuid())
+
+  organizationId String
+
+  asOfDate      DateTime
+  baseCurrency  String
+  status        RevaluationStatus @default(DRAFT)
+  totalGainLoss Decimal           @default(0) @db.Decimal(16, 2)
+
+  journalEntryId String?
+  createdById    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lines        CurrencyRevaluationLine[]
+
+  @@index([organizationId, status])
+  @@map("currency_revaluations")
+}
+
+// ============================================================
+// BULK ACCOUNT UPDATE — replace an account reference across source
+// documents via a background (BullMQ) job, with progress tracking.
+// ============================================================
+enum BulkUpdateStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model BulkAccountUpdateJob {
+  id String @id @default(cuid())
+
+  organizationId String
+
+  fromAccountId String
+  toAccountId   String
+  scopes        String[] // entity keys: invoices, payments, purchases, etc.
+
+  status          BulkUpdateStatus @default(QUEUED)
+  totalRecords    Int              @default(0)
+  processedRecords Int             @default(0)
+  perEntityCounts Json? // { invoices: 12, payments: 3, ... }
+  error           String?
+
+  createdById String?
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@map("bulk_account_update_jobs")
+}
+
+model CurrencyRevaluationLine {
+  id String @id @default(cuid())
+
+  revaluationId String
+
+  accountId      String
+  currency       String
+  foreignBalance Decimal @db.Decimal(18, 4)
+  oldRate        Decimal @db.Decimal(18, 8)
+  newRate        Decimal @db.Decimal(18, 8)
+  baseBefore     Decimal @db.Decimal(16, 2)
+  baseAfter      Decimal @db.Decimal(16, 2)
+  gainLoss       Decimal @db.Decimal(16, 2)
+
+  revaluation CurrencyRevaluation @relation(fields: [revaluationId], references: [id], onDelete: Cascade)
+
+  @@index([revaluationId])
+  @@map("currency_revaluation_lines")
 }
 
 // ============================================================
@@ -1770,14 +1964,16 @@ model Purchase {
   deliveredAt      DateTime?
   notes            String?
   journalEntryId   String? // Link to general ledger
+  expenseAccountId String? // default expense account for ledger posting
   purchaseDate     DateTime       @default(now())
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  vendor       Vendor?        @relation(fields: [vendorId], references: [id])
-  createdBy    User?          @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
-  items        PurchaseItem[]
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendor         Vendor?        @relation(fields: [vendorId], references: [id])
+  createdBy      User?          @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
+  expenseAccount Account?       @relation("PurchaseExpenseAccount", fields: [expenseAccountId], references: [id])
+  items          PurchaseItem[]
 
   @@unique([organizationId, purchaseNumber])
   @@index([organizationId, purchaseDate])
@@ -1806,10 +2002,14 @@ model PurchaseItem {
   taxAmount   Decimal @default(0) @db.Decimal(12, 2)
   amount      Decimal @db.Decimal(12, 2)
 
-  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  item     Item?    @relation(fields: [itemId], references: [id])
+  expenseAccountId String?
+
+  purchase       Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  item           Item?    @relation(fields: [itemId], references: [id])
+  expenseAccount Account? @relation("PurchaseItemExpenseAccount", fields: [expenseAccountId], references: [id])
 
   @@index([purchaseId])
+  @@index([expenseAccountId])
   @@map("purchase_items")
 }
 
