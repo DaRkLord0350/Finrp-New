@@ -17,7 +17,7 @@ import { accountingService } from "@/lib/services/accounting.service";
 import { createAuditLog } from "@/lib/audit";
 import { generateNextJournalNumber } from "@/lib/generators/journal-number";
 import { recomputeAccountBalances } from "@/lib/accounting/balances";
-import { assertPostingAllowed, PeriodLockedError } from "@/lib/accounting/period";
+import { assertPostingAllowed, PeriodLockedError, resolveFiscalPeriod } from "@/lib/accounting/period";
 import type { CreateJournalInput, UpdateJournalInput, ListJournalsQuery } from "@/lib/validators/journal";
 
 class JournalError extends Error {
@@ -79,6 +79,10 @@ export const journalService = {
       await assertPostingAllowed(organizationId, input.entryDate, { canOverride: actor.canOverrideLock });
     }
 
+    const fiscal = input.post
+      ? await resolveFiscalPeriod(organizationId, input.entryDate)
+      : { fiscalYearId: null, fiscalPeriodId: null };
+
     const created = await prisma.$transaction(async (tx) => {
       const journalNumber = input.post
         ? await generateNextJournalNumber(organizationId, { client: tx })
@@ -101,6 +105,8 @@ export const journalService = {
           createdById: actor.userId,
           postedById: input.post ? actor.userId : null,
           postedAt: input.post ? new Date() : null,
+          fiscalYearId: fiscal.fiscalYearId,
+          fiscalPeriodId: fiscal.fiscalPeriodId,
           lines: {
             create: input.lines.map((l, i) => ({
               accountId: l.accountId,
@@ -197,11 +203,20 @@ export const journalService = {
     await validateAccounts(organizationId, existing.lines.map((l) => ({ accountId: l.accountId })));
     await assertPostingAllowed(organizationId, existing.entryDate, { canOverride: actor.canOverrideLock });
 
+    const fiscal = await resolveFiscalPeriod(organizationId, existing.entryDate);
+
     await prisma.$transaction(async (tx) => {
       const journalNumber = existing.journalNumber ?? (await generateNextJournalNumber(organizationId, { client: tx }));
       await tx.journalEntry.update({
         where: { id },
-        data: { status: "POSTED", journalNumber, postedById: actor.userId, postedAt: new Date() },
+        data: {
+          status: "POSTED",
+          journalNumber,
+          postedById: actor.userId,
+          postedAt: new Date(),
+          fiscalYearId: fiscal.fiscalYearId,
+          fiscalPeriodId: fiscal.fiscalPeriodId,
+        },
       });
       await recomputeAccountBalances(tx, organizationId, existing.lines.map((l) => l.accountId));
     });
