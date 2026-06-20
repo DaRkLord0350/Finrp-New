@@ -27,7 +27,7 @@ export default async function CAHubLayout({
     redirect("/sign-in");
   }
 
-  if (!user.userRole) redirect("/onboarding/role");
+  if (!user.userRole) redirect("/onboarding/welcome");
   if (user.userRole === "CUSTOMER") redirect("/dashboard");
 
   // CA, CA_FIRM_ADMIN, ADMIN → allowed into the practice OS

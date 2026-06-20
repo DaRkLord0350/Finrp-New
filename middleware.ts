@@ -7,6 +7,7 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/pricing(.*)",
   "/api/webhooks(.*)",
   // Public invoice share links — authorized by token (+ optional password)
   "/i/(.*)",

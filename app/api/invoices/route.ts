@@ -5,6 +5,7 @@ import { getTenantId } from "@/lib/auth/tenant";
 import { generateNextInvoiceNumber } from "@/lib/generators/invoice-number";
 import { logInvoiceActivity } from "@/lib/invoices/activity";
 import { computeInvoiceTotals, type TotalsLineInput } from "@/lib/invoices/totals";
+import { assertWithinInvoiceLimit, PlanLimitError } from "@/lib/billing/guards";
 
 export async function GET(req: Request) {
   try {
@@ -115,6 +116,9 @@ export async function POST(req: Request) {
     if (!customer) {
       return NextResponse.json({ error: "Customer not found" }, { status: 404 });
     }
+
+    // Plan limit: block creating beyond the org's invoice cap (402).
+    await assertWithinInvoiceLimit(tenantId);
 
     // Validate status (defaults to DRAFT; SENT keeps the prior "Send Invoice" behaviour).
     const requestedStatus =
@@ -236,6 +240,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(invoice, { status: 201 });
   } catch (error) {
+    if (error instanceof PlanLimitError) {
+      return NextResponse.json({ error: error.message, upgradeRequired: true }, { status: 402 });
+    }
     console.error("[INVOICES_POST]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

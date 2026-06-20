@@ -24,6 +24,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { isOnboardingComplete } from "@/services/onboardingService";
+import { isOrganizationActivated } from "@/lib/billing/guards";
 import { getWorkspaceContext } from "@/lib/workspace/context";
 import {
   requiredPermissionForPath,
@@ -44,8 +45,8 @@ export default async function DashboardLayout({
     redirect("/sign-in");
   }
 
-  // New users haven't selected a role yet → show role selection
-  if (!user.userRole) redirect("/onboarding/role");
+  // New users haven't picked an entry path yet → welcome screen
+  if (!user.userRole) redirect("/onboarding/welcome");
 
   // ── CA / Firm Admin / Admin: workspace (impersonation) mode ──
   if (user.userRole !== "CUSTOMER") {
@@ -95,6 +96,11 @@ export default async function DashboardLayout({
   const done = await isOnboardingComplete(user.organizationId);
   if (!done) {
     redirect("/onboarding/customer");
+  }
+
+  // Gate dashboard access until a plan is chosen + (if paid) activated.
+  if (!(await isOrganizationActivated(user.organizationId))) {
+    redirect("/onboarding/plan");
   }
 
   // Drive the dynamic sidebar + client permission gates from the

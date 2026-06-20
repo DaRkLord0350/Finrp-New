@@ -25,6 +25,26 @@ model Organization {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
+  // ── Pricing & subscription (org-centric source of truth) ─────
+  // `plan` (above) is the legacy enum kept for backward-compat; the
+  // fields below drive the new CA/Business pricing model. See
+  // lib/billing/plans.ts for the catalog these reference.
+  billingCategory        BillingCategory?    // CA firm vs. Business (null until chosen)
+  planType               PlanType?           // concrete plan within the category
+  subscriptionStatus     SubscriptionStatus  @default(INACTIVE)
+  clientLimit            Int?                // CA: max active clients (null = unlimited)
+  teamLimit              Int?                // CA: max team members (null = unlimited)
+  activeClientCount      Int                 @default(0) // CA: cached # of active client links
+  teamMemberCount        Int                 @default(0) // CA: cached # of team members
+  graceLimit             Int                 @default(0) // soft overage allowance above the hard limit
+  linkedCAOrganizationId String?             // BUSINESS: the CA org it is connected to
+  relationshipStatus     RelationshipStatus? // BUSINESS: status of its CA link
+  // ── Razorpay billing ──
+  razorpayCustomerId     String?
+  razorpaySubscriptionId String?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+
   users                   User[]
   memberships             Membership[]
   invitations             Invitation[]
@@ -129,7 +149,17 @@ model Organization {
   currencyRevaluations  CurrencyRevaluation[]
   bulkAccountUpdateJobs BulkAccountUpdateJob[]
 
+  // ── CA ↔ Business pricing relationships ─────────────────────
+  // Self-relation: a business org points at the CA org it is linked to.
+  linkedCAOrganization Organization?  @relation("CALinkedBusinesses", fields: [linkedCAOrganizationId], references: [id], onDelete: SetNull)
+  linkedBusinesses     Organization[] @relation("CALinkedBusinesses")
+  caRelationshipsAsCA       CARelationship[] @relation("CARelationshipCA")
+  caRelationshipsAsBusiness CARelationship[] @relation("CARelationshipBusiness")
+  billingPayments           BillingPayment[]
+
   @@index([slug])
+  @@index([billingCategory, planType])
+  @@index([linkedCAOrganizationId])
   @@map("organizations")
 }
 
@@ -138,6 +168,49 @@ enum Plan {
   STARTER
   GROWTH
   ENTERPRISE
+}
+
+// ── New pricing model enums ───────────────────────────────────
+// Two customer categories drive the entire pricing architecture.
+enum BillingCategory {
+  CA       // Chartered Accountant practice / firm
+  BUSINESS // A business (may or may not be linked to a CA)
+}
+
+// Concrete plans. The ACTIVE catalog is now a single universal four-tier
+// model: FREE / STARTER / GROWTH / ENTERPRISE (see lib/billing/plans.ts).
+// The legacy split-catalog values (SOLO … STANDALONE) are retained so any
+// pre-existing row stays valid; getPlan() maps them onto the active tiers.
+enum PlanType {
+  // Active universal tiers
+  FREE
+  STARTER
+  GROWTH
+  ENTERPRISE
+  // Legacy (retained for backward compatibility)
+  SOLO
+  GROWING_PRACTICE
+  FIRM
+  CONNECTED
+  CONNECTED_PLUS
+  STANDALONE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  INACTIVE
+}
+
+// Status of a business's link to a CA (mirrored on Organization
+// for the linked business and detailed on the CARelationship row).
+enum RelationshipStatus {
+  PENDING    // invitation sent, not yet accepted
+  ACTIVE     // linked to an active CA
+  INACTIVE   // CA paused / not currently active
+  TERMINATED // link removed
 }
 
 // ============================================================
@@ -1794,6 +1867,84 @@ model Subscription {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
+}
+
+// ============================================================
+// CA RELATIONSHIP (CA org ↔ Business org link)
+//
+// The foundation of the pricing model: when a business has an
+// ACTIVE relationship with an active CA, it receives the Connected
+// plan for free. One row per (CA org, business org) pair.
+// ============================================================
+model CARelationship {
+  id                     String             @id @default(cuid())
+  caOrganizationId       String
+  // Null until an email-only invite is accepted and the business org is known.
+  businessOrganizationId String?
+  status                 RelationshipStatus @default(PENDING)
+  invitedEmail           String? // business email invited (may pre-date the business org)
+  invitedById            String? // CA user who sent the invite
+  acceptedById           String? // business user who accepted
+  notes                  String?
+  invitedAt              DateTime           @default(now())
+  acceptedAt             DateTime?
+  terminatedAt           DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  caOrganization       Organization  @relation("CARelationshipCA", fields: [caOrganizationId], references: [id], onDelete: Cascade)
+  businessOrganization Organization? @relation("CARelationshipBusiness", fields: [businessOrganizationId], references: [id], onDelete: Cascade)
+
+  @@unique([caOrganizationId, businessOrganizationId])
+  @@index([caOrganizationId, status])
+  @@index([businessOrganizationId, status])
+  @@index([caOrganizationId, invitedEmail])
+  @@index([invitedEmail])
+  @@map("ca_relationships")
+}
+
+// ============================================================
+// BILLING PAYMENT (Razorpay order/payment + invoice history)
+//
+// One row per checkout attempt. PENDING when the order is created,
+// CAPTURED after server-side signature verification (or webhook),
+// FAILED on failure. Backs the billing history + invoice download.
+// ============================================================
+enum BillingPaymentStatus {
+  PENDING
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+model BillingPayment {
+  id                  String               @id @default(cuid())
+  organizationId      String
+  planType            PlanType
+  billingCategory     BillingCategory
+  amount              Decimal              @db.Decimal(10, 2) // INR rupees
+  currency            String               @default("INR")
+  status              BillingPaymentStatus @default(PENDING)
+  // Razorpay identifiers
+  razorpayOrderId     String?
+  razorpayPaymentId   String?
+  razorpaySignature   String?
+  // Billing period this payment covers
+  periodStart         DateTime?
+  periodEnd           DateTime?
+  invoiceNumber       String?              @unique
+  method              String? // card / upi / netbanking ...
+  failureReason       String?
+  createdById         String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([razorpayOrderId])
+  @@index([razorpayPaymentId])
+  @@map("billing_payments")
 }
 
 // ============================================================

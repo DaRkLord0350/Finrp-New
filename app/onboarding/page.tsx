@@ -25,8 +25,8 @@ export default async function OnboardingPage() {
     redirect("/sign-in");
   }
 
-  // No role selected yet → role selection screen
-  if (!user.userRole) redirect("/onboarding/role");
+  // No entry path chosen yet → welcome screen
+  if (!user.userRole) redirect("/onboarding/welcome");
 
   // Role-specific routing
   const done = await isOnboardingComplete(user.organizationId);
@@ -46,5 +46,5 @@ export default async function OnboardingPage() {
   if (user.userRole === "ADMIN") redirect("/admin");
 
   // Fallback
-  redirect("/onboarding/role");
+  redirect("/onboarding/welcome");
 }

@@ -11,6 +11,8 @@ import { getCurrentUser, invalidateUserCache } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { completeOnboarding } from "@/services/onboardingService";
 import { createAuditLog } from "@/lib/audit";
+import { initializeBilling } from "@/lib/services/subscription.service";
+import { claimPendingForEmail } from "@/lib/services/ca-relationship.service";
 import type { OnboardingActionResult } from "@/types/onboarding";
 
 // ---------------------------------------------------------------------------
@@ -194,6 +196,22 @@ export async function actionCompleteCustomerOnboarding(): Promise<OnboardingActi
     const { organizationId } = user;
 
     await completeOnboarding(organizationId);
+
+    // Initialise the business billing category (planType stays empty until
+    // the business subscribes or is granted Connected via a CA link).
+    await initializeBilling(organizationId, "BUSINESS", user.id);
+
+    // Auto-accept any pending CA invitation addressed to this user's email —
+    // this links the relationship and grants the free Connected plan.
+    if (user.email) {
+      await claimPendingForEmail({
+        email: user.email,
+        businessOrganizationId: organizationId,
+        acceptedById: user.id,
+      }).catch((err) => {
+        console.error("[onboarding] claimPendingForEmail failed:", (err as Error).message);
+      });
+    }
 
     await createAuditLog({
       organizationId,

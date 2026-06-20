@@ -18,6 +18,13 @@ import { getTenantId } from "@/lib/auth/tenant";
 import { readCurrentUser } from "@/lib/auth/session";
 import { canFromList } from "@/lib/auth/rbac";
 import { resolvePermissions } from "@/lib/auth/permission-resolver";
+import {
+  getOrgEntitlements,
+  FeatureLockedError,
+  PlanLimitError,
+} from "@/lib/billing/guards";
+import { hasFeature } from "@/lib/billing/entitlements";
+import type { Feature } from "@/lib/billing/features";
 
 export type TenantContext = {
   userId: string;
@@ -29,6 +36,8 @@ export type TenantContext = {
 export type RequireTenantOptions = {
   /** When set, throws ForbiddenError (HTTP 403) unless the role grants it. */
   permission?: string;
+  /** When set, throws FeatureLockedError (HTTP 402) unless the plan grants it. */
+  feature?: Feature;
 };
 
 export class UnauthorizedError extends Error {
@@ -83,6 +92,15 @@ export async function requireTenant(
     }
   }
 
+  if (opts?.feature) {
+    // Enforce the plan entitlement against the EFFECTIVE tenant (so an
+    // impersonating CA is gated by the client org being served).
+    const ent = await getOrgEntitlements(organizationId);
+    if (!hasFeature(ent, opts.feature)) {
+      throw new FeatureLockedError(opts.feature);
+    }
+  }
+
   return { userId, organizationId, role: dbUser.role };
 }
 
@@ -112,6 +130,18 @@ export function withTenant(
       }
       if (err instanceof ForbiddenError) {
         return NextResponse.json({ error: err.message }, { status: 403 });
+      }
+      if (err instanceof FeatureLockedError) {
+        return NextResponse.json(
+          { error: err.message, feature: err.feature, upgradeRequired: true },
+          { status: 402 }
+        );
+      }
+      if (err instanceof PlanLimitError) {
+        return NextResponse.json(
+          { error: err.message, upgradeRequired: true },
+          { status: 402 }
+        );
       }
       console.error("[withTenant]", err);
       return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -6,6 +6,7 @@ import { hasActionPermission } from "@/lib/auth/rbac";
 import { createAuditLog } from "@/lib/audit";
 import { sendEmail, buildInviteEmail } from "@/lib/notifications/email";
 import { appUrl } from "@/lib/url";
+import { assertWithinUserLimit, PlanLimitError } from "@/lib/billing/guards";
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Admin",
@@ -68,6 +69,19 @@ export async function POST(req: Request) {
       },
     });
     const isResend = !!existingInvite;
+
+    // Plan limit: a new seat (active members + pending invites) must fit the
+    // org's team cap. Resends don't add a seat, so they're exempt.
+    if (!isResend) {
+      try {
+        await assertWithinUserLimit(tenantId);
+      } catch (e) {
+        if (e instanceof PlanLimitError) {
+          return NextResponse.json({ error: e.message, upgradeRequired: true }, { status: 402 });
+        }
+        throw e;
+      }
+    }
 
     const invitation = existingInvite
       ? await prisma.invitation.update({

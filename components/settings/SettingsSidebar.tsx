@@ -14,6 +14,7 @@ import {
   Plug,
   FileSpreadsheet,
   Palette,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,7 @@ const settingsNav = [
     group: "Organization",
     items: [
       { label: "Organization", href: "/settings/organization", icon: Building2, description: "Company details" },
+      { label: "Plan & Billing", href: "/settings/billing", icon: CreditCard, description: "Subscription & invoices" },
       { label: "Invoice Appearance", href: "/settings/invoice-appearance", icon: Palette, description: "Branding & PDF style" },
       { label: "Users & Roles", href: "/settings/users", icon: Users, description: "Team management" },
       { label: "Notifications", href: "/settings/notifications", icon: Bell, description: "Alert preferences" },
