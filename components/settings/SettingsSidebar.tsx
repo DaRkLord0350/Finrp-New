@@ -15,10 +15,22 @@ import {
   FileSpreadsheet,
   Palette,
   CreditCard,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FEATURES, type Feature } from "@/lib/billing/features";
+import { useEntitlements } from "@/components/billing/EntitlementsProvider";
 
-const settingsNav = [
+interface SettingsNavItem {
+  label: string;
+  href: string;
+  icon: typeof User;
+  description: string;
+  /** Plan entitlement required — locked (→ billing) when not included. */
+  feature?: Feature;
+}
+
+const settingsNav: { group: string; items: SettingsNavItem[] }[] = [
   {
     group: "Account",
     items: [
@@ -46,7 +58,7 @@ const settingsNav = [
   {
     group: "Integrations",
     items: [
-      { label: "All Integrations", href: "/integrations", icon: Plug, description: "Connect external systems" },
+      { label: "All Integrations", href: "/integrations", icon: Plug, description: "Connect external systems", feature: FEATURES.INTEGRATIONS },
       { label: "CSV Import", href: "/integrations/csv", icon: FileSpreadsheet, description: "Import from spreadsheets" },
     ],
   },
@@ -54,6 +66,7 @@ const settingsNav = [
 
 export default function SettingsSidebar() {
   const pathname = usePathname();
+  const { hasFeature } = useEntitlements();
 
   return (
     <aside
@@ -88,6 +101,39 @@ export default function SettingsSidebar() {
             {group.items.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
               const Icon = item.icon;
+              const locked = !!item.feature && !hasFeature(item.feature);
+
+              // Plan-locked → clickable lock that routes to upgrade.
+              if (locked) {
+                return (
+                  <Link
+                    key={item.href}
+                    href="/settings/billing"
+                    className="sidebar-nav-item"
+                    title={`${item.label} isn't in your plan — upgrade to unlock`}
+                    style={{ gap: 10, opacity: 0.7 }}
+                  >
+                    <Icon size={15} strokeWidth={1.75} style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: 13 }}>{item.label}</span>
+                    <span
+                      style={{
+                        marginLeft: "auto",
+                        fontSize: 8.5,
+                        fontWeight: 700,
+                        letterSpacing: "0.04em",
+                        color: "#818cf8",
+                        background: "rgba(99,102,241,0.15)",
+                        padding: "1px 5px",
+                        borderRadius: 4,
+                      }}
+                    >
+                      PRO
+                    </span>
+                    <Lock size={12} style={{ opacity: 0.7 }} />
+                  </Link>
+                );
+              }
+
               return (
                 <Link
                   key={item.href}

@@ -6,6 +6,7 @@ import { ChevronDown, Lock, type LucideIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import type { AppModule } from "@/lib/auth/rbac";
+import type { Feature } from "@/lib/billing/features";
 
 // ── Shared collapsible sidebar group (Banking OS accordion) ───
 // The customer Sidebar, the CA portal CASidebar and the CA Hub
@@ -26,6 +27,9 @@ export interface NavLeaf {
   /** RBAC module this item belongs to. When set and the user lacks
    *  access, the row renders locked (lock icon, non-clickable). */
   module?: AppModule;
+  /** Plan entitlement this item needs. When set and the plan doesn't
+   *  include it, the row renders as an "upgrade" lock (→ billing). */
+  feature?: Feature;
   /** optional — deep sub-items render as text-only rows */
   icon?: LucideIcon;
   /** match only the exact href (for index routes with sibling children) */
@@ -49,6 +53,9 @@ export interface NavGroupConfig {
   /** RBAC module the whole group maps to (optional). When set and the
    *  user lacks access, the entire group renders locked. */
   module?: AppModule;
+  /** Plan entitlement the whole group needs (optional). When the plan
+   *  lacks it, the entire group renders as an "upgrade" lock. */
+  feature?: Feature;
   icon: LucideIcon;
   badge?: NavBadge;
   /** paths beyond the child hrefs that count as "inside" the group (e.g. its index page) */
@@ -82,28 +89,79 @@ export function isGroupActive(pathname: string, group: NavGroupConfig): boolean 
   );
 }
 
-// ── Permission gating ─────────────────────────────────────────
-// `canAccess(module)` decides whether a module is reachable. Untagged
-// items (no `module`) are always accessible — only spec-governed
-// modules are gated, so Banking / TReDS / AI nav is unaffected.
+// ── Access gating ─────────────────────────────────────────────
+// Two orthogonal gates:
+//   • `canAccess(module)`  — RBAC role permission.
+//   • `hasFeature(feature)`— plan entitlement.
+// Untagged items are always reachable. An item is reachable only when
+// BOTH gates pass. A failing RBAC gate renders a plain lock; a failing
+// plan gate renders an "upgrade" lock that links to billing.
 export type CanAccess = (module?: AppModule) => boolean;
+export type HasFeature = (feature: Feature) => boolean;
 
-export function isLeafAccessible(item: NavLeaf, canAccess: CanAccess): boolean {
-  return item.module ? canAccess(item.module) : true;
+const ALLOW_FEATURE: HasFeature = () => true;
+
+/** Why a row is locked, or null when reachable. */
+export type LockReason = "rbac" | "upgrade" | null;
+
+export function leafLockReason(
+  item: NavLeaf,
+  canAccess: CanAccess,
+  hasFeature: HasFeature = ALLOW_FEATURE
+): LockReason {
+  if (item.module && !canAccess(item.module)) return "rbac";
+  if (item.feature && !hasFeature(item.feature)) return "upgrade";
+  return null;
+}
+
+export function isLeafAccessible(
+  item: NavLeaf,
+  canAccess: CanAccess,
+  hasFeature: HasFeature = ALLOW_FEATURE
+): boolean {
+  return leafLockReason(item, canAccess, hasFeature) === null;
 }
 
 export function isGroupAccessible(
   group: NavGroupConfig,
-  canAccess: CanAccess
+  canAccess: CanAccess,
+  hasFeature: HasFeature = ALLOW_FEATURE
 ): boolean {
-  // A group explicitly tied to a module is locked when that module
-  // is inaccessible, regardless of children.
+  // A group explicitly tied to a module/feature is locked regardless of
+  // children.
   if (group.module && !canAccess(group.module)) return false;
+  if (group.feature && !hasFeature(group.feature)) return false;
   // Otherwise the group is reachable if ANY descendant is reachable.
   return group.items.some((item) =>
     isNavGroup(item)
-      ? isGroupAccessible(item, canAccess)
-      : isLeafAccessible(item, canAccess)
+      ? isGroupAccessible(item, canAccess, hasFeature)
+      : isLeafAccessible(item, canAccess, hasFeature)
+  );
+}
+
+/** Why a whole group is locked, or null when reachable. */
+export function groupLockReason(
+  group: NavGroupConfig,
+  canAccess: CanAccess,
+  hasFeature: HasFeature = ALLOW_FEATURE
+): LockReason {
+  if (group.module && !canAccess(group.module)) return "rbac";
+  if (group.feature && !hasFeature(group.feature)) return "upgrade";
+  if (isGroupAccessible(group, canAccess, hasFeature)) return null;
+  // No reachable descendants: prefer "rbac" unless every leaf is an
+  // upgrade-only lock (then surface the upgrade affordance).
+  return everyLeafUpgradeLocked(group, canAccess, hasFeature) ? "upgrade" : "rbac";
+}
+
+function everyLeafUpgradeLocked(
+  group: NavGroupConfig,
+  canAccess: CanAccess,
+  hasFeature: HasFeature
+): boolean {
+  return group.items.every((item) =>
+    isNavGroup(item)
+      ? everyLeafUpgradeLocked(item, canAccess, hasFeature)
+      : leafLockReason(item, canAccess, hasFeature) === "upgrade"
   );
 }
 
@@ -177,34 +235,77 @@ function NavIcon({
   return <Icon size={compact ? 13 : 16} strokeWidth={1.75} />;
 }
 
-// Disabled, non-clickable row with a lock icon — used for modules the
-// current role cannot access. Shown (not hidden) per product spec.
+// Locked row with a lock icon — shown (not hidden) per product spec.
+//   • "rbac"    → role can't access; non-clickable.
+//   • "upgrade" → plan doesn't include it; clickable → billing/upgrade.
+const UPGRADE_HREF = "/settings/billing";
+
 function LockedRow({
   label,
   icon,
   compact,
   isGroup,
+  reason = "rbac",
 }: {
   label: string;
   icon?: LucideIcon;
   compact: boolean;
   isGroup?: boolean;
+  reason?: "rbac" | "upgrade";
 }) {
+  const isUpgrade = reason === "upgrade";
+  const baseStyle: CSSProperties = {
+    ...(compact ? leafStyle : undefined),
+    opacity: isUpgrade ? 0.7 : 0.45,
+    cursor: isUpgrade ? "pointer" : "not-allowed",
+    ...(isGroup ? { width: "100%", textAlign: "left" as const, marginTop: compact ? 0 : 4 } : {}),
+  };
+
+  const inner = (
+    <>
+      <NavIcon icon={icon} active={false} compact={compact} />
+      <span style={labelStyle}>{label}</span>
+      {isUpgrade && (
+        <span
+          style={{
+            fontSize: 8.5,
+            fontWeight: 700,
+            letterSpacing: "0.04em",
+            color: "#818cf8",
+            background: "rgba(99,102,241,0.15)",
+            padding: "1px 5px",
+            borderRadius: 4,
+            flexShrink: 0,
+          }}
+        >
+          PRO
+        </span>
+      )}
+      <Lock size={12} style={{ flexShrink: 0, opacity: 0.7 }} />
+    </>
+  );
+
+  if (isUpgrade) {
+    return (
+      <Link
+        href={UPGRADE_HREF}
+        className="sidebar-nav-item"
+        title={`${label} isn't in your plan — upgrade to unlock`}
+        style={baseStyle}
+      >
+        {inner}
+      </Link>
+    );
+  }
+
   return (
     <div
       className="sidebar-nav-item"
       aria-disabled="true"
       title="You don't have access to this module"
-      style={{
-        ...(compact ? leafStyle : undefined),
-        opacity: 0.45,
-        cursor: "not-allowed",
-        ...(isGroup ? { width: "100%", textAlign: "left" as const, marginTop: compact ? 0 : 4 } : {}),
-      }}
+      style={baseStyle}
     >
-      <NavIcon icon={icon} active={false} compact={compact} />
-      <span style={labelStyle}>{label}</span>
-      <Lock size={12} style={{ flexShrink: 0, opacity: 0.7 }} />
+      {inner}
     </div>
   );
 }
@@ -215,14 +316,17 @@ export function SidebarNavGroup({
   onNavigate,
   depth = 0,
   canAccess = () => true,
+  hasFeature = ALLOW_FEATURE,
 }: {
   group: NavGroupConfig;
   pathname: string;
   onNavigate?: () => void;
   /** 0 = top-level group; deeper levels render compact rows */
   depth?: number;
-  /** permission predicate; defaults to "everything accessible" */
+  /** RBAC permission predicate; defaults to "everything accessible" */
   canAccess?: CanAccess;
+  /** plan entitlement predicate; defaults to "everything included" */
+  hasFeature?: HasFeature;
 }) {
   const isActive = isGroupActive(pathname, group);
   const [open, setOpen] = useState(isActive);
@@ -241,11 +345,12 @@ export function SidebarNavGroup({
 
   // Entire group inaccessible → show a locked, non-expandable header
   // (the module stays visible but is not clickable — no route exposed).
-  if (!isGroupAccessible(group, canAccess)) {
+  const groupLock = groupLockReason(group, canAccess, hasFeature);
+  if (groupLock) {
     return (
       <div style={{ marginTop: compact ? 0 : 4 }}>
         {depth === 0 && group.section && <p style={sectionTitleStyle}>{group.section}</p>}
-        <LockedRow label={group.label} icon={group.icon} compact={compact} isGroup />
+        <LockedRow label={group.label} icon={group.icon} compact={compact} isGroup reason={groupLock} />
       </div>
     );
   }
@@ -298,14 +403,16 @@ export function SidebarNavGroup({
                   onNavigate={onNavigate}
                   depth={depth + 1}
                   canAccess={canAccess}
+                  hasFeature={hasFeature}
                 />
               );
             }
 
-            // Locked leaf — module the role can't access. Shown but not clickable.
-            if (!isLeafAccessible(item, canAccess)) {
+            // Locked leaf — RBAC ("rbac") or plan entitlement ("upgrade").
+            const leafLock = leafLockReason(item, canAccess, hasFeature);
+            if (leafLock) {
               return (
-                <LockedRow key={item.href} label={item.label} icon={item.icon} compact />
+                <LockedRow key={item.href} label={item.label} icon={item.icon} compact reason={leafLock} />
               );
             }
 

@@ -8,6 +8,9 @@ import {
   FileText,
   ArrowRight,
 } from "lucide-react";
+import { currentHasFeature } from "@/lib/billing/guards";
+import { FEATURES } from "@/lib/billing/features";
+import { UpgradeRequired } from "@/components/billing/UpgradeRequired";
 
 // ============================================================
 // /ai-bot — AI Bot hub
@@ -51,7 +54,12 @@ const CAPABILITIES = [
   },
 ];
 
-export default function AiBotPage() {
+export default async function AiBotPage() {
+  // Plan gate: AI is a premium feature.
+  if (!(await currentHasFeature(FEATURES.AI))) {
+    return <UpgradeRequired feature={FEATURES.AI} title="AI features need a higher plan" />;
+  }
+
   return (
     <div className="animate-fade-in">
       {/* Header */}

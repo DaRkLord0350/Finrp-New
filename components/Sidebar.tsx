@@ -32,6 +32,8 @@ import {
 import { cn } from "@/lib/utils";
 import { SidebarNavGroup, type NavGroupConfig } from "@/components/SidebarNavGroup";
 import { hasModuleAccessFromList, type AppModule } from "@/lib/auth/rbac";
+import { FEATURES } from "@/lib/billing/features";
+import { useEntitlements } from "@/components/billing/EntitlementsProvider";
 
 // ── Sidebar group configuration ───────────────────────────────
 // Every major module is a collapsible group rendered by the
@@ -81,7 +83,7 @@ const navGroups: NavGroupConfig[] = [
       { label: "Reconciliation", href: "/banking/reconciliation", icon: Scale },
       { label: "Cash Flow",      href: "/banking/cash-flow",      icon: BarChart3 },
       { label: "GST Match",      href: "/banking/gst-match",      icon: ShieldCheck },
-      { label: "AI Insights",    href: "/banking/ai-insights",    icon: Bot },
+      { label: "AI Insights",    href: "/banking/ai-insights",    icon: Bot, feature: FEATURES.AI },
     ],
     footer: { label: "View all →", href: "/banking" },
   },
@@ -106,6 +108,7 @@ const navGroups: NavGroupConfig[] = [
     section: "AI Bot",
     label: "AI Bot",
     icon: Bot,
+    feature: FEATURES.AI,
     badge: { text: "AI", background: "rgba(16,185,129,0.15)", color: "#34d399" },
     basePath: "/ai-bot",
     items: [
@@ -167,6 +170,7 @@ interface SidebarProps {
 
 export default function Sidebar({ open = false, onClose, workspace, permissions }: SidebarProps) {
   const pathname = usePathname();
+  const { hasFeature } = useEntitlements();
 
   // Module-access predicate driving the dynamic sidebar. Without a
   // permission list (e.g. mid-hydration) everything stays visible.
@@ -397,6 +401,7 @@ export default function Sidebar({ open = false, onClose, workspace, permissions 
               pathname={pathname}
               onNavigate={onClose}
               canAccess={canAccess}
+              hasFeature={hasFeature}
             />
           ))}
         </nav>
