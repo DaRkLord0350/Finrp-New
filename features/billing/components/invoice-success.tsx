@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CheckCircle2, Download } from "lucide-react";
+import { CheckCircle2, Download, ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { InvoiceSuccess } from "../types";
 
@@ -37,9 +37,12 @@ export function InvoiceSuccessScreen({ success, onNewInvoice }: Props) {
         </p>
       </div>
 
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+        <button onClick={() => router.push(`/billing/${success.invoiceId}`)} className="btn-brand" style={{ gap: 7 }}>
+          <ArrowRight size={14} /> Open invoice
+        </button>
         {success.pdfUrl && (
-          <a href={success.pdfUrl} target="_blank" rel="noreferrer" className="btn-brand" style={{ gap: 7 }}>
+          <a href={success.pdfUrl} target="_blank" rel="noreferrer" className="btn-ghost" style={{ gap: 7 }}>
             <Download size={14} /> Download PDF
           </a>
         )}
@@ -50,6 +53,9 @@ export function InvoiceSuccessScreen({ success, onNewInvoice }: Props) {
           New invoice
         </button>
       </div>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -6 }}>
+        Send by email, print, duplicate, or share a public link from the invoice workspace.
+      </p>
     </div>
   );
 }

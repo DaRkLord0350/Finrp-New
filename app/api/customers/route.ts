@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { withTenant } from "@/lib/auth/require-tenant";
 import { customerRepository } from "@/lib/repositories/customer.repository";
+import { assertWithinCustomerLimit } from "@/lib/billing/guards";
 
 // ---------------------------------------------------------------------------
 // GET /api/customers?cursor=<id>&take=<n>&q=<search>&active=<bool>
@@ -37,6 +38,9 @@ export const POST = withTenant(async (req, { organizationId }) => {
   if (!name) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }
+
+  // Plan limit: block creating beyond the org's customer cap (402).
+  await assertWithinCustomerLimit(organizationId);
 
   try {
     const customer = await customerRepository.create(organizationId, {

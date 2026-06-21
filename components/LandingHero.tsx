@@ -2,14 +2,210 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { ArrowRight, Building2, Briefcase, Zap } from "lucide-react";
+import {
+  ArrowRight,
+  Building2,
+  Briefcase,
+  Sparkles,
+  Workflow,
+  LayoutDashboard,
+  Boxes,
+  Bot,
+  Landmark,
+  ShieldCheck,
+  ReceiptText,
+  Users,
+} from "lucide-react";
 
-const stats = [
-  { value: "500+", label: "CA Practices" },
-  { value: "10K+", label: "Clients Managed" },
-  { value: "₹2,000Cr+", label: "Filings Processed" },
-  { value: "99.9%", label: "Uptime" },
+type Capability = {
+  icon: typeof Workflow;
+  title: string;
+  subtitle: string;
+  color: string;
+  bg: string;
+  border: string;
+  glow: string;
+};
+
+const capabilities: Capability[] = [
+  {
+    icon: Workflow,
+    title: "50+ Automated Workflows",
+    subtitle: "Hands-free finance operations",
+    color: "#818cf8",
+    bg: "rgba(129,140,248,0.1)",
+    border: "rgba(129,140,248,0.28)",
+    glow: "rgba(129,140,248,0.22)",
+  },
+  {
+    icon: LayoutDashboard,
+    title: "100+ Reports & Dashboards",
+    subtitle: "Real-time business insight",
+    color: "#a78bfa",
+    bg: "rgba(167,139,250,0.1)",
+    border: "rgba(167,139,250,0.28)",
+    glow: "rgba(167,139,250,0.22)",
+  },
+  {
+    icon: Boxes,
+    title: "15+ Integrated Business Modules",
+    subtitle: "One unified platform",
+    color: "#c4b5fd",
+    bg: "rgba(196,181,253,0.1)",
+    border: "rgba(196,181,253,0.28)",
+    glow: "rgba(196,181,253,0.2)",
+  },
+  {
+    icon: Bot,
+    title: "AI-Powered Accounting Assistant",
+    subtitle: "Powered by Gemini AI",
+    color: "#34d399",
+    bg: "rgba(52,211,153,0.1)",
+    border: "rgba(52,211,153,0.28)",
+    glow: "rgba(52,211,153,0.22)",
+  },
+  {
+    icon: Landmark,
+    title: "Real-Time Bank Reconciliation",
+    subtitle: "Match transactions instantly",
+    color: "#6ee7b7",
+    bg: "rgba(110,231,183,0.1)",
+    border: "rgba(110,231,183,0.28)",
+    glow: "rgba(110,231,183,0.2)",
+  },
+  {
+    icon: ShieldCheck,
+    title: "GST & TDS Compliance Automation",
+    subtitle: "Stay compliant, effortlessly",
+    color: "#818cf8",
+    bg: "rgba(129,140,248,0.1)",
+    border: "rgba(129,140,248,0.28)",
+    glow: "rgba(129,140,248,0.22)",
+  },
+  {
+    icon: ReceiptText,
+    title: "Smart Invoicing & Payments",
+    subtitle: "Get paid faster",
+    color: "#a78bfa",
+    bg: "rgba(167,139,250,0.1)",
+    border: "rgba(167,139,250,0.28)",
+    glow: "rgba(167,139,250,0.22)",
+  },
+  {
+    icon: Users,
+    title: "Enterprise RBAC & Team Collaboration",
+    subtitle: "Secure, role-based access",
+    color: "#34d399",
+    bg: "rgba(52,211,153,0.1)",
+    border: "rgba(52,211,153,0.28)",
+    glow: "rgba(52,211,153,0.22)",
+  },
 ];
+
+function CapabilityCard({ cap, index }: { cap: Capability; index: number }) {
+  const Icon = cap.icon;
+  return (
+    <motion.li
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, delay: 0.4 + index * 0.05 }}
+      whileHover={{ y: -4 }}
+      style={{
+        position: "relative",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        textAlign: "left",
+        gap: 14,
+        padding: "20px 18px",
+        borderRadius: 16,
+        background:
+          "linear-gradient(180deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.012) 100%)",
+        border: "1px solid var(--border)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        overflow: "hidden",
+        cursor: "default",
+        transition: "border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease",
+        listStyle: "none",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = cap.border;
+        e.currentTarget.style.boxShadow = `0 10px 36px -12px ${cap.glow}`;
+        const glow = e.currentTarget.querySelector<HTMLDivElement>("[data-glow]");
+        if (glow) glow.style.opacity = "1";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = "var(--border)";
+        e.currentTarget.style.boxShadow = "none";
+        const glow = e.currentTarget.querySelector<HTMLDivElement>("[data-glow]");
+        if (glow) glow.style.opacity = "0";
+      }}
+    >
+      {/* Hover glow */}
+      <div
+        data-glow
+        aria-hidden
+        style={{
+          position: "absolute",
+          top: -60,
+          right: -40,
+          width: 160,
+          height: 160,
+          background: `radial-gradient(circle, ${cap.glow} 0%, transparent 70%)`,
+          opacity: 0,
+          transition: "opacity 0.3s ease",
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Icon tile */}
+      <div
+        aria-hidden
+        style={{
+          position: "relative",
+          width: 42,
+          height: 42,
+          borderRadius: 12,
+          background: cap.bg,
+          border: `1px solid ${cap.border}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <Icon size={19} color={cap.color} strokeWidth={2} />
+      </div>
+
+      {/* Text */}
+      <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 4 }}>
+        <h3
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            lineHeight: 1.3,
+            letterSpacing: "-0.01em",
+            color: "var(--text-primary)",
+          }}
+        >
+          {cap.title}
+        </h3>
+        <p
+          style={{
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: "var(--text-muted)",
+            fontWeight: 500,
+          }}
+        >
+          {cap.subtitle}
+        </p>
+      </div>
+    </motion.li>
+  );
+}
 
 export default function LandingHero() {
   return (
@@ -26,6 +222,25 @@ export default function LandingHero() {
         overflow: "hidden",
       }}
     >
+      {/* Scoped responsive grid: 4 cols desktop, 2 tablet, 1 mobile */}
+      <style>{`
+        .hero-cap-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 16px;
+          width: 100%;
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 0;
+        }
+        @media (max-width: 900px) {
+          .hero-cap-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 520px) {
+          .hero-cap-grid { grid-template-columns: minmax(0, 1fr); }
+        }
+      `}</style>
+
       {/* Background glows */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
         <div
@@ -62,7 +277,7 @@ export default function LandingHero() {
         />
       </div>
 
-      <div style={{ position: "relative", zIndex: 1, maxWidth: 840, width: "100%" }}>
+      <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 1180 }}>
         {/* Badge */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -83,8 +298,8 @@ export default function LandingHero() {
             letterSpacing: "0.02em",
           }}
         >
-          <Zap size={12} />
-          CA Practice Management · Financial Operations Platform
+          <Sparkles size={12} />
+          The Financial Operating System for Modern Teams
         </motion.div>
 
         {/* Headline */}
@@ -93,12 +308,15 @@ export default function LandingHero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, delay: 0.08 }}
           style={{
-            fontSize: "clamp(38px, 6vw, 68px)",
+            fontSize: "clamp(36px, 5.6vw, 64px)",
             fontWeight: 800,
-            lineHeight: 1.06,
+            lineHeight: 1.07,
             letterSpacing: "-0.04em",
             color: "var(--text-primary)",
             marginBottom: 22,
+            maxWidth: 920,
+            marginLeft: "auto",
+            marginRight: "auto",
           }}
         >
           Built for{" "}
@@ -110,10 +328,10 @@ export default function LandingHero() {
               backgroundClip: "text",
             }}
           >
-            CA Firms.
+            Modern Finance Teams.
           </span>
           <br />
-          Trusted by{" "}
+          One Platform.{" "}
           <span
             style={{
               background: "linear-gradient(135deg, #34d399 0%, #10b981 100%)",
@@ -122,7 +340,7 @@ export default function LandingHero() {
               backgroundClip: "text",
             }}
           >
-            Businesses.
+            Every Financial Workflow.
           </span>
         </motion.h1>
 
@@ -135,13 +353,13 @@ export default function LandingHero() {
             fontSize: "clamp(15px, 1.8vw, 18px)",
             color: "var(--text-secondary)",
             lineHeight: 1.7,
-            maxWidth: 620,
+            maxWidth: 720,
             margin: "0 auto 40px",
           }}
         >
-          FinRP gives CA firms a complete practice management suite — client onboarding,
-          compliance automation, document collection, and team workflows. Businesses get
-          real-time visibility into filings, finances, and obligations.
+          FinRP unifies banking, accounting, invoicing, inventory, compliance, GST, TDS,
+          payroll, CRM, analytics, and AI automation into one integrated financial operating
+          system for businesses and CA firms.
         </motion.p>
 
         {/* Dual CTAs */}
@@ -155,7 +373,7 @@ export default function LandingHero() {
             justifyContent: "center",
             gap: 12,
             flexWrap: "wrap",
-            marginBottom: 52,
+            marginBottom: 56,
           }}
         >
           <Link
@@ -200,54 +418,12 @@ export default function LandingHero() {
           </Link>
         </motion.div>
 
-        {/* Stats grid */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.38 }}
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-            gap: 12,
-            maxWidth: 560,
-            margin: "0 auto",
-          }}
-        >
-          {stats.map((s) => (
-            <div
-              key={s.label}
-              style={{
-                textAlign: "center",
-                padding: "14px 10px",
-                background: "rgba(255,255,255,0.02)",
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-              }}
-            >
-              <p
-                style={{
-                  fontSize: "clamp(20px, 2.5vw, 28px)",
-                  fontWeight: 800,
-                  color: "var(--text-primary)",
-                  letterSpacing: "-0.03em",
-                  lineHeight: 1.1,
-                }}
-              >
-                {s.value}
-              </p>
-              <p
-                style={{
-                  fontSize: 11,
-                  color: "var(--text-muted)",
-                  marginTop: 4,
-                  fontWeight: 500,
-                }}
-              >
-                {s.label}
-              </p>
-            </div>
+        {/* Capability cards */}
+        <ul className="hero-cap-grid">
+          {capabilities.map((cap, i) => (
+            <CapabilityCard key={cap.title} cap={cap} index={i} />
           ))}
-        </motion.div>
+        </ul>
       </div>
     </section>
   );

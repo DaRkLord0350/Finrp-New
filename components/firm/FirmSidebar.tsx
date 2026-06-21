@@ -20,12 +20,15 @@ import {
   Palette,
   Bell,
   CalendarDays,
+  Handshake,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const practiceItems = [
   { label: "Dashboard",    href: "/firm",              icon: LayoutDashboard, exact: true },
   { label: "Customers",    href: "/firm/customers",    icon: Users },
+  { label: "Connections",  href: "/firm/connections",  icon: Handshake },
   { label: "Team",         href: "/firm/team",         icon: UserCog },
   { label: "Assignments",  href: "/firm/assignments",  icon: UserPlus },
   { label: "Tasks",        href: "/firm/tasks",        icon: ClipboardList },
@@ -42,6 +45,7 @@ const operationsItems = [
 ];
 
 const settingsItems = [
+  { label: "Plan & Billing", href: "/firm/billing",   icon: CreditCard },
   { label: "Branding",    href: "/firm/branding",     icon: Palette },
   { label: "Notifications", href: "/firm/notifications", icon: Bell },
   { label: "Settings",    href: "/firm/settings",     icon: Settings, exact: true },

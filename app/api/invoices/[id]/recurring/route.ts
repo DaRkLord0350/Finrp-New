@@ -12,7 +12,7 @@ import { getTenantId } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/middleware";
 import { logInvoiceActivity } from "@/lib/invoices/activity";
 
-const FREQUENCIES = ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"];
+const FREQUENCIES = ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY", "CUSTOM"];
 
 export async function GET(
   _req: Request,
@@ -65,22 +65,52 @@ export async function POST(
       return NextResponse.json({ error: "Invalid start date" }, { status: 400 });
     }
 
+    let endDate: Date | null = null;
+    if (typeof body.endDate === "string" && body.endDate) {
+      endDate = new Date(body.endDate);
+      if (Number.isNaN(endDate.getTime())) {
+        return NextResponse.json({ error: "Invalid end date" }, { status: 400 });
+      }
+      if (endDate < startDate) {
+        return NextResponse.json({ error: "End date cannot be before the start date" }, { status: 400 });
+      }
+    }
+
+    let customIntervalDays: number | null = null;
+    if (frequency === "CUSTOM") {
+      customIntervalDays = Number(body.customIntervalDays);
+      if (!Number.isFinite(customIntervalDays) || customIntervalDays < 1) {
+        return NextResponse.json({ error: "Custom frequency requires a positive interval in days" }, { status: 400 });
+      }
+    }
+
     const templateData = {
       sourceInvoiceId: id,
       sourceInvoiceNumber: source.invoiceNumber,
       customerId: source.customerId,
       currency: source.currency,
+      paymentTerms: source.paymentTerms,
+      salesperson: source.salesperson,
+      subject: source.subject,
       taxRate: Number(source.taxRate),
+      discountType: source.discountType,
+      discountValue: Number(source.discountValue),
       discount: Number(source.discount),
       shipping: Number(source.shipping),
+      adjustment: Number(source.adjustment),
+      tdsTcsType: source.tdsTcsType,
+      tdsTcsRate: Number(source.tdsTcsRate),
+      tdsTcsSectionId: source.tdsTcsSectionId,
       notes: source.notes,
       terms: source.terms,
       items: source.items.map((it) => ({
         description: it.description,
         sku: it.sku,
         hsnSac: it.hsnSac,
+        unit: it.unit,
         quantity: Number(it.quantity),
         unitPrice: Number(it.unitPrice),
+        discount: Number(it.discount),
         taxPercent: Number(it.taxPercent),
       })),
     };
@@ -90,7 +120,9 @@ export async function POST(
         organizationId,
         customerId: source.customerId,
         frequency,
+        customIntervalDays,
         nextRunDate: startDate,
+        endDate,
         templateData: templateData as unknown as Prisma.InputJsonValue,
       },
     });

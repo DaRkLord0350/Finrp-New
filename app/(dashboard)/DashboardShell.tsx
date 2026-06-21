@@ -5,6 +5,7 @@ import type { Role } from "@prisma/client";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
 import { PermissionsProvider } from "@/components/auth/PermissionsProvider";
+import { EntitlementsProvider } from "@/components/billing/EntitlementsProvider";
 import ClientBanner, {
   type WorkspaceBannerData,
 } from "@/components/workspace/ClientBanner";
@@ -14,6 +15,8 @@ export default function DashboardShell({
   workspace,
   role = null,
   permissions = [],
+  entitlementFeatures = [],
+  entitlementsLegacy = true,
 }: {
   children: React.ReactNode;
   /** present only when a CA is impersonating a client (workspace mode) */
@@ -22,11 +25,16 @@ export default function DashboardShell({
   role?: Role | null;
   /** current user's resolved permission strings (customer flow) */
   permissions?: string[];
+  /** plan entitlement feature flags for the tenant (lock-don't-hide UI) */
+  entitlementFeatures?: string[];
+  /** legacy/grandfathered org → everything unlocked */
+  entitlementsLegacy?: boolean;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <PermissionsProvider role={role} permissions={permissions}>
+      <EntitlementsProvider features={entitlementFeatures} isLegacy={entitlementsLegacy}>
       <div
         className={workspace ? "workspace-shell" : undefined}
         style={{ display: "flex", minHeight: "100vh" }}
@@ -51,6 +59,7 @@ export default function DashboardShell({
           <main className="page-container animate-fade-in">{children}</main>
         </div>
       </div>
+      </EntitlementsProvider>
     </PermissionsProvider>
   );
 }

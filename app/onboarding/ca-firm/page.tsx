@@ -28,8 +28,8 @@ export default async function CAFirmOnboardingPage() {
     redirect("/sign-in");
   }
 
-  // Role not chosen → role selection
-  if (!user.userRole) redirect("/onboarding/role");
+  // Entry path not chosen → welcome screen
+  if (!user.userRole) redirect("/onboarding/welcome");
 
   // Wrong role → correct portal
   if (user.userRole === "CUSTOMER") redirect("/onboarding/customer");

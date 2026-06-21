@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { Prisma, InvoiceStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
 import { generateNextInvoiceNumber } from "@/lib/generators/invoice-number";
 import { logInvoiceActivity } from "@/lib/invoices/activity";
+import { computeInvoiceTotals, type TotalsLineInput } from "@/lib/invoices/totals";
+import { assertWithinInvoiceLimit, PlanLimitError } from "@/lib/billing/guards";
 
 export async function GET(req: Request) {
   try {
@@ -60,10 +63,37 @@ interface IncomingItem {
   description: string;
   quantity: number;
   unitPrice: number;
+  unit?: string | null;
+  discount?: number;
   sku?: string;
   hsnSac?: string;
   taxPercent?: number;
   itemId?: string;
+}
+
+// Resolve + validate the chosen TDS/TCS section against this org. Returns the
+// section's rate when no explicit override is supplied.
+async function resolveTdsTcs(
+  organizationId: string,
+  body: Record<string, unknown>
+): Promise<{ type: "TDS" | "TCS" | null; sectionId: string | null; rate: number }> {
+  const type = body.tdsTcsType === "TDS" || body.tdsTcsType === "TCS" ? body.tdsTcsType : null;
+  if (!type) return { type: null, sectionId: null, rate: 0 };
+
+  let sectionId: string | null = null;
+  let rate = body.tdsTcsRate !== undefined ? Number(body.tdsTcsRate) : NaN;
+
+  if (typeof body.tdsTcsSectionId === "string" && body.tdsTcsSectionId) {
+    const section = await prisma.tdsTcsSection.findFirst({
+      where: { id: body.tdsTcsSectionId, organizationId, type },
+      select: { id: true, rate: true },
+    });
+    if (section) {
+      sectionId = section.id;
+      if (!Number.isFinite(rate)) rate = Number(section.rate);
+    }
+  }
+  return { type, sectionId, rate: Number.isFinite(rate) ? Math.max(0, rate) : 0 };
 }
 
 export async function POST(req: Request) {
@@ -72,7 +102,7 @@ export async function POST(req: Request) {
     if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const { customerId, dueDate, taxRate = 0, notes, items, discount = 0, shipping = 0 } = body;
+    const { customerId, dueDate, taxRate = 0, notes, items } = body;
 
     if (!customerId || !dueDate || !items?.length) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -87,46 +117,118 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Customer not found" }, { status: 404 });
     }
 
-    const subtotal = (items as IncomingItem[]).reduce(
-      (sum, item) => sum + item.quantity * item.unitPrice,
-      0
-    );
-    const taxAmount = subtotal * (Number(taxRate) / 100);
-    const total = subtotal + taxAmount + Number(shipping) - Number(discount);
-    const balanceDue = total;
+    // Plan limit: block creating beyond the org's invoice cap (402).
+    await assertWithinInvoiceLimit(tenantId);
 
-    // Atomic collision-safe invoice number (Task 6)
-    const invoiceNumber = await generateNextInvoiceNumber(tenantId);
+    // Validate status (defaults to DRAFT; SENT keeps the prior "Send Invoice" behaviour).
+    const requestedStatus =
+      typeof body.status === "string" && (Object.values(InvoiceStatus) as string[]).includes(body.status)
+        ? (body.status as InvoiceStatus)
+        : InvoiceStatus.DRAFT;
 
-    const invoice = await prisma.invoice.create({
-      data: {
-        invoiceNumber,
-        customerId,
-        organizationId: tenantId,
-        dueDate: new Date(dueDate),
-        taxRate: Number(taxRate),
-        taxAmount,
-        subtotal,
-        discount: Number(discount),
-        shipping: Number(shipping),
-        total,
-        balanceDue,
-        notes,
-        items: {
-          create: (items as IncomingItem[]).map((item) => ({
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            amount: item.quantity * item.unitPrice,
-            sku: item.sku ?? null,
-            hsnSac: item.hsnSac ?? null,
-            taxPercent: item.taxPercent ?? 0,
-            taxAmount: item.quantity * item.unitPrice * ((item.taxPercent ?? 0) / 100),
-          })),
-        },
-      },
-      include: { customer: true, items: true },
+    const tdsTcs = await resolveTdsTcs(tenantId, body);
+
+    // Backward-compat: legacy callers send a flat `discount` amount.
+    const discountType = body.discountType === "PERCENT" ? "PERCENT" : "FIXED";
+    const discountValue =
+      body.discountValue !== undefined ? Number(body.discountValue) : Number(body.discount ?? 0);
+
+    const lines: TotalsLineInput[] = (items as IncomingItem[]).map((i) => ({
+      quantity: Number(i.quantity),
+      unitPrice: Number(i.unitPrice),
+      discount: Number(i.discount ?? 0),
+      taxPercent: Number(i.taxPercent ?? 0),
+    }));
+
+    const totals = computeInvoiceTotals({
+      items: lines,
+      invoiceTaxRate: Number(taxRate),
+      discountType,
+      discountValue,
+      shipping: Number(body.shipping ?? 0),
+      adjustment: Number(body.adjustment ?? 0),
+      tdsTcsType: tdsTcs.type,
+      tdsTcsRate: tdsTcs.rate,
+      roundOff: body.roundOff !== undefined ? Number(body.roundOff) : undefined,
+      autoRound: body.autoRound !== false,
     });
+
+    // Invoice number: auto-generated, but a non-blank override is honoured (spec: editable #).
+    const invoiceNumber =
+      typeof body.invoiceNumber === "string" && body.invoiceNumber.trim()
+        ? body.invoiceNumber.trim()
+        : await generateNextInvoiceNumber(tenantId);
+
+    const issueDate =
+      typeof body.issueDate === "string" && body.issueDate ? new Date(body.issueDate) : undefined;
+
+    let invoice;
+    try {
+      invoice = await prisma.invoice.create({
+        data: {
+          invoiceNumber,
+          customerId,
+          organizationId: tenantId,
+          status: requestedStatus,
+          ...(issueDate ? { issueDate } : {}),
+          dueDate: new Date(dueDate),
+          ...(requestedStatus === InvoiceStatus.SENT ? { sentAt: new Date() } : {}),
+          // Header metadata
+          paymentTerms: body.paymentTerms ?? null,
+          salesperson: body.salesperson ?? null,
+          orderNumber: body.orderNumber ?? null,
+          referenceNumber: body.referenceNumber ?? null,
+          subject: body.subject ?? null,
+          currency: typeof body.currency === "string" && body.currency ? body.currency : undefined,
+          // Amounts (from the shared totals engine)
+          subtotal: totals.subtotal,
+          discountType,
+          discountValue,
+          discount: totals.invoiceDiscount,
+          shipping: totals.shipping,
+          adjustment: totals.adjustment,
+          roundOff: totals.roundOff,
+          taxRate: totals.effectiveTaxRate,
+          taxAmount: totals.taxAmount,
+          tdsTcsType: tdsTcs.type,
+          tdsTcsSectionId: tdsTcs.sectionId,
+          tdsTcsRate: totals.tdsTcsRate,
+          tdsTcsAmount: totals.tdsTcsAmount,
+          total: totals.grandTotal,
+          balanceDue: totals.grandTotal,
+          notes,
+          terms: typeof body.terms === "string" ? body.terms : undefined,
+          internalNotes: typeof body.internalNotes === "string" ? body.internalNotes : undefined,
+          customFields:
+            body.customFields !== undefined ? (body.customFields as Prisma.InputJsonValue) : undefined,
+          items: {
+            create: (items as IncomingItem[]).map((item) => {
+              const amount = Number(item.quantity) * Number(item.unitPrice);
+              const lineDiscount = Number(item.discount ?? 0);
+              return {
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                unit: item.unit ?? null,
+                discount: lineDiscount,
+                amount,
+                sku: item.sku ?? null,
+                hsnSac: item.hsnSac ?? null,
+                taxPercent: item.taxPercent ?? 0,
+                taxAmount: (amount - lineDiscount) * ((item.taxPercent ?? 0) / 100),
+              };
+            }),
+          },
+        },
+        include: { customer: true, items: true },
+      });
+    } catch (e) {
+      // Unique [organizationId, invoiceNumber] collision on a manual override.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return NextResponse.json({ error: "That invoice number is already in use." }, { status: 409 });
+      }
+      throw e;
+    }
 
     await logInvoiceActivity({
       invoiceId: invoice.id,
@@ -138,6 +240,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(invoice, { status: 201 });
   } catch (error) {
+    if (error instanceof PlanLimitError) {
+      return NextResponse.json({ error: error.message, upgradeRequired: true }, { status: 402 });
+    }
     console.error("[INVOICES_POST]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

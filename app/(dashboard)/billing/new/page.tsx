@@ -1,19 +1,89 @@
 "use client";
 
+import { useMemo } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Loader2, FileText } from "lucide-react";
 import Link from "next/link";
 import { useInvoiceForm } from "@/features/billing/hooks/use-invoice-form";
-import { CustomerCombobox } from "@/features/billing/components/customer-combobox";
+import { CustomerInfoSection } from "@/features/billing/components/customer-info-section";
 import { LineItemsTable } from "@/features/billing/components/line-items-table";
-import { InvoiceSummary } from "@/features/billing/components/invoice-summary";
+import { NotesSection } from "@/features/billing/components/notes-section";
+import { AttachmentsSection } from "@/features/billing/components/attachments-section";
+import { RecurringSection } from "@/features/billing/components/recurring-section";
+import { PaymentSettingsSection } from "@/features/billing/components/payment-settings-section";
+import { CalcPanel } from "@/features/billing/components/calc-panel";
 import { InvoiceSuccessScreen } from "@/features/billing/components/invoice-success";
+import InvoicePreview, { type PreviewInvoiceData } from "@/components/billing/InvoicePreview";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 export default function NewInvoicePage() {
   const form = useInvoiceForm();
+  const { isMobile, isTablet } = useBreakpoint();
+  const stacked = isMobile || isTablet;
 
-  if (form.success)
-    return <InvoiceSuccessScreen success={form.success} onNewInvoice={form.reset} />;
+  const selectedCustomer = form.customers.find((c) => c.id === form.customerId);
+  const selectedSection = form.sections.find((s) => s.id === form.tdsTcsSectionId);
+
+  const previewData: PreviewInvoiceData = useMemo(() => {
+    const t = form.totals;
+    const tdsTcsLabel = form.tdsTcsType
+      ? `${form.tdsTcsType}${selectedSection ? ` ${selectedSection.code}` : ""} (${form.tdsTcsRate}%)`
+      : null;
+    return {
+      invoiceNumber: form.invoiceNumber || "INV-DRAFT",
+      status: "DRAFT",
+      issueDate: form.issueDate || new Date().toISOString(),
+      dueDate: form.dueDate || new Date().toISOString(),
+      currency: form.currency,
+      business: {
+        name: form.profile.businessName ?? "Your Company",
+        address: form.profile.address ?? null,
+        cityLine: [form.profile.city, form.profile.state, form.profile.country].filter(Boolean).join(", ") || null,
+        gstin: form.profile.gstin ?? null,
+        pan: form.profile.pan ?? null,
+        email: null,
+        phone: form.profile.phone ?? null,
+        website: form.profile.websiteUrl ?? null,
+        logoUrl: form.appearance.logoUrl ?? form.profile.logoUrl ?? null,
+      },
+      customer: {
+        name: selectedCustomer?.name ?? "—",
+        company: selectedCustomer?.company ?? null,
+        email: selectedCustomer?.email ?? null,
+        phone: selectedCustomer?.phone ?? null,
+        address: selectedCustomer?.address ?? null,
+        gstin: selectedCustomer?.gstin ?? null,
+      },
+      items: form.lineItems.map((i) => ({
+        description: i.description || "—",
+        sku: i.sku ?? null,
+        hsnSac: i.hsnSac ?? null,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        discount: i.discount ?? 0,
+        taxPercent: i.taxPercent,
+        amount: i.quantity * i.unitPrice,
+      })),
+      subtotal: t.subtotal,
+      discount: t.invoiceDiscount,
+      shipping: t.shipping,
+      adjustment: t.adjustment,
+      roundOff: t.roundOff,
+      taxRate: t.effectiveTaxRate,
+      taxAmount: t.taxAmount,
+      tdsTcsType: form.tdsTcsType,
+      tdsTcsAmount: t.tdsTcsAmount,
+      tdsTcsLabel,
+      total: t.grandTotal,
+      paidAmount: 0,
+      balanceDue: t.grandTotal,
+      customFields: form.customFields.filter((f) => f.label.trim()),
+      notes: form.notes || null,
+      terms: form.terms || null,
+    };
+  }, [form.totals, form.invoiceNumber, form.issueDate, form.dueDate, form.currency, form.profile, form.appearance, selectedCustomer, selectedSection, form.tdsTcsType, form.tdsTcsRate, form.lineItems, form.customFields, form.notes, form.terms]);
+
+  if (form.success) return <InvoiceSuccessScreen success={form.success} onNewInvoice={form.reset} />;
 
   if (form.dataError)
     return (
@@ -27,7 +97,7 @@ export default function NewInvoicePage() {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
         <Link href="/billing" className="btn-ghost" style={{ padding: "8px 12px", gap: 6 }}>
           <ArrowLeft size={15} /> Back
         </Link>
@@ -52,90 +122,45 @@ export default function NewInvoicePage() {
         </motion.div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20, alignItems: "start" }}>
-        {/* Left — Invoice Form */}
-        <motion.div className="surface" style={{ padding: 28 }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-          {/* Customer & Due Date */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
-            <div>
-              <label className="label">Customer *</label>
-              <CustomerCombobox
-                customers={form.customers}
-                value={form.customerId}
-                onChange={form.setCustomerId}
-                loading={form.dataLoading}
-              />
-              {form.customers.length === 0 && !form.dataLoading && (
-                <p style={{ fontSize: 11, color: "#f59e0b", marginTop: 5 }}>
-                  No customers yet. <Link href="/crm" style={{ color: "#818cf8" }}>Add one →</Link>
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="label">Due Date *</label>
-              <input
-                type="date" className="input"
-                value={form.dueDate}
-                onChange={(e) => form.setDueDate(e.target.value)}
-                min={new Date().toISOString().split("T")[0]}
-              />
-            </div>
+      <div style={{ display: "grid", gridTemplateColumns: stacked ? "1fr" : "minmax(0, 1.25fr) minmax(340px, 0.75fr)", gap: 20, alignItems: "start" }}>
+        {/* Left — form sections */}
+        <motion.div style={{ display: "flex", flexDirection: "column", gap: 20 }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+          <CustomerInfoSection form={form} />
+
+          <div className="surface" style={{ padding: 24 }}>
+            <LineItemsTable
+              lineItems={form.lineItems}
+              inventoryItems={form.inventoryItems}
+              currency={form.currency}
+              onAdd={form.addLineItem}
+              onRemove={form.removeLineItem}
+              onUpdate={form.updateLineItem}
+              onItemSelect={form.handleItemSelect}
+              onReorder={form.setLineItems}
+              onBulkAdd={form.bulkAddItems}
+              onCreateInline={form.createInlineItem}
+            />
           </div>
 
-          {/* Line Items */}
-          <LineItemsTable
-            lineItems={form.lineItems}
-            inventoryItems={form.inventoryItems}
-            onAdd={form.addLineItem}
-            onRemove={form.removeLineItem}
-            onUpdate={form.updateLineItem}
-            onItemSelect={form.handleItemSelect}
-          />
-
-          {/* Tax & Notes */}
-          <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 16 }}>
-            <div>
-              <label className="label">Invoice Tax Rate (%)</label>
-              <input
-                type="number" className="input"
-                min={0} max={100} step={0.5}
-                value={form.taxRate}
-                onChange={(e) => form.setTaxRate(parseFloat(e.target.value) || 0)}
-              />
-            </div>
-            <div>
-              <label className="label">Notes (optional)</label>
-              <input
-                className="input"
-                placeholder="Payment terms, instructions…"
-                value={form.notes}
-                onChange={(e) => form.setNotes(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* SKU summary */}
-          {form.lineItems.some((i) => i.sku) && (
-            <div style={{ marginTop: 16, padding: "10px 14px", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: 8, fontSize: 11, color: "var(--text-secondary)" }}>
-              <strong style={{ color: "#818cf8" }}>Linked catalog items:</strong>{" "}
-              {form.lineItems.filter((i) => i.sku).map((i) => `${i.description} (${i.sku})`).join(", ")}
-              {" — stock will be deducted automatically on payment."}
-            </div>
-          )}
+          <NotesSection form={form} />
+          <AttachmentsSection form={form} />
+          <RecurringSection form={form} />
+          <PaymentSettingsSection form={form} />
         </motion.div>
 
-        {/* Right — Summary & Actions */}
-        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}>
-          <InvoiceSummary
-            subtotal={form.subtotal}
-            taxAmount={form.taxAmount}
-            total={form.total}
-            taxRate={form.taxRate}
-            lineItems={form.lineItems}
-            saving={form.saving}
-            dataLoading={form.dataLoading}
-            onSubmit={form.handleSubmit}
-          />
+        {/* Right — calc panel + live preview */}
+        <motion.div
+          style={{ display: "flex", flexDirection: "column", gap: 20, position: stacked ? "static" : "sticky", top: 16 }}
+          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.12 }}
+        >
+          <CalcPanel form={form} />
+
+          <div>
+            <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+              <FileText size={12} /> Live Preview
+            </p>
+            <InvoicePreview appearance={form.appearance} data={previewData} />
+          </div>
         </motion.div>
       </div>
     </div>

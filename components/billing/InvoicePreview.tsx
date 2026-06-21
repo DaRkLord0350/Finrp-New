@@ -53,8 +53,13 @@ export interface PreviewInvoiceData {
   subtotal: number;
   discount: number;
   shipping: number;
+  adjustment?: number;
+  roundOff?: number;
   taxRate: number;
   taxAmount: number;
+  tdsTcsType?: "TDS" | "TCS" | null;
+  tdsTcsAmount?: number;
+  tdsTcsLabel?: string | null;
   total: number;
   paidAmount: number;
   balanceDue: number;
@@ -388,7 +393,16 @@ export default function InvoicePreview({
             <TotalLine label="Subtotal" value={money(data.subtotal)} theme={theme} />
             {data.discount > 0 && <TotalLine label="Discount" value={`- ${money(data.discount)}`} theme={theme} />}
             {appearance.showShipping && data.shipping > 0 && <TotalLine label="Shipping" value={money(data.shipping)} theme={theme} />}
+            {!!data.adjustment && <TotalLine label="Adjustment" value={`${data.adjustment < 0 ? "- " : "+ "}${money(Math.abs(data.adjustment))}`} theme={theme} />}
             {appearance.showTaxColumn && <TotalLine label={`Tax (${data.taxRate}%)`} value={money(data.taxAmount)} theme={theme} />}
+            {data.tdsTcsType && !!data.tdsTcsAmount && (
+              <TotalLine
+                label={data.tdsTcsLabel || data.tdsTcsType}
+                value={`${data.tdsTcsType === "TDS" ? "- " : "+ "}${money(data.tdsTcsAmount)}`}
+                theme={theme}
+              />
+            )}
+            {!!data.roundOff && <TotalLine label="Round Off" value={`${data.roundOff < 0 ? "- " : "+ "}${money(Math.abs(data.roundOff))}`} theme={theme} />}
             <GrandTotal accent={accent} theme={theme} radius={radius} value={money(data.total)} />
             {data.paidAmount > 0 && <TotalLine label="Paid" value={money(data.paidAmount)} theme={theme} color="#16a34a" />}
             {data.balanceDue > 0 && (

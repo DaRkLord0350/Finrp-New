@@ -41,6 +41,7 @@ export async function renderInvoicePdfBuffer(
       customer: true,
       items: true,
       payments: true,
+      tdsTcsSection: { select: { code: true } },
     },
   });
 
@@ -70,8 +71,15 @@ export async function renderInvoicePdfBuffer(
     subtotal: Number(invoice.subtotal),
     discount: Number(invoice.discount),
     shipping: Number(invoice.shipping),
+    adjustment: Number(invoice.adjustment),
+    roundOff: Number(invoice.roundOff),
     taxRate: Number(invoice.taxRate),
     taxAmount: Number(invoice.taxAmount),
+    tdsTcsType: (invoice.tdsTcsType as "TDS" | "TCS" | null) ?? null,
+    tdsTcsAmount: Number(invoice.tdsTcsAmount),
+    tdsTcsLabel: invoice.tdsTcsType
+      ? `${invoice.tdsTcsType}${invoice.tdsTcsSection ? ` ${invoice.tdsTcsSection.code}` : ""} (${Number(invoice.tdsTcsRate)}%)`
+      : null,
     total: Number(invoice.total),
     paidAmount: Number(invoice.paidAmount),
     balanceDue: Number(invoice.balanceDue),

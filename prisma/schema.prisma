@@ -25,6 +25,26 @@ model Organization {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
+  // ── Pricing & subscription (org-centric source of truth) ─────
+  // `plan` (above) is the legacy enum kept for backward-compat; the
+  // fields below drive the new CA/Business pricing model. See
+  // lib/billing/plans.ts for the catalog these reference.
+  billingCategory        BillingCategory?    // CA firm vs. Business (null until chosen)
+  planType               PlanType?           // concrete plan within the category
+  subscriptionStatus     SubscriptionStatus  @default(INACTIVE)
+  clientLimit            Int?                // CA: max active clients (null = unlimited)
+  teamLimit              Int?                // CA: max team members (null = unlimited)
+  activeClientCount      Int                 @default(0) // CA: cached # of active client links
+  teamMemberCount        Int                 @default(0) // CA: cached # of team members
+  graceLimit             Int                 @default(0) // soft overage allowance above the hard limit
+  linkedCAOrganizationId String?             // BUSINESS: the CA org it is connected to
+  relationshipStatus     RelationshipStatus? // BUSINESS: status of its CA link
+  // ── Razorpay billing ──
+  razorpayCustomerId     String?
+  razorpaySubscriptionId String?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+
   users                   User[]
   memberships             Membership[]
   invitations             Invitation[]
@@ -117,6 +137,8 @@ model Organization {
   invoiceActivities InvoiceActivity[]
   invoiceVersions   InvoiceVersion[]
   creditNotes       CreditNote[]
+  tdsTcsSections    TdsTcsSection[]
+  invoiceAttachments InvoiceAttachment[]
 
   // ── Accounting (fiscal years, periods, settings) ─
   fiscalYears          FiscalYear[]
@@ -127,7 +149,17 @@ model Organization {
   currencyRevaluations  CurrencyRevaluation[]
   bulkAccountUpdateJobs BulkAccountUpdateJob[]
 
+  // ── CA ↔ Business pricing relationships ─────────────────────
+  // Self-relation: a business org points at the CA org it is linked to.
+  linkedCAOrganization Organization?  @relation("CALinkedBusinesses", fields: [linkedCAOrganizationId], references: [id], onDelete: SetNull)
+  linkedBusinesses     Organization[] @relation("CALinkedBusinesses")
+  caRelationshipsAsCA       CARelationship[] @relation("CARelationshipCA")
+  caRelationshipsAsBusiness CARelationship[] @relation("CARelationshipBusiness")
+  billingPayments           BillingPayment[]
+
   @@index([slug])
+  @@index([billingCategory, planType])
+  @@index([linkedCAOrganizationId])
   @@map("organizations")
 }
 
@@ -136,6 +168,49 @@ enum Plan {
   STARTER
   GROWTH
   ENTERPRISE
+}
+
+// ── New pricing model enums ───────────────────────────────────
+// Two customer categories drive the entire pricing architecture.
+enum BillingCategory {
+  CA       // Chartered Accountant practice / firm
+  BUSINESS // A business (may or may not be linked to a CA)
+}
+
+// Concrete plans. The ACTIVE catalog is now a single universal four-tier
+// model: FREE / STARTER / GROWTH / ENTERPRISE (see lib/billing/plans.ts).
+// The legacy split-catalog values (SOLO … STANDALONE) are retained so any
+// pre-existing row stays valid; getPlan() maps them onto the active tiers.
+enum PlanType {
+  // Active universal tiers
+  FREE
+  STARTER
+  GROWTH
+  ENTERPRISE
+  // Legacy (retained for backward compatibility)
+  SOLO
+  GROWING_PRACTICE
+  FIRM
+  CONNECTED
+  CONNECTED_PLUS
+  STANDALONE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  INACTIVE
+}
+
+// Status of a business's link to a CA (mirrored on Organization
+// for the linked business and detailed on the CARelationship row).
+enum RelationshipStatus {
+  PENDING    // invitation sent, not yet accepted
+  ACTIVE     // linked to an active CA
+  INACTIVE   // CA paused / not currently active
+  TERMINATED // link removed
 }
 
 // ============================================================
@@ -359,10 +434,19 @@ model Invoice {
 
   // Amounts
   subtotal   Decimal @db.Decimal(12, 2)
-  discount   Decimal @default(0) @db.Decimal(12, 2)
+  discount   Decimal @default(0) @db.Decimal(12, 2) // computed invoice-level discount amount
+  discountType  String  @default("FIXED") // FIXED | PERCENT — how discountValue is interpreted
+  discountValue Decimal @default(0) @db.Decimal(12, 2) // raw entered value (% or amount)
   shipping   Decimal @default(0) @db.Decimal(12, 2)
+  adjustment Decimal @default(0) @db.Decimal(12, 2) // arbitrary +/- adjustment
+  roundOff   Decimal @default(0) @db.Decimal(12, 2) // rounding difference applied to grand total
   taxRate    Decimal @default(0) @db.Decimal(5, 2)
   taxAmount  Decimal @default(0) @db.Decimal(12, 2)
+  // TDS / TCS (Indian withholding / collected tax)
+  tdsTcsType    String? // TDS | TCS | null
+  tdsTcsSectionId String? // selected TdsTcsSection
+  tdsTcsRate    Decimal @default(0) @db.Decimal(5, 2)
+  tdsTcsAmount  Decimal @default(0) @db.Decimal(12, 2)
   total      Decimal @db.Decimal(12, 2)
   paidAmount Decimal @default(0) @db.Decimal(12, 2)
   balanceDue Decimal @db.Decimal(12, 2)
@@ -374,11 +458,17 @@ model Invoice {
 
   // Metadata
   currency       String    @default("INR")
+  paymentTerms    String? // DUE_ON_RECEIPT | NET_15 | NET_30 | NET_45 | NET_60 | CUSTOM
+  salesperson     String?
+  orderNumber     String?
+  referenceNumber String?
+  subject         String?
   notes          String?
   terms          String?
   internalNotes  String? // private — never shown on PDF / public link
   customFields   Json? // [{ label, value }] extra fields rendered on the invoice
   invoicePdf     String?
+  recurringInvoiceId String? // schedule that generated this invoice (if any)
   sentAt         DateTime?
   viewedAt       DateTime?
   exchangeRate     Decimal?  @db.Decimal(16, 6)
@@ -392,12 +482,14 @@ model Invoice {
   customer      Customer           @relation(fields: [customerId], references: [id])
   createdBy     User?              @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
   incomeAccount Account?           @relation("InvoiceIncomeAccount", fields: [incomeAccountId], references: [id])
+  tdsTcsSection TdsTcsSection?     @relation(fields: [tdsTcsSectionId], references: [id])
   items         InvoiceItem[]
   payments     Payment[]
   shareLinks   InvoiceShareLink[]
   activities   InvoiceActivity[]
   versions     InvoiceVersion[]
   creditNotes  CreditNote[]
+  attachments  InvoiceAttachment[]
 
   @@unique([organizationId, invoiceNumber])
   @@index([organizationId, status])
@@ -406,6 +498,7 @@ model Invoice {
   @@index([organizationId, createdAt])
   @@index([organizationId])
   @@index([customerId])
+  @@index([tdsTcsSectionId])
   @@map("invoices")
 }
 
@@ -417,6 +510,7 @@ enum InvoiceStatus {
   PARTIAL
   OVERDUE
   CANCELLED
+  VOID
 }
 
 // ============================================================
@@ -428,6 +522,7 @@ model InvoiceItem {
   description String
   sku         String?
   hsnSac      String? // HSN (goods) / SAC (services) code for GST
+  unit        String? // unit of measure (pcs, hrs, kg…)
   quantity    Decimal @db.Decimal(10, 2)
   unitPrice   Decimal @db.Decimal(12, 2)
   costPrice   Decimal @default(0) @db.Decimal(12, 2)
@@ -652,6 +747,48 @@ model InvoiceVersion {
   @@unique([invoiceId, version])
   @@index([invoiceId])
   @@map("invoice_versions")
+}
+
+// Configurable TDS / TCS sections + rates (per organization).
+// Seeded with common Indian sections on first read; fully editable.
+model TdsTcsSection {
+  id             String   @id @default(cuid())
+  organizationId String
+  type           String // TDS | TCS
+  code           String // e.g. 194C, 206C(1H)
+  name           String // e.g. Payment to Contractors
+  rate           Decimal  @db.Decimal(5, 2)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices     Invoice[]
+
+  @@unique([organizationId, type, code])
+  @@index([organizationId, type])
+  @@map("tds_tcs_sections")
+}
+
+// Invoice file attachments — stored binary-in-DB (mirrors ComplianceDocument).
+model InvoiceAttachment {
+  id             String   @id @default(cuid())
+  invoiceId      String
+  organizationId String
+  fileName       String
+  mimeType       String
+  fileSize       Int
+  checksum       String
+  binaryData     Bytes
+  uploadedById   String?
+  createdAt      DateTime @default(now())
+
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@map("invoice_attachments")
 }
 
 // ============================================================
@@ -1519,11 +1656,15 @@ model RecurringInvoice {
 
   customerId String
 
-  frequency String
+  frequency String // WEEKLY | MONTHLY | QUARTERLY | YEARLY | CUSTOM
+
+  customIntervalDays Int? // used when frequency = CUSTOM
 
   nextRunDate DateTime
 
   lastRunDate DateTime?
+
+  endDate DateTime? // stop generating after this date (inclusive)
 
   isActive Boolean @default(true)
 
@@ -1726,6 +1867,84 @@ model Subscription {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
+}
+
+// ============================================================
+// CA RELATIONSHIP (CA org ↔ Business org link)
+//
+// The foundation of the pricing model: when a business has an
+// ACTIVE relationship with an active CA, it receives the Connected
+// plan for free. One row per (CA org, business org) pair.
+// ============================================================
+model CARelationship {
+  id                     String             @id @default(cuid())
+  caOrganizationId       String
+  // Null until an email-only invite is accepted and the business org is known.
+  businessOrganizationId String?
+  status                 RelationshipStatus @default(PENDING)
+  invitedEmail           String? // business email invited (may pre-date the business org)
+  invitedById            String? // CA user who sent the invite
+  acceptedById           String? // business user who accepted
+  notes                  String?
+  invitedAt              DateTime           @default(now())
+  acceptedAt             DateTime?
+  terminatedAt           DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  caOrganization       Organization  @relation("CARelationshipCA", fields: [caOrganizationId], references: [id], onDelete: Cascade)
+  businessOrganization Organization? @relation("CARelationshipBusiness", fields: [businessOrganizationId], references: [id], onDelete: Cascade)
+
+  @@unique([caOrganizationId, businessOrganizationId])
+  @@index([caOrganizationId, status])
+  @@index([businessOrganizationId, status])
+  @@index([caOrganizationId, invitedEmail])
+  @@index([invitedEmail])
+  @@map("ca_relationships")
+}
+
+// ============================================================
+// BILLING PAYMENT (Razorpay order/payment + invoice history)
+//
+// One row per checkout attempt. PENDING when the order is created,
+// CAPTURED after server-side signature verification (or webhook),
+// FAILED on failure. Backs the billing history + invoice download.
+// ============================================================
+enum BillingPaymentStatus {
+  PENDING
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+model BillingPayment {
+  id                  String               @id @default(cuid())
+  organizationId      String
+  planType            PlanType
+  billingCategory     BillingCategory
+  amount              Decimal              @db.Decimal(10, 2) // INR rupees
+  currency            String               @default("INR")
+  status              BillingPaymentStatus @default(PENDING)
+  // Razorpay identifiers
+  razorpayOrderId     String?
+  razorpayPaymentId   String?
+  razorpaySignature   String?
+  // Billing period this payment covers
+  periodStart         DateTime?
+  periodEnd           DateTime?
+  invoiceNumber       String?              @unique
+  method              String? // card / upi / netbanking ...
+  failureReason       String?
+  createdById         String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([razorpayOrderId])
+  @@index([razorpayPaymentId])
+  @@map("billing_payments")
 }
 
 // ============================================================

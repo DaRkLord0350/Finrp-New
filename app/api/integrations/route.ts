@@ -8,6 +8,8 @@ import { auth } from "@clerk/nextjs/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { featureGate } from "@/lib/billing/guards";
+import { FEATURES } from "@/lib/billing/features";
 import type { ConnectorType, Prisma } from "@prisma/client";
 
 const createIntegrationSchema = z.object({
@@ -48,6 +50,10 @@ export async function GET() {
 export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Premium gate: Integrations require Connected Plus / Standalone (or a CA plan).
+  const locked = await featureGate(FEATURES.INTEGRATIONS);
+  if (locked) return locked;
 
   const user = await getCurrentUser();
 

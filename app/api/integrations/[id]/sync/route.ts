@@ -7,6 +7,8 @@ import { auth } from "@clerk/nextjs/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { enqueueSync } from "@/lib/jobs/queues";
+import { featureGate } from "@/lib/billing/guards";
+import { FEATURES } from "@/lib/billing/features";
 import { z } from "zod";
 
 const triggerSyncSchema = z.object({
@@ -21,6 +23,9 @@ export async function POST(
   const { id } = await params;
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const locked = await featureGate(FEATURES.INTEGRATIONS);
+  if (locked) return locked;
 
   const user = await getCurrentUser();
 

@@ -24,6 +24,7 @@ async function startWorkers() {
   const { createBankImportWorker } = await import("@/lib/banking/workers/bank-import.worker");
   const { scheduleBankAutoSyncScan } = await import("@/lib/banking/queue");
   const { createBulkAccountUpdateWorker } = await import("@/lib/accounting/workers/bulk-account-update.worker");
+  const { createRecurringInvoiceWorker, scheduleRecurringInvoiceScan } = await import("@/lib/invoices/workers/recurring-invoice.worker");
 
   console.log("═══════════════════════════════════════════════════");
   console.log("  FinRP Workers starting");
@@ -50,6 +51,7 @@ async function startWorkers() {
     createBankSyncWorker(),
     createBankImportWorker(),
     createBulkAccountUpdateWorker(),
+    createRecurringInvoiceWorker(),
   ];
 
   console.log(`[Workers] ${workers.length} workers started`);
@@ -59,10 +61,16 @@ async function startWorkers() {
   console.log("  • bank-sync    worker (concurrency=3)");
   console.log("  • bank-import  worker (concurrency=2)");
   console.log("  • bulk-account worker (concurrency=1)");
+  console.log("  • recurring-invoice worker (concurrency=1)");
 
   // Repeatable scan that fans out scheduled bank refreshes (idempotent)
   await scheduleBankAutoSyncScan().catch((err) => {
     console.error("[Workers] Failed to schedule bank auto-sync scan:", err);
+  });
+
+  // Repeatable hourly scan that generates due recurring invoices (idempotent)
+  await scheduleRecurringInvoiceScan().catch((err) => {
+    console.error("[Workers] Failed to schedule recurring-invoice scan:", err);
   });
 
   // Stuck-job checker — runs every 60 s in the same process

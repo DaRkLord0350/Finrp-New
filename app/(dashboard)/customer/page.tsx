@@ -3,6 +3,7 @@ import { getOrganizationId } from "@/lib/auth/organization";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { format } from "date-fns";
+import { CAConnectionBanner } from "@/components/business/CAConnectionBanner";
 import {
   ShieldCheck,
   UserCog,
@@ -85,6 +86,9 @@ export default async function CustomerPortalPage() {
           Your compliance overview and CA relationship
         </p>
       </div>
+
+      {/* Pending CA connection invitations (grants free Connected plan) */}
+      <CAConnectionBanner />
 
       {/* Summary Cards */}
       <div

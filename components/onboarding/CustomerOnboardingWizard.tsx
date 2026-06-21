@@ -284,7 +284,8 @@ export function CustomerOnboardingWizard() {
     try {
       const res = await actionCompleteCustomerOnboarding();
       if (!res.success) throw new Error(res.error);
-      router.push("/dashboard");
+      // Profile done → choose CA link / plan + activate before the dashboard.
+      router.push("/onboarding/plan");
       router.refresh();
     } catch (e) {
       setError((e as Error).message ?? "Failed to complete setup.");

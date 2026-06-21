@@ -24,6 +24,8 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { isOnboardingComplete } from "@/services/onboardingService";
+import { isOrganizationActivated, getOrgEntitlements } from "@/lib/billing/guards";
+import { toEntitlementsDTO } from "@/lib/billing/entitlements";
 import { getWorkspaceContext } from "@/lib/workspace/context";
 import {
   requiredPermissionForPath,
@@ -44,8 +46,8 @@ export default async function DashboardLayout({
     redirect("/sign-in");
   }
 
-  // New users haven't selected a role yet → show role selection
-  if (!user.userRole) redirect("/onboarding/role");
+  // New users haven't picked an entry path yet → welcome screen
+  if (!user.userRole) redirect("/onboarding/welcome");
 
   // ── CA / Firm Admin / Admin: workspace (impersonation) mode ──
   if (user.userRole !== "CUSTOMER") {
@@ -97,12 +99,27 @@ export default async function DashboardLayout({
     redirect("/onboarding/customer");
   }
 
+  // Gate dashboard access until a plan is chosen + (if paid) activated.
+  if (!(await isOrganizationActivated(user.organizationId))) {
+    redirect("/onboarding/plan");
+  }
+
   // Drive the dynamic sidebar + client permission gates from the
   // user's EFFECTIVE permissions (custom-role overrides → code defaults).
   // Server stays the source of truth; this is UX.
   const permissions = await resolvePermissions(user.organizationId, user.role);
+
+  // Plan entitlements feed the "lock, don't hide" treatment for premium
+  // features (Integrations, AI, …) in the sidebar + settings nav.
+  const ent = toEntitlementsDTO(await getOrgEntitlements(user.organizationId));
+
   return (
-    <DashboardShell role={user.role} permissions={permissions}>
+    <DashboardShell
+      role={user.role}
+      permissions={permissions}
+      entitlementFeatures={ent.features}
+      entitlementsLegacy={ent.isLegacy}
+    >
       {children}
     </DashboardShell>
   );

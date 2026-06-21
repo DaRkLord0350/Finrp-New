@@ -282,7 +282,8 @@ export function CAFirmOnboardingWizard() {
     try {
       const res = await actionCompleteFirmOnboarding();
       if (!res.success) throw new Error(res.error);
-      router.push("/firm");
+      // Profile done → choose a plan + activate before entering the portal.
+      router.push("/onboarding/plan");
       router.refresh();
     } catch (e) {
       setError((e as Error).message ?? "Failed to complete setup.");

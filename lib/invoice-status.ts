@@ -18,6 +18,7 @@ export const INVOICE_STATUS_META: Record<string, InvoiceStatusMeta> = {
   PAID:      { label: "Paid",      color: "#10b981" },
   OVERDUE:   { label: "Overdue",   color: "#ef4444" },
   CANCELLED: { label: "Cancelled", color: "#71717a" },
+  VOID:      { label: "Void",      color: "#52525b" },
 };
 
 // Display / selection order (matches the product spec ordering).
@@ -29,6 +30,7 @@ export const INVOICE_STATUS_ORDER = [
   "PAID",
   "OVERDUE",
   "CANCELLED",
+  "VOID",
 ] as const;
 
 export type InvoiceStatusValue = (typeof INVOICE_STATUS_ORDER)[number];

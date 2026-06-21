@@ -6,6 +6,7 @@ import { logInvoiceActivity } from "@/lib/invoices/activity";
 import { getInvoiceStatusMeta } from "@/lib/invoice-status";
 import { createAuditLog } from "@/lib/audit";
 import { InvoiceStatus, Prisma } from "@prisma/client";
+import { computeInvoiceTotals, type TotalsLineInput } from "@/lib/invoices/totals";
 
 const VALID_STATUSES = Object.values(InvoiceStatus) as string[];
 
@@ -13,9 +14,34 @@ interface IncomingItem {
   description: string;
   quantity: number;
   unitPrice: number;
+  unit?: string | null;
+  discount?: number;
   sku?: string | null;
   hsnSac?: string | null;
   taxPercent?: number;
+}
+
+// Validate the chosen TDS/TCS section against this org; falls back to the
+// section's stored rate when no explicit override is supplied.
+async function resolveTdsTcs(
+  organizationId: string,
+  body: Record<string, unknown>
+): Promise<{ type: "TDS" | "TCS" | null; sectionId: string | null; rate: number }> {
+  const type = body.tdsTcsType === "TDS" || body.tdsTcsType === "TCS" ? body.tdsTcsType : null;
+  if (!type) return { type: null, sectionId: null, rate: 0 };
+  let sectionId: string | null = null;
+  let rate = body.tdsTcsRate !== undefined ? Number(body.tdsTcsRate) : NaN;
+  if (typeof body.tdsTcsSectionId === "string" && body.tdsTcsSectionId) {
+    const section = await prisma.tdsTcsSection.findFirst({
+      where: { id: body.tdsTcsSectionId, organizationId, type },
+      select: { id: true, rate: true },
+    });
+    if (section) {
+      sectionId = section.id;
+      if (!Number.isFinite(rate)) rate = Number(section.rate);
+    }
+  }
+  return { type, sectionId, rate: Number.isFinite(rate) ? Math.max(0, rate) : 0 };
 }
 
 // Snapshot the current invoice, replace its line items, and recompute totals
@@ -54,12 +80,53 @@ async function editInvoiceWithItems(args: {
   }
 
   const taxRate = body.taxRate !== undefined ? Number(body.taxRate) : Number(current.taxRate);
-  const discount = body.discount !== undefined ? Number(body.discount) : Number(current.discount);
   const shipping = body.shipping !== undefined ? Number(body.shipping) : Number(current.shipping);
+  const adjustment = body.adjustment !== undefined ? Number(body.adjustment) : Number(current.adjustment);
+  const discountType: "FIXED" | "PERCENT" =
+    body.discountType === "PERCENT"
+      ? "PERCENT"
+      : body.discountType === "FIXED"
+        ? "FIXED"
+        : current.discountType === "PERCENT"
+          ? "PERCENT"
+          : "FIXED";
+  const discountValue =
+    body.discountValue !== undefined
+      ? Number(body.discountValue)
+      : body.discount !== undefined
+        ? Number(body.discount)
+        : Number(current.discountValue);
 
-  const subtotal = valid.reduce((s, i) => s + Number(i.quantity) * Number(i.unitPrice), 0);
-  const taxAmount = subtotal * (taxRate / 100);
-  const total = subtotal + taxAmount + shipping - discount;
+  // TDS/TCS: explicit body wins; otherwise preserve the invoice's current selection.
+  const tdsTcs =
+    body.tdsTcsType !== undefined
+      ? await resolveTdsTcs(organizationId, body)
+      : {
+          type: (current.tdsTcsType as "TDS" | "TCS" | null) ?? null,
+          sectionId: current.tdsTcsSectionId,
+          rate: Number(current.tdsTcsRate),
+        };
+
+  const lines: TotalsLineInput[] = valid.map((i) => ({
+    quantity: Number(i.quantity),
+    unitPrice: Number(i.unitPrice),
+    discount: Number(i.discount ?? 0),
+    taxPercent: Number(i.taxPercent ?? 0),
+  }));
+
+  const totals = computeInvoiceTotals({
+    items: lines,
+    invoiceTaxRate: taxRate,
+    discountType,
+    discountValue,
+    shipping,
+    adjustment,
+    tdsTcsType: tdsTcs.type,
+    tdsTcsRate: tdsTcs.rate,
+    roundOff: body.roundOff !== undefined ? Number(body.roundOff) : undefined,
+    autoRound: body.autoRound !== false,
+  });
+  const total = totals.grandTotal;
   const paidAmount = Number(current.paidAmount);
   const balanceDue = Math.max(0, total - paidAmount);
 
@@ -71,9 +138,16 @@ async function editInvoiceWithItems(args: {
     dueDate: current.dueDate.toISOString(),
     subtotal: Number(current.subtotal),
     discount: Number(current.discount),
+    discountType: current.discountType,
+    discountValue: Number(current.discountValue),
     shipping: Number(current.shipping),
+    adjustment: Number(current.adjustment),
+    roundOff: Number(current.roundOff),
     taxRate: Number(current.taxRate),
     taxAmount: Number(current.taxAmount),
+    tdsTcsType: current.tdsTcsType,
+    tdsTcsRate: Number(current.tdsTcsRate),
+    tdsTcsAmount: Number(current.tdsTcsAmount),
     total: Number(current.total),
     paidAmount: Number(current.paidAmount),
     balanceDue: Number(current.balanceDue),
@@ -83,8 +157,10 @@ async function editInvoiceWithItems(args: {
       description: it.description,
       sku: it.sku,
       hsnSac: it.hsnSac,
+      unit: it.unit,
       quantity: Number(it.quantity),
       unitPrice: Number(it.unitPrice),
+      discount: Number(it.discount),
       taxPercent: Number(it.taxPercent),
       amount: Number(it.amount),
     })),
@@ -114,11 +190,25 @@ async function editInvoiceWithItems(args: {
       data: {
         customerId,
         dueDate: typeof body.dueDate === "string" && body.dueDate ? new Date(body.dueDate) : undefined,
-        taxRate,
-        discount,
-        shipping,
-        subtotal,
-        taxAmount,
+        issueDate: typeof body.issueDate === "string" && body.issueDate ? new Date(body.issueDate) : undefined,
+        paymentTerms: typeof body.paymentTerms === "string" ? body.paymentTerms : undefined,
+        salesperson: typeof body.salesperson === "string" ? body.salesperson : undefined,
+        orderNumber: typeof body.orderNumber === "string" ? body.orderNumber : undefined,
+        referenceNumber: typeof body.referenceNumber === "string" ? body.referenceNumber : undefined,
+        subject: typeof body.subject === "string" ? body.subject : undefined,
+        taxRate: totals.effectiveTaxRate,
+        discountType,
+        discountValue,
+        discount: totals.invoiceDiscount,
+        shipping: totals.shipping,
+        adjustment: totals.adjustment,
+        roundOff: totals.roundOff,
+        subtotal: totals.subtotal,
+        taxAmount: totals.taxAmount,
+        tdsTcsType: tdsTcs.type,
+        tdsTcsSectionId: tdsTcs.sectionId,
+        tdsTcsRate: totals.tdsTcsRate,
+        tdsTcsAmount: totals.tdsTcsAmount,
         total,
         balanceDue,
         notes: typeof body.notes === "string" ? body.notes : current.notes,
@@ -130,16 +220,22 @@ async function editInvoiceWithItems(args: {
             : undefined,
         currency: typeof body.currency === "string" && body.currency ? body.currency : current.currency,
         items: {
-          create: valid.map((i) => ({
-            description: i.description,
-            quantity: i.quantity,
-            unitPrice: i.unitPrice,
-            amount: Number(i.quantity) * Number(i.unitPrice),
-            sku: i.sku ?? null,
-            hsnSac: i.hsnSac ?? null,
-            taxPercent: i.taxPercent ?? 0,
-            taxAmount: Number(i.quantity) * Number(i.unitPrice) * ((i.taxPercent ?? 0) / 100),
-          })),
+          create: valid.map((i) => {
+            const amount = Number(i.quantity) * Number(i.unitPrice);
+            const lineDiscount = Number(i.discount ?? 0);
+            return {
+              description: i.description,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              unit: i.unit ?? null,
+              discount: lineDiscount,
+              amount,
+              sku: i.sku ?? null,
+              hsnSac: i.hsnSac ?? null,
+              taxPercent: i.taxPercent ?? 0,
+              taxAmount: (amount - lineDiscount) * ((i.taxPercent ?? 0) / 100),
+            };
+          }),
         },
       },
       include: { customer: true, items: true, payments: true },

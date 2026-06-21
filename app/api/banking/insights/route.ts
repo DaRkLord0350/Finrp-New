@@ -4,6 +4,8 @@ import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
 import { runInsightGeneration, generateAIInsightText } from "@/lib/banking/insight-generator";
+import { featureGate } from "@/lib/billing/guards";
+import { FEATURES } from "@/lib/billing/features";
 
 export async function GET(req: NextRequest) {
   const { userId } = await auth();
@@ -57,6 +59,10 @@ export async function POST(req: NextRequest) {
 
   const orgId = await getTenantId();
   if (!orgId) return NextResponse.json({ error: "No organization" }, { status: 400 });
+
+  // Premium gate: AI generation requires Connected Plus / Standalone.
+  const locked = await featureGate(FEATURES.AI);
+  if (locked) return locked;
 
   try {
     const body = await req.json();
