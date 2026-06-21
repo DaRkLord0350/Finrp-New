@@ -17,6 +17,7 @@ export const QUEUE_NAMES = {
   IMPORT: "finrp-import",
   SYNC: "finrp-sync",
   WEBHOOK: "finrp-webhook",
+  TAX: "finrp-tax",
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];

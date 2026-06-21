@@ -71,6 +71,12 @@ export const rolePermissions: Record<Role, string[]> = {
     "compliance.delete",
     "compliance.approve",
     "compliance.audit.read",
+    // Tax & Compliance Engine
+    "tax.read",
+    "tax.write",
+    "tax.manage",
+    "tax.file",
+    "tax.approve",
     // Payroll / HR
     "employees.read",
     "employees.write",
@@ -119,6 +125,11 @@ export const rolePermissions: Record<Role, string[]> = {
     "compliance.write",
     "compliance.approve",
     "compliance.audit.read",
+    // Tax & Compliance Engine (prepare + file + approve, no rule config)
+    "tax.read",
+    "tax.write",
+    "tax.file",
+    "tax.approve",
     // Reporting
     "analytics.read",
   ],
@@ -145,6 +156,10 @@ export const rolePermissions: Record<Role, string[]> = {
     "compliance.read",
     "compliance.write",
     "compliance.audit.read",
+    // Tax & Compliance Engine (prepare + file; approval reserved for ADMIN/MANAGER)
+    "tax.read",
+    "tax.write",
+    "tax.file",
     // Payroll (if enabled for the org)
     "payroll.read",
     "payroll.write",
@@ -181,5 +196,6 @@ export const rolePermissions: Record<Role, string[]> = {
     "finance.read",
     "accounting.read",
     "analytics.read",
+    "tax.read",
   ],
 };

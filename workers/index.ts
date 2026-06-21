@@ -25,6 +25,7 @@ async function startWorkers() {
   const { scheduleBankAutoSyncScan } = await import("@/lib/banking/queue");
   const { createBulkAccountUpdateWorker } = await import("@/lib/accounting/workers/bulk-account-update.worker");
   const { createRecurringInvoiceWorker, scheduleRecurringInvoiceScan } = await import("@/lib/invoices/workers/recurring-invoice.worker");
+  const { createTaxWorker } = await import("@/lib/tax/workers/tax.worker");
 
   console.log("═══════════════════════════════════════════════════");
   console.log("  FinRP Workers starting");
@@ -52,6 +53,7 @@ async function startWorkers() {
     createBankImportWorker(),
     createBulkAccountUpdateWorker(),
     createRecurringInvoiceWorker(),
+    createTaxWorker(),
   ];
 
   console.log(`[Workers] ${workers.length} workers started`);
@@ -62,6 +64,7 @@ async function startWorkers() {
   console.log("  • bank-import  worker (concurrency=2)");
   console.log("  • bulk-account worker (concurrency=1)");
   console.log("  • recurring-invoice worker (concurrency=1)");
+  console.log("  • tax          worker (concurrency=2)");
 
   // Repeatable scan that fans out scheduled bank refreshes (idempotent)
   await scheduleBankAutoSyncScan().catch((err) => {

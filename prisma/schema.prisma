@@ -5421,3 +5421,1064 @@ model ClientActivityLog {
   @@index([action])
   @@map("client_activity_logs")
 }
+
+// ============================================================
+// ============ TAX & COMPLIANCE ENGINE =======================
+// ============================================================
+// Production-grade, cloud-native tax/compliance engine.
+// Conventions (mirror ca_hub_* models):
+//   • plain `organizationId String` (no Organization relation back-ref)
+//   • snake_case @@map with `tax_` / `gst_` prefixes
+//   • soft delete via nullable `deletedAt`
+//   • Decimal(16,2) money, Decimal(5,2) rates
+//   • ALL computation resolves through versioned config
+//     (TaxConfigVersion + code rule-packs) — never hardcoded.
+// ============================================================
+
+enum TaxScheme {
+  GST
+  TDS
+  INCOME_TAX
+  AUDIT
+  ROC
+  DEPRECIATION
+  CAPITAL_GAINS
+  BUSINESS_INCOME
+}
+
+enum TaxConfigStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum TaxImportSource {
+  TALLY
+  EXCEL
+  CSV
+  JSON
+  MANUAL
+  GSP
+  API
+}
+
+enum TaxImportStatus {
+  PENDING
+  PARSING
+  PARSED
+  NORMALIZED
+  COMMITTED
+  FAILED
+}
+
+enum TaxRecordStatus {
+  RAW
+  VALID
+  INVALID
+  COMMITTED
+  SKIPPED
+}
+
+enum TaxValidationSeverity {
+  ERROR
+  WARNING
+  INFO
+}
+
+enum TaxFilingStatus {
+  DRAFT
+  READY
+  PENDING_APPROVAL
+  APPROVED
+  SUBMITTED
+  ACKNOWLEDGED
+  FAILED
+  REJECTED
+}
+
+enum TaxFilingEvent {
+  CREATED
+  VALIDATED
+  GENERATED
+  SUBMITTED_FOR_APPROVAL
+  APPROVED
+  REJECTED
+  PUSHED_TO_PROVIDER
+  ACKNOWLEDGED
+  FAILED
+  RESET
+  SIGNED
+}
+
+enum TaxSigningType {
+  DSC
+  AADHAAR_ESIGN
+  EVC
+  MOCK
+}
+
+enum TaxSigningStatus {
+  DRAFT
+  SENT
+  SIGNED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+enum TaxJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ── Versioned configuration (the rule-engine override layer) ──
+model TaxConfigVersion {
+  id             String          @id @default(cuid())
+  organizationId String? // null = global default override
+  scheme         TaxScheme
+  period         String // FY "2025-26" or AY "2026-27"
+  version        Int             @default(1)
+  status         TaxConfigStatus @default(DRAFT)
+  label          String?
+  payload        Json // full or partial rule-set override
+  notes          String?
+  publishedAt    DateTime?
+  publishedById  String?
+  createdById    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  @@unique([organizationId, scheme, period, version])
+  @@index([organizationId, scheme, period, status])
+  @@index([scheme, period, status])
+  @@map("tax_config_versions")
+}
+
+// ── Import batches — raw source rows preserved for audit ──────
+model TaxImportBatch {
+  id             String          @id @default(cuid())
+  organizationId String
+  scheme         TaxScheme
+  module         String // "GST_INVOICES" | "GSTR2B" | "TDS_DEDUCTEES" ...
+  source         TaxImportSource
+  period         String?
+  fileName       String?
+  fileKey        String? // storage pointer
+  status         TaxImportStatus @default(PENDING)
+  rowCount       Int             @default(0)
+  validCount     Int             @default(0)
+  errorCount     Int             @default(0)
+  committedCount Int             @default(0)
+  rawPayload     Json? // full raw source (small files) — audit
+  meta           Json?
+  errorMessage   String?
+  createdById    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  records TaxImportRecord[]
+
+  @@index([organizationId, scheme, status])
+  @@index([organizationId, module, period])
+  @@map("tax_import_batches")
+}
+
+model TaxImportRecord {
+  id             String          @id @default(cuid())
+  batchId        String
+  organizationId String
+  rowIndex       Int
+  raw            Json // untouched source row — preserved for audit
+  normalized     Json? // engine-normalized projection
+  status         TaxRecordStatus @default(RAW)
+  errors         Json?
+  targetType     String? // entity it was committed into (e.g. "GstInvoice")
+  targetId       String?
+  createdAt      DateTime        @default(now())
+
+  batch TaxImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, status])
+  @@index([organizationId])
+  @@map("tax_import_records")
+}
+
+// ── Configurable validation framework ─────────────────────────
+model TaxValidationRule {
+  id             String                @id @default(cuid())
+  organizationId String? // null = system rule (all orgs)
+  scheme         TaxScheme
+  code           String // "GST_GSTIN_FORMAT"
+  name           String
+  description    String?
+  explanation    String?               @db.Text
+  severity       TaxValidationSeverity @default(ERROR)
+  blocking       Boolean               @default(true)
+  handlerKey     String // maps to a registered handler fn
+  params         Json?
+  periodScope    String? // FY/AY scope, null = all
+  isActive       Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  deletedAt      DateTime?
+
+  @@unique([organizationId, code])
+  @@index([scheme, isActive])
+  @@map("tax_validation_rules")
+}
+
+model TaxValidationRun {
+  id             String    @id @default(cuid())
+  organizationId String
+  scheme         TaxScheme
+  subjectType    String // "GSTR1" | "GstInvoiceBatch" ...
+  subjectId      String?
+  period         String?
+  passed         Boolean   @default(false)
+  errorCount     Int       @default(0)
+  warningCount   Int       @default(0)
+  infoCount      Int       @default(0)
+  blocked        Boolean   @default(false)
+  triggeredById  String?
+  createdAt      DateTime  @default(now())
+
+  findings TaxValidationFinding[]
+
+  @@index([organizationId, scheme, subjectType])
+  @@index([organizationId, createdAt])
+  @@map("tax_validation_runs")
+}
+
+model TaxValidationFinding {
+  id          String                @id @default(cuid())
+  runId       String
+  ruleCode    String
+  severity    TaxValidationSeverity
+  blocking    Boolean               @default(false)
+  field       String?
+  message     String
+  explanation String?               @db.Text
+  pointer     String? // path to offending record/line
+  value       Json?
+  createdAt   DateTime              @default(now())
+
+  run TaxValidationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, severity])
+  @@map("tax_validation_findings")
+}
+
+// ── Filing submissions + immutable append-only log ────────────
+model TaxFilingSubmission {
+  id               String          @id @default(cuid())
+  organizationId   String
+  scheme           TaxScheme
+  returnType       String // "GSTR1" | "GSTR3B" | "24Q" | "ITR3" ...
+  period           String
+  gstin            String?
+  status           TaxFilingStatus @default(DRAFT)
+  payload          Json? // generated government payload
+  payloadHash      String?
+  payloadKey       String? // storage pointer for large payloads
+  summary          Json? // headline numbers for dashboards
+  providerRef      String? // GSP reference id
+  arn              String? // acknowledgement reference number
+  ackNo            String?
+  errorMessage     String?
+  validationRunId  String?
+  signingRequestId String?
+  preparedById     String?
+  approvedById     String?
+  approvedAt       DateTime?
+  submittedById    String?
+  submittedAt      DateTime?
+  acknowledgedAt   DateTime?
+  dueDate          DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+
+  logs TaxFilingLog[]
+
+  @@unique([organizationId, scheme, returnType, period, gstin])
+  @@index([organizationId, status])
+  @@index([organizationId, scheme, period])
+  @@map("tax_filing_submissions")
+}
+
+// IMMUTABLE: rows are only ever appended — never updated or deleted.
+model TaxFilingLog {
+  id               String           @id @default(cuid())
+  submissionId     String
+  organizationId   String
+  event            TaxFilingEvent
+  fromStatus       TaxFilingStatus?
+  toStatus         TaxFilingStatus?
+  actorId          String?
+  actorRole        String?
+  payloadHash      String?
+  detail           String?
+  providerResponse Json?
+  createdAt        DateTime         @default(now())
+
+  submission TaxFilingSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("tax_filing_logs")
+}
+
+// ── DSC / eSign abstraction (provider-swappable) ──────────────
+model TaxSigningRequest {
+  id             String           @id @default(cuid())
+  organizationId String
+  scheme         TaxScheme
+  subjectType    String // "GSTR1" | "AuditReport3CB" ...
+  subjectId      String?
+  provider       TaxSigningType   @default(MOCK)
+  status         TaxSigningStatus @default(DRAFT)
+  signerName     String?
+  signerEmail    String?
+  signerPanEnc   String? // PAN encrypted at rest (AES-256-GCM)
+  documentHash   String?
+  providerRef    String?
+  signatureData  Json?
+  sentAt         DateTime?
+  signedAt       DateTime?
+  expiresAt      DateTime?
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+
+  @@index([organizationId, status])
+  @@index([subjectType, subjectId])
+  @@map("tax_signing_requests")
+}
+
+// ── Async compute job tracking (admin monitoring) ─────────────
+model TaxJobRun {
+  id             String       @id @default(cuid())
+  organizationId String
+  queue          String
+  jobName        String
+  jobId          String?
+  status         TaxJobStatus @default(QUEUED)
+  attempts       Int          @default(0)
+  payload        Json?
+  result         Json?
+  errorMessage   String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, status])
+  @@index([queue, status])
+  @@index([jobId])
+  @@map("tax_job_runs")
+}
+
+// ============================================================
+// ============ GST MODULE ====================================
+// ============================================================
+
+enum GstSupplyDirection {
+  OUTWARD
+  INWARD
+}
+
+enum GstInvoiceClass {
+  B2B
+  B2CL
+  B2CS
+  EXPORT
+  CDNR
+  CDNUR
+  NIL_EXEMPT
+  ADVANCE
+  UNCLASSIFIED
+}
+
+enum GstDocType {
+  INVOICE
+  CREDIT_NOTE
+  DEBIT_NOTE
+  BILL_OF_SUPPLY
+  ADVANCE_RECEIPT
+}
+
+enum GstRegType {
+  REGULAR
+  COMPOSITION
+  SEZ
+  SEZ_DEVELOPER
+  UIN
+  UNREGISTERED
+}
+
+enum GstReturnKind {
+  GSTR1
+  GSTR3B
+  GSTR2B
+  GSTR9
+  GSTR9C
+  CMP08
+}
+
+enum GstReconStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum GstMatchOutcome {
+  MATCHED
+  PARTIAL
+  MISMATCH
+  MISSING_IN_2B
+  MISSING_IN_BOOKS
+}
+
+enum GstMismatchKind {
+  TAX_AMOUNT
+  TAXABLE_VALUE
+  INVOICE_NUMBER
+  INVOICE_DATE
+  GSTIN
+  PLACE_OF_SUPPLY
+  MISSING_INVOICE
+  EXTRA_INVOICE
+  RATE
+}
+
+// ── Per-GSTIN registration profile ────────────────────────────
+model GstReturnProfile {
+  id              String     @id @default(cuid())
+  organizationId  String
+  gstin           String
+  legalName       String?
+  tradeName       String?
+  stateCode       String // first 2 digits of GSTIN
+  regType         GstRegType @default(REGULAR)
+  filingFrequency String     @default("MONTHLY") // MONTHLY | QUARTERLY (QRMP)
+  isPrimary       Boolean    @default(false)
+  isActive        Boolean    @default(true)
+  meta            Json?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  @@unique([organizationId, gstin])
+  @@index([organizationId, isActive])
+  @@map("gst_return_profiles")
+}
+
+// ── Ingested sales/purchase invoices ──────────────────────────
+model GstInvoice {
+  id                String             @id @default(cuid())
+  organizationId    String
+  profileId         String? // own GstReturnProfile
+  importRecordId    String? // link to preserved raw row
+  direction         GstSupplyDirection
+  docType           GstDocType         @default(INVOICE)
+  classification    GstInvoiceClass    @default(UNCLASSIFIED)
+  // counterparty
+  counterpartyGstin String?
+  counterpartyName  String?
+  counterpartyState String?
+  // document
+  invoiceNumber     String
+  invoiceDate       DateTime
+  period            String // "2025-26-05" (FY-month) — derived
+  placeOfSupply     String? // state code
+  reverseCharge     Boolean            @default(false)
+  isExport          Boolean            @default(false)
+  exportType        String? // WPAY | WOPAY
+  // amounts
+  invoiceValue      Decimal            @default(0) @db.Decimal(16, 2)
+  taxableValue      Decimal            @default(0) @db.Decimal(16, 2)
+  igst              Decimal            @default(0) @db.Decimal(16, 2)
+  cgst              Decimal            @default(0) @db.Decimal(16, 2)
+  sgst              Decimal            @default(0) @db.Decimal(16, 2)
+  cess              Decimal            @default(0) @db.Decimal(16, 2)
+  // ITC (inward only)
+  itcEligible       Boolean            @default(true)
+  itcIgst           Decimal            @default(0) @db.Decimal(16, 2)
+  itcCgst           Decimal            @default(0) @db.Decimal(16, 2)
+  itcSgst           Decimal            @default(0) @db.Decimal(16, 2)
+  itcCess           Decimal            @default(0) @db.Decimal(16, 2)
+  source            TaxImportSource    @default(MANUAL)
+  notes             String?
+  createdById       String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  deletedAt         DateTime?
+
+  lines GstInvoiceLine[]
+
+  @@index([organizationId, direction, period])
+  @@index([organizationId, classification])
+  @@index([organizationId, counterpartyGstin])
+  @@index([organizationId, invoiceDate])
+  @@map("gst_invoices")
+}
+
+model GstInvoiceLine {
+  id             String   @id @default(cuid())
+  invoiceId      String
+  organizationId String
+  hsnSac         String?
+  description    String?
+  quantity       Decimal? @db.Decimal(16, 3)
+  unit           String?
+  rate           Decimal? @db.Decimal(16, 2)
+  taxableValue   Decimal  @default(0) @db.Decimal(16, 2)
+  gstRate        Decimal  @default(0) @db.Decimal(5, 2)
+  cessRate       Decimal  @default(0) @db.Decimal(5, 2)
+  igst           Decimal  @default(0) @db.Decimal(16, 2)
+  cgst           Decimal  @default(0) @db.Decimal(16, 2)
+  sgst           Decimal  @default(0) @db.Decimal(16, 2)
+  cess           Decimal  @default(0) @db.Decimal(16, 2)
+  isService      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  invoice GstInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([organizationId, hsnSac])
+  @@map("gst_invoice_lines")
+}
+
+// ── Computed HSN/SAC summary per period ───────────────────────
+model GstHsnSummary {
+  id             String             @id @default(cuid())
+  organizationId String
+  period         String
+  direction      GstSupplyDirection @default(OUTWARD)
+  hsnSac         String
+  description    String?
+  uqc            String? // unit quantity code
+  totalQuantity  Decimal            @default(0) @db.Decimal(16, 3)
+  taxableValue   Decimal            @default(0) @db.Decimal(16, 2)
+  igst           Decimal            @default(0) @db.Decimal(16, 2)
+  cgst           Decimal            @default(0) @db.Decimal(16, 2)
+  sgst           Decimal            @default(0) @db.Decimal(16, 2)
+  cess           Decimal            @default(0) @db.Decimal(16, 2)
+  gstRate        Decimal            @default(0) @db.Decimal(5, 2)
+  isService      Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+
+  @@unique([organizationId, period, direction, hsnSac, gstRate])
+  @@index([organizationId, period])
+  @@map("gst_hsn_summaries")
+}
+
+// ── Generated GSTR-1 dataset (government-compatible payload) ───
+model Gstr1Dataset {
+  id             String   @id @default(cuid())
+  organizationId String
+  gstin          String
+  period         String // FY-month
+  payload        Json // government-compatible GSTR-1 JSON
+  summary        Json // section counts + totals
+  b2bCount       Int      @default(0)
+  b2clCount      Int      @default(0)
+  b2csCount      Int      @default(0)
+  cdnrCount      Int      @default(0)
+  expCount       Int      @default(0)
+  totalTaxable   Decimal  @default(0) @db.Decimal(16, 2)
+  totalTax       Decimal  @default(0) @db.Decimal(16, 2)
+  submissionId   String?
+  generatedById  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, gstin, period])
+  @@index([organizationId, period])
+  @@map("gst_gstr1_datasets")
+}
+
+// ── Computed GSTR-3B (net cash liability after ITC) ───────────
+model Gstr3bComputation {
+  id             String   @id @default(cuid())
+  organizationId String
+  gstin          String
+  period         String
+  // 3.1 outward + RCM
+  outwardTaxable Decimal  @default(0) @db.Decimal(16, 2)
+  outwardIgst    Decimal  @default(0) @db.Decimal(16, 2)
+  outwardCgst    Decimal  @default(0) @db.Decimal(16, 2)
+  outwardSgst    Decimal  @default(0) @db.Decimal(16, 2)
+  outwardCess    Decimal  @default(0) @db.Decimal(16, 2)
+  // 4 ITC available
+  itcIgst        Decimal  @default(0) @db.Decimal(16, 2)
+  itcCgst        Decimal  @default(0) @db.Decimal(16, 2)
+  itcSgst        Decimal  @default(0) @db.Decimal(16, 2)
+  itcCess        Decimal  @default(0) @db.Decimal(16, 2)
+  // net cash payable (after ITC + carry-forward)
+  netIgst        Decimal  @default(0) @db.Decimal(16, 2)
+  netCgst        Decimal  @default(0) @db.Decimal(16, 2)
+  netSgst        Decimal  @default(0) @db.Decimal(16, 2)
+  netCess        Decimal  @default(0) @db.Decimal(16, 2)
+  payload        Json
+  summary        Json?
+  submissionId   String?
+  computedById   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, gstin, period])
+  @@index([organizationId, period])
+  @@map("gst_gstr3b_computations")
+}
+
+// ── ITC / tax closing balances carried into the next period ───
+model GstCarryForward {
+  id             String   @id @default(cuid())
+  organizationId String
+  gstin          String
+  period         String // period whose CLOSING balance this captures
+  itcIgstClosing Decimal  @default(0) @db.Decimal(16, 2)
+  itcCgstClosing Decimal  @default(0) @db.Decimal(16, 2)
+  itcSgstClosing Decimal  @default(0) @db.Decimal(16, 2)
+  itcCessClosing Decimal  @default(0) @db.Decimal(16, 2)
+  taxIgstClosing Decimal  @default(0) @db.Decimal(16, 2)
+  taxCgstClosing Decimal  @default(0) @db.Decimal(16, 2)
+  taxSgstClosing Decimal  @default(0) @db.Decimal(16, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, gstin, period])
+  @@index([organizationId, gstin])
+  @@map("gst_carry_forwards")
+}
+
+// ── Imported GSTR-2B records (for ITC reconciliation) ─────────
+model Gstr2bRecord {
+  id             String          @id @default(cuid())
+  organizationId String
+  gstin          String // recipient (own) gstin
+  period         String
+  supplierGstin  String?
+  supplierName   String?
+  invoiceNumber  String
+  invoiceDate    DateTime?
+  docType        GstDocType      @default(INVOICE)
+  invoiceValue   Decimal         @default(0) @db.Decimal(16, 2)
+  taxableValue   Decimal         @default(0) @db.Decimal(16, 2)
+  igst           Decimal         @default(0) @db.Decimal(16, 2)
+  cgst           Decimal         @default(0) @db.Decimal(16, 2)
+  sgst           Decimal         @default(0) @db.Decimal(16, 2)
+  cess           Decimal         @default(0) @db.Decimal(16, 2)
+  itcAvailable   Boolean         @default(true)
+  source         TaxImportSource @default(GSP)
+  importRecordId String?
+  createdAt      DateTime        @default(now())
+
+  @@index([organizationId, period])
+  @@index([organizationId, supplierGstin])
+  @@index([organizationId, invoiceNumber])
+  @@map("gst_gstr2b_records")
+}
+
+// ── Reconciliation run (books vs 2B) ──────────────────────────
+model GstReconciliation {
+  id                  String         @id @default(cuid())
+  organizationId      String
+  gstin               String
+  period              String
+  status              GstReconStatus @default(PENDING)
+  matchedCount        Int            @default(0)
+  partialCount        Int            @default(0)
+  mismatchCount       Int            @default(0)
+  missingIn2bCount    Int            @default(0)
+  missingInBooksCount Int            @default(0)
+  itcInBooks          Decimal        @default(0) @db.Decimal(16, 2)
+  itcIn2b             Decimal        @default(0) @db.Decimal(16, 2)
+  itcDifference       Decimal        @default(0) @db.Decimal(16, 2)
+  summary             Json?
+  runById             String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  mismatches GstMismatch[]
+
+  @@index([organizationId, period])
+  @@map("gst_reconciliations")
+}
+
+model GstMismatch {
+  id               String           @id @default(cuid())
+  reconciliationId String
+  organizationId   String
+  outcome          GstMatchOutcome
+  kind             GstMismatchKind?
+  supplierGstin    String?
+  invoiceNumber    String?
+  // book side
+  bookInvoiceId    String?
+  bookTaxable      Decimal?         @db.Decimal(16, 2)
+  bookTax          Decimal?         @db.Decimal(16, 2)
+  // 2b side
+  record2bId       String?
+  gstr2bTaxable    Decimal?         @db.Decimal(16, 2)
+  gstr2bTax        Decimal?         @db.Decimal(16, 2)
+  difference       Decimal?         @db.Decimal(16, 2)
+  aiExplanation    String?          @db.Text
+  resolved         Boolean          @default(false)
+  resolutionNote   String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  reconciliation GstReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+
+  @@index([reconciliationId, outcome])
+  @@index([organizationId])
+  @@map("gst_mismatches")
+}
+
+// ============================================================
+// ============ TDS MODULE ====================================
+// ============================================================
+
+enum TdsReturnForm {
+  FORM_24Q // salary
+  FORM_26Q // non-salary resident
+  FORM_27Q // non-resident
+  FORM_27EQ // TCS
+}
+
+enum TdsDeducteeKind {
+  COMPANY
+  INDIVIDUAL
+  HUF
+  FIRM
+  AOP
+  TRUST
+  OTHER
+}
+
+model TdsDeductee {
+  id             String          @id @default(cuid())
+  organizationId String
+  name           String
+  panEnc         String? // PAN encrypted at rest
+  panMasked      String?
+  deducteeType   TdsDeducteeKind @default(OTHER)
+  email          String?
+  phone          String?
+  createdById    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  deductions TdsDeduction[]
+
+  @@index([organizationId])
+  @@map("tds_deductees")
+}
+
+model TdsChallan {
+  id             String    @id @default(cuid())
+  organizationId String
+  financialYear  String
+  quarter        String // Q1..Q4
+  section        String
+  bsrCode        String?
+  challanNo      String?
+  depositDate    DateTime?
+  tdsAmount      Decimal   @default(0) @db.Decimal(16, 2)
+  interest       Decimal   @default(0) @db.Decimal(16, 2)
+  fee            Decimal   @default(0) @db.Decimal(16, 2)
+  totalAmount    Decimal   @default(0) @db.Decimal(16, 2)
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  deductions TdsDeduction[]
+
+  @@index([organizationId, financialYear, quarter])
+  @@map("tds_challans")
+}
+
+model TdsDeduction {
+  id             String    @id @default(cuid())
+  organizationId String
+  deducteeId     String
+  challanId      String?
+  section        String
+  financialYear  String
+  quarter        String
+  paymentDate    DateTime
+  amountPaid     Decimal   @default(0) @db.Decimal(16, 2)
+  tdsRate        Decimal   @default(0) @db.Decimal(5, 2)
+  tdsDeducted    Decimal   @default(0) @db.Decimal(16, 2)
+  deductionDate  DateTime?
+  noPan          Boolean   @default(false)
+  createdById    String?
+  createdAt      DateTime  @default(now())
+
+  deductee TdsDeductee @relation(fields: [deducteeId], references: [id], onDelete: Cascade)
+  challan  TdsChallan? @relation(fields: [challanId], references: [id])
+
+  @@index([organizationId, financialYear, quarter, section])
+  @@index([deducteeId])
+  @@map("tds_deductions")
+}
+
+model TdsReturnComputation {
+  id             String        @id @default(cuid())
+  organizationId String
+  formType       TdsReturnForm
+  financialYear  String
+  quarter        String
+  totalDeducted  Decimal       @default(0) @db.Decimal(16, 2)
+  totalDeposited Decimal       @default(0) @db.Decimal(16, 2)
+  totalInterest  Decimal       @default(0) @db.Decimal(16, 2)
+  shortfall      Decimal       @default(0) @db.Decimal(16, 2)
+  deducteeCount  Int           @default(0)
+  deductionCount Int           @default(0)
+  payload        Json
+  submissionId   String?
+  computedById   String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([organizationId, formType, financialYear, quarter])
+  @@index([organizationId, financialYear])
+  @@map("tds_return_computations")
+}
+
+// ============================================================
+// ============ INCOME TAX MODULE =============================
+// ============================================================
+
+enum ItrRegimeKind {
+  OLD
+  NEW
+}
+
+enum ItrFormKind {
+  ITR1
+  ITR2
+  ITR3
+  ITR4
+  ITR5
+  ITR6
+  ITR7
+}
+
+model ItrComputation {
+  id                  String         @id @default(cuid())
+  organizationId      String
+  assessmentYear      String
+  panEnc              String?
+  regime              ItrRegimeKind  @default(NEW)
+  formType            ItrFormKind?
+  // income heads
+  salaryIncome        Decimal        @default(0) @db.Decimal(16, 2)
+  housePropertyIncome Decimal        @default(0) @db.Decimal(16, 2)
+  businessIncome      Decimal        @default(0) @db.Decimal(16, 2)
+  capitalGainsIncome  Decimal        @default(0) @db.Decimal(16, 2)
+  otherIncome         Decimal        @default(0) @db.Decimal(16, 2)
+  grossTotalIncome    Decimal        @default(0) @db.Decimal(16, 2)
+  // deductions + tax
+  deductions          Json?
+  totalDeductions     Decimal        @default(0) @db.Decimal(16, 2)
+  taxableIncome       Decimal        @default(0) @db.Decimal(16, 2)
+  taxBeforeRebate     Decimal        @default(0) @db.Decimal(16, 2)
+  rebate87A           Decimal        @default(0) @db.Decimal(16, 2)
+  surcharge           Decimal        @default(0) @db.Decimal(16, 2)
+  cess                Decimal        @default(0) @db.Decimal(16, 2)
+  totalTax            Decimal        @default(0) @db.Decimal(16, 2)
+  advanceTaxPaid      Decimal        @default(0) @db.Decimal(16, 2)
+  tdsCredit           Decimal        @default(0) @db.Decimal(16, 2)
+  netPayable          Decimal        @default(0) @db.Decimal(16, 2)
+  refundDue           Decimal        @default(0) @db.Decimal(16, 2)
+  recommendedRegime   ItrRegimeKind?
+  comparison          Json?
+  payload             Json?
+  submissionId        String?
+  computedById        String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  deletedAt           DateTime?
+
+  @@index([organizationId, assessmentYear])
+  @@map("itr_computations")
+}
+
+// ============================================================
+// ============ CAPITAL GAINS MODULE ==========================
+// ============================================================
+
+enum CapitalAssetKind {
+  EQUITY_STT
+  MUTUAL_FUND_EQUITY
+  MUTUAL_FUND_DEBT
+  PROPERTY
+  GOLD
+  UNLISTED_SHARES
+  OTHER
+}
+
+enum CapitalGainTermKind {
+  STCG
+  LTCG
+}
+
+model CapitalGainTxn {
+  id             String              @id @default(cuid())
+  organizationId String
+  financialYear  String
+  assetType      CapitalAssetKind    @default(OTHER)
+  description    String?
+  quantity       Decimal?            @db.Decimal(16, 3)
+  purchaseDate   DateTime
+  saleDate       DateTime
+  purchaseValue  Decimal             @default(0) @db.Decimal(16, 2)
+  saleValue      Decimal             @default(0) @db.Decimal(16, 2)
+  expenses       Decimal             @default(0) @db.Decimal(16, 2)
+  term           CapitalGainTermKind
+  indexedCost    Decimal?            @db.Decimal(16, 2)
+  gain           Decimal             @default(0) @db.Decimal(16, 2)
+  exemption      Decimal             @default(0) @db.Decimal(16, 2)
+  taxableGain    Decimal             @default(0) @db.Decimal(16, 2)
+  taxRate        Decimal             @default(0) @db.Decimal(5, 2)
+  taxAmount      Decimal             @default(0) @db.Decimal(16, 2)
+  createdById    String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  deletedAt      DateTime?
+
+  @@index([organizationId, financialYear])
+  @@map("capital_gain_txns")
+}
+
+// ============================================================
+// ====== TRIAL BALANCE + FINANCIAL STATEMENTS ================
+// ============================================================
+
+enum TbStatement {
+  BALANCE_SHEET
+  PROFIT_LOSS
+  UNMAPPED
+}
+
+enum FinStatementKind {
+  BALANCE_SHEET
+  PROFIT_LOSS
+}
+
+model TrialBalanceImport {
+  id             String          @id @default(cuid())
+  organizationId String
+  financialYear  String
+  source         TaxImportSource @default(MANUAL)
+  fileName       String?
+  totalDebit     Decimal         @default(0) @db.Decimal(16, 2)
+  totalCredit    Decimal         @default(0) @db.Decimal(16, 2)
+  balanced       Boolean         @default(false)
+  lineCount      Int             @default(0)
+  createdById    String?
+  createdAt      DateTime        @default(now())
+  deletedAt      DateTime?
+
+  lines TrialBalanceLine[]
+
+  @@index([organizationId, financialYear])
+  @@map("trial_balance_imports")
+}
+
+model TrialBalanceLine {
+  id             String      @id @default(cuid())
+  importId       String
+  organizationId String
+  ledgerName     String
+  debit          Decimal     @default(0) @db.Decimal(16, 2)
+  credit         Decimal     @default(0) @db.Decimal(16, 2)
+  group          String?
+  head           String?
+  statement      TbStatement @default(UNMAPPED)
+  createdAt      DateTime    @default(now())
+
+  import TrialBalanceImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([importId])
+  @@index([organizationId])
+  @@map("trial_balance_lines")
+}
+
+model LedgerMapping {
+  id             String      @id @default(cuid())
+  organizationId String
+  ledgerName     String
+  group          String
+  head           String
+  statement      TbStatement
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([organizationId, ledgerName])
+  @@index([organizationId])
+  @@map("ledger_mappings")
+}
+
+model FinancialStatement {
+  id               String           @id @default(cuid())
+  organizationId   String
+  financialYear    String
+  type             FinStatementKind
+  payload          Json
+  totalAssets      Decimal?         @db.Decimal(16, 2)
+  totalLiabilities Decimal?         @db.Decimal(16, 2)
+  netProfit        Decimal?         @db.Decimal(16, 2)
+  generatedById    String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@unique([organizationId, financialYear, type])
+  @@index([organizationId])
+  @@map("financial_statements")
+}
+
+// ============================================================
+// ============ AUDIT REPORTS MODULE ==========================
+// ============================================================
+
+enum AuditReportForm {
+  FORM_3CA // tax audit (audited under another law)
+  FORM_3CB // tax audit (not audited otherwise)
+  FORM_3CD // statement of particulars
+  FORM_10B // charitable trust audit
+  FORM_29B // MAT (companies)
+  FORM_29C // AMT (non-companies)
+  FORM_3CEB // transfer pricing
+}
+
+model AuditReport {
+  id             String          @id @default(cuid())
+  organizationId String
+  formType       AuditReportForm
+  financialYear  String
+  assessmentYear String?
+  status         TaxFilingStatus @default(DRAFT)
+  data           Json
+  udin           String?
+  generatedById  String?
+  submissionId   String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  @@unique([organizationId, formType, financialYear])
+  @@index([organizationId])
+  @@map("audit_reports")
+}
