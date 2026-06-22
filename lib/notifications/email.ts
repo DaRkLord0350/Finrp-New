@@ -2,6 +2,9 @@
 // Email notification service via Resend API
 // ============================================================
 
+import { inngest } from "@/inngest/client";
+import { EVENTS, type EmailSendEventData } from "@/inngest/events";
+
 interface EmailAttachment {
   /** File name shown to the recipient. */
   filename: string;
@@ -90,6 +93,27 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
   }
 
   return { success: false, error: lastError };
+}
+
+/**
+ * Queue an email for durable, retried delivery through the email/send
+ * Inngest function instead of sending inline. Use this for every
+ * fire-and-forget email (invitations, onboarding, reminders, document
+ * reviews, notifications). Returns immediately after the event is
+ * accepted — delivery + retries happen in the background.
+ *
+ * Pass `dedupeKey` to collapse duplicate sends (e.g. one reminder per
+ * task per day): it becomes the Inngest event id, deduped for 24h.
+ */
+export async function enqueueEmail(
+  opts: EmailSendEventData & { dedupeKey?: string }
+): Promise<void> {
+  const { dedupeKey, ...data } = opts;
+  await inngest.send({
+    name: EVENTS.EMAIL_SEND,
+    data,
+    ...(dedupeKey ? { id: dedupeKey } : {}),
+  });
 }
 
 export function buildInvoiceEmail(params: {

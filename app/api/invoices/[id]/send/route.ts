@@ -1,20 +1,23 @@
 export const runtime = "nodejs";
 
 // ============================================================
-// POST /api/invoices/[id]/send — email the invoice (PDF attached)
+// POST /api/invoices/[id]/send — queue the invoice for delivery
+//
+// PDF rendering + email delivery are offloaded to the invoice-pdf
+// Inngest function so the request never blocks on rendering. The
+// invoice is marked SENT optimistically and the email (with the freshly
+// rendered PDF attached) is delivered in the background with retries.
 // ============================================================
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/middleware";
-import { renderInvoicePdfBuffer } from "@/lib/pdf/generateInvoicePdf";
-import { sendEmail, buildInvoiceEmail } from "@/lib/notifications/email";
-import { getInvoiceAppearance } from "@/lib/invoices/appearance";
 import { logInvoiceActivity } from "@/lib/invoices/activity";
-import { formatCurrency } from "@/lib/formatters/currency";
 import { generateShareToken } from "@/lib/invoices/share";
 import { appUrl } from "@/lib/url";
+import { inngest } from "@/inngest/client";
+import { EVENTS } from "@/inngest/events";
 
 // Reuse a live public link for the invoice, or mint one, so every
 // emailed invoice carries a working "View Invoice Online" / pay link.
@@ -38,7 +41,6 @@ async function ensureShareUrl(invoiceId: string, organizationId: string): Promis
     }
     return appUrl(`/i/${link.token}`);
   } catch (err) {
-    // A missing link must not block delivery — log and send without it.
     console.error("[INVOICE_SEND] Could not resolve share link:", err);
     return undefined;
   }
@@ -48,10 +50,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const validEmails = (arr: unknown): string[] =>
   Array.isArray(arr) ? arr.filter((e): e is string => typeof e === "string" && EMAIL_RE.test(e)) : [];
 
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     let actorName: string | null = null;
     try {
@@ -73,10 +72,11 @@ export async function POST(
     const cc = validEmails(body.cc);
     const bcc = validEmails(body.bcc);
     const message = typeof body.message === "string" ? body.message : undefined;
+    const subject = typeof body.subject === "string" && body.subject.trim() ? body.subject.trim() : undefined;
 
     const invoice = await prisma.invoice.findFirst({
       where: { id, organizationId },
-      include: { customer: { select: { name: true } } },
+      select: { id: true, status: true },
     });
     if (!invoice) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
 
@@ -86,46 +86,7 @@ export async function POST(
         ? body.shareUrl.trim()
         : await ensureShareUrl(id, organizationId);
 
-    const [profile, org, appearance] = await Promise.all([
-      prisma.businessProfile.findUnique({ where: { organizationId }, select: { businessName: true } }),
-      prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } }),
-      getInvoiceAppearance(organizationId),
-    ]);
-    const businessName = profile?.businessName ?? org?.name ?? "Your Company";
-
-    // Render the PDF fresh and attach it.
-    const { buffer, pdfFileName } = await renderInvoicePdfBuffer(id, organizationId);
-
-    const subject =
-      typeof body.subject === "string" && body.subject.trim()
-        ? body.subject.trim()
-        : `Invoice ${invoice.invoiceNumber} from ${businessName}`;
-
-    const html = buildInvoiceEmail({
-      customerName: invoice.customer.name,
-      businessName,
-      invoiceNumber: invoice.invoiceNumber,
-      amountDue: formatCurrency(Number(invoice.balanceDue), invoice.currency),
-      dueDate: new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(invoice.dueDate),
-      message,
-      shareUrl,
-      accent: appearance.accentColor,
-    });
-
-    const result = await sendEmail({
-      to,
-      cc,
-      bcc,
-      subject,
-      html,
-      attachments: [{ filename: pdfFileName, content: buffer.toString("base64") }],
-    });
-
-    if (!result.success) {
-      return NextResponse.json({ error: result.error ?? "Failed to send email" }, { status: 502 });
-    }
-
-    // Mark as sent (only advance from DRAFT) and log the activity.
+    // Optimistically advance status (only from DRAFT) and record intent.
     if (invoice.status === "DRAFT") {
       await prisma.invoice.update({ where: { id }, data: { status: "SENT", sentAt: new Date() } });
     } else {
@@ -136,12 +97,29 @@ export async function POST(
       invoiceId: id,
       organizationId,
       type: "EMAIL_SENT",
-      message: `Invoice emailed to ${to}`,
-      metadata: { to, cc, bcc },
+      message: `Invoice queued for delivery to ${to}`,
+      metadata: { to, cc, bcc, queued: true },
       actorName,
     });
 
-    return NextResponse.json({ success: true });
+    // Offload PDF render + email delivery to Inngest (never blocks the UI).
+    await inngest.send({
+      name: EVENTS.INVOICE_PDF_GENERATE,
+      data: {
+        invoiceId: id,
+        organizationId,
+        deliver: true,
+        recipientEmail: to,
+        cc,
+        bcc,
+        subject,
+        message,
+        shareUrl,
+        actorName,
+      },
+    });
+
+    return NextResponse.json({ success: true, queued: true });
   } catch (error) {
     console.error("[INVOICE_SEND]", error);
     const message = error instanceof Error ? error.message : "Failed to send invoice";

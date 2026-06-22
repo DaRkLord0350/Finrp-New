@@ -1,16 +1,15 @@
 // ============================================================
 // Unit tests — lib/banking/webhook-service.ts (normalization)
 // Setu-native → canonical event mapping, batching, replay ids.
-// Heavy deps (prisma / redis / bullmq) are mocked out — only the
-// pure normalization path is exercised here.
+// Heavy deps (prisma / inngest) are mocked out — only the pure
+// normalization path is exercised here.
 // ============================================================
 
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
-vi.mock("@/lib/redis", () => ({ getRedisConnection: () => ({}) }));
 vi.mock("@/lib/audit", () => ({ createAuditLog: vi.fn() }));
-vi.mock("bullmq", () => ({ Queue: class {}, Worker: class {} }));
+vi.mock("@/inngest/client", () => ({ inngest: { send: vi.fn() } }));
 
 import { normalizeWebhookPayload } from "@/lib/banking/webhook-service";
 

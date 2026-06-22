@@ -1,21 +1,25 @@
 // ============================================================
-// FinRP Banking OS — Bank Sync Queue
-// Centralized BullMQ queue access for bank syncs, following the
-// lib/jobs/queues registry pattern: lazy singletons, deterministic
-// job ids (idempotent enqueue), and a repeatable scheduler job
-// that fans out per-account syncs for accounts due for refresh.
+// FinRP Banking OS — Bank sync dispatch (Inngest-backed)
+//
+// enqueueBankSync now emits a `bank/sync.requested` event instead of
+// adding a BullMQ job. The deterministic dedupe key is reused as the
+// Inngest event id so double-clicks and duplicate webhooks collapse
+// into a single run. The periodic "accounts due for refresh" scan moved
+// to the bank-auto-sync cron (inngest/functions/scheduled.ts).
 // ============================================================
 
-import { Queue } from "bullmq";
-import { getRedisConnection } from "@/lib/redis";
+import { inngest } from "@/inngest/client";
+import { EVENTS } from "@/inngest/events";
 import { createBankingLogger } from "./logger";
+import type { BankImportJobData } from "./types";
 import type { SyncTrigger, SyncType } from "@prisma/client";
 
-const log = createBankingLogger("queue");
+const log = createBankingLogger("dispatch");
 
 export const BANK_SYNC_QUEUE = "finrp-bank-sync";
+export const BANK_IMPORT_QUEUE = "finrp-bank-import";
 
-/** Repeatable job that scans for accounts due for auto-refresh. */
+/** Label for the scheduled scan (kept for the cron + monitoring). */
 export const BANK_AUTO_SYNC_JOB = "bank-auto-sync-scan";
 export const BANK_AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 min
 
@@ -35,26 +39,9 @@ export interface BankSyncQueueJobData {
   toDate?: string;
 }
 
-let bankSyncQueue: Queue<BankSyncQueueJobData> | null = null;
-
-export function getBankSyncQueue(): Queue<BankSyncQueueJobData> {
-  if (!bankSyncQueue) {
-    bankSyncQueue = new Queue<BankSyncQueueJobData>(BANK_SYNC_QUEUE, {
-      connection: getRedisConnection("queue"),
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: "exponential", delay: 5000 },
-        removeOnComplete: { count: 500 },
-        removeOnFail: { count: 200 },
-      },
-    });
-  }
-  return bankSyncQueue;
-}
-
 /**
- * Enqueue a bank sync. jobId is deterministic per (org, account, trigger,
- * 5-min bucket) so double-clicks and duplicate webhooks collapse into one job.
+ * Dispatch a bank sync. jobId is deterministic per (org, account, trigger,
+ * 5-min bucket) so double-clicks and duplicate webhooks collapse into one run.
  */
 export async function enqueueBankSync(
   data: Omit<BankSyncQueueJobData, "bankSyncJobId">,
@@ -66,40 +53,36 @@ export async function enqueueBankSync(
     `${data.organizationId}:${data.bankAccountId ?? data.consentDbId ?? "org"}:${data.trigger}:${bucket}`;
   const jobId = `bank-sync:${dedupe}`;
 
-  const q = getBankSyncQueue();
-  const job = await q.add("bank-sync", { ...data, bankSyncJobId: jobId }, { jobId });
+  await inngest.send({
+    name: EVENTS.BANK_SYNC_REQUESTED,
+    data: { ...data, bankSyncJobId: jobId },
+    id: jobId, // event-level idempotency → collapses duplicate dispatches
+  });
 
-  const resolvedId = job.id ?? jobId;
-  log.info("bank sync enqueued", {
-    jobId: resolvedId,
+  log.info("bank sync dispatched", {
+    jobId,
     organizationId: data.organizationId,
     bankAccountId: data.bankAccountId,
     trigger: data.trigger,
-    deduplicated: !job.id,
   });
-  return resolvedId;
+  return jobId;
 }
 
 /**
- * Register the repeatable auto-sync scan. Called once at worker startup;
- * idempotent thanks to the fixed jobId.
+ * Replaced by the bank-auto-sync cron (inngest/functions/scheduled.ts).
+ * Kept as a no-op so legacy callers don't break.
  */
 export async function scheduleBankAutoSyncScan(): Promise<void> {
-  const q = getBankSyncQueue();
-  await q.add(
-    BANK_AUTO_SYNC_JOB,
-    {
-      bankSyncJobId: BANK_AUTO_SYNC_JOB,
-      organizationId: "*",
-      provider: "SETU",
-      trigger: "SCHEDULED",
-    },
-    {
-      jobId: `cron:${BANK_AUTO_SYNC_JOB}`,
-      repeat: { every: BANK_AUTO_SYNC_INTERVAL_MS },
-      removeOnComplete: { count: 10 },
-      removeOnFail: { count: 10 },
-    }
-  );
-  log.info("bank auto-sync scan scheduled", { intervalMs: BANK_AUTO_SYNC_INTERVAL_MS });
+  log.info("scheduleBankAutoSyncScan is a no-op — handled by the bank-auto-sync cron");
+}
+
+/**
+ * Dispatch a bank statement import (CSV/Excel/PDF). Deterministic event id
+ * per importId so a duplicate submit collapses onto one run.
+ */
+export async function enqueueBankImport(data: BankImportJobData): Promise<string> {
+  const jobId = `bank-import-${data.importId}`;
+  await inngest.send({ name: EVENTS.BANK_IMPORT_REQUESTED, data, id: jobId });
+  log.info("bank import dispatched", { jobId, organizationId: data.organizationId });
+  return jobId;
 }

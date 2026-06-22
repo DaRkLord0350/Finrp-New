@@ -4,9 +4,9 @@
 // selected source documents, tenant-scoped, with progress tracking.
 // ============================================================
 
-import { Worker, Queue, type Job } from "bullmq";
 import { Prisma } from "@prisma/client";
-import { getRedisConnection } from "@/lib/redis";
+import { inngest } from "@/inngest/client";
+import { EVENTS } from "@/inngest/events";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 
@@ -76,22 +76,11 @@ export const BULK_SCOPES: Record<string, ScopeHandler> = {
 
 export const BULK_SCOPE_KEYS = Object.keys(BULK_SCOPES);
 
-// ── Queue ──────────────────────────────────────────────────
-let queue: Queue<BulkAccountUpdateJobData> | null = null;
-export function getAccountingBulkQueue(): Queue<BulkAccountUpdateJobData> {
-  if (!queue) {
-    queue = new Queue<BulkAccountUpdateJobData>(ACCOUNTING_BULK_QUEUE, {
-      connection: getRedisConnection("queue"),
-      defaultJobOptions: { attempts: 2, backoff: { type: "exponential", delay: 3000 }, removeOnComplete: { count: 200 }, removeOnFail: { count: 100 } },
-    });
-  }
-  return queue;
-}
-
+// ── Dispatch (Inngest-backed) ──────────────────────────────
 export async function enqueueBulkAccountUpdate(data: BulkAccountUpdateJobData): Promise<string> {
-  const q = getAccountingBulkQueue();
-  const job = await q.add("bulk-account-update", data, { jobId: `bulk-acct:${data.jobId}` });
-  return job.id ?? data.jobId;
+  const jobId = `bulk-acct:${data.jobId}`;
+  await inngest.send({ name: EVENTS.ACCOUNTING_BULK_UPDATE_REQUESTED, data, id: jobId });
+  return jobId;
 }
 
 // ── Core processing (exported so it can run inline too) ─────
@@ -142,15 +131,4 @@ export async function runBulkAccountUpdate(jobId: string): Promise<void> {
     });
     throw err;
   }
-}
-
-// ── Worker ─────────────────────────────────────────────────
-export function createBulkAccountUpdateWorker(): Worker<BulkAccountUpdateJobData> {
-  return new Worker<BulkAccountUpdateJobData>(
-    ACCOUNTING_BULK_QUEUE,
-    async (job: Job<BulkAccountUpdateJobData>) => {
-      await runBulkAccountUpdate(job.data.jobId);
-    },
-    { connection: getRedisConnection("worker"), concurrency: 1 }
-  );
 }

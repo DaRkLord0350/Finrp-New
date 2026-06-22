@@ -1,11 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import * as Sentry from "@sentry/nextjs";
+import { writeFile, mkdir } from "fs/promises";
+import { join } from "path";
+import { randomUUID } from "crypto";
 import { getTenantId } from "@/lib/auth/tenant";
 import { prisma } from "@/lib/prisma";
-import { enqueueBankImport } from "@/lib/banking/workers/bank-import.worker";
+import { enqueueBankImport } from "@/lib/banking/queue";
 import { importStatementSchema } from "@/lib/banking/validations";
 import { createAuditLog } from "@/lib/audit";
+import type { BankImportFileType } from "@prisma/client";
+
+// Map an uploaded file's extension/mime to the BankImportFileType enum.
+const EXT_TYPE: Record<string, BankImportFileType> = {
+  csv: "CSV",
+  xlsx: "EXCEL",
+  xls: "EXCEL",
+  pdf: "PDF",
+  ofx: "OFX",
+  sta: "MT940",
+  mt940: "MT940",
+};
+
+function detectFileType(name: string, mime: string): BankImportFileType | null {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (EXT_TYPE[ext]) return EXT_TYPE[ext];
+  if (mime.includes("spreadsheet") || mime.includes("excel")) return "EXCEL";
+  if (mime.includes("pdf")) return "PDF";
+  if (mime.includes("csv") || mime.includes("text/plain")) return "CSV";
+  return null;
+}
+
+const EXT_FOR_TYPE: Record<BankImportFileType, string> = {
+  CSV: ".csv",
+  EXCEL: ".xlsx",
+  PDF: ".pdf",
+  OFX: ".ofx",
+  MT940: ".sta",
+};
+
+const MAX_BYTES = 15 * 1024 * 1024; // 15 MB
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
@@ -15,29 +49,87 @@ export async function POST(req: NextRequest) {
   if (!orgId) return NextResponse.json({ error: "No organization" }, { status: 400 });
 
   try {
-    const body = await req.json();
-    const parsed = importStatementSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Validation error", issues: parsed.error.issues }, { status: 422 });
+    const form = await req.formData().catch(() => null);
+    if (!form) {
+      return NextResponse.json(
+        { error: "Expected multipart/form-data with a 'file' field" },
+        { status: 400 }
+      );
     }
 
-    const { bankAccountId, fileType, fileUrl, fileName, fileSize, columnMapping } = parsed.data;
+    const file = form.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+    if (file.size > MAX_BYTES) {
+      return NextResponse.json(
+        { error: `File too large (max ${MAX_BYTES / (1024 * 1024)} MB)` },
+        { status: 413 }
+      );
+    }
 
-    // Verify account ownership if specified
+    const fileType = detectFileType(file.name, file.type);
+    if (!fileType) {
+      return NextResponse.json(
+        { error: "Unsupported file type. Upload CSV, Excel, PDF, OFX or MT940." },
+        { status: 415 }
+      );
+    }
+
+    const bankAccountIdRaw = form.get("bankAccountId");
+    const columnMappingRaw = form.get("columnMapping");
+
+    let columnMapping: Record<string, string> | undefined;
+    if (typeof columnMappingRaw === "string" && columnMappingRaw.trim()) {
+      try {
+        columnMapping = JSON.parse(columnMappingRaw) as Record<string, string>;
+      } catch {
+        return NextResponse.json({ error: "Invalid columnMapping JSON" }, { status: 400 });
+      }
+    }
+
+    // Validate the derived metadata (bankAccountId must be a real cuid if given).
+    const parsed = importStatementSchema.safeParse({
+      bankAccountId:
+        typeof bankAccountIdRaw === "string" && bankAccountIdRaw.trim()
+          ? bankAccountIdRaw
+          : undefined,
+      fileType,
+      fileName: file.name,
+      fileSize: file.size,
+      columnMapping,
+    });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation error", issues: parsed.error.issues },
+        { status: 422 }
+      );
+    }
+    const { bankAccountId, fileName, fileSize } = parsed.data;
+
+    // Verify account ownership if specified.
     if (bankAccountId) {
       const account = await prisma.bankAccount.findFirst({
         where: { id: bankAccountId, organizationId: orgId },
+        select: { id: true },
       });
       if (!account) return NextResponse.json({ error: "Bank account not found" }, { status: 404 });
     }
+
+    // Persist the uploaded bytes (tmp/, mirroring the main CSV import); the
+    // bank-import Inngest function reads this path during processing.
+    const uploadDir = join(process.cwd(), "tmp", "banking-imports", orgId);
+    await mkdir(uploadDir, { recursive: true });
+    const storedPath = join(uploadDir, `${randomUUID()}${EXT_FOR_TYPE[fileType]}`);
+    await writeFile(storedPath, Buffer.from(await file.arrayBuffer()));
 
     const importRecord = await prisma.bankStatementImport.create({
       data: {
         organizationId: orgId,
         bankAccountId: bankAccountId ?? null,
         fileName,
-        fileUrl,
-        fileType: fileType as never,
+        fileUrl: storedPath,
+        fileType,
         fileSize: fileSize ?? null,
         status: "PENDING",
         metadata: columnMapping ? ({ columnMapping } as never) : undefined,
@@ -48,9 +140,9 @@ export async function POST(req: NextRequest) {
       importId: importRecord.id,
       organizationId: orgId,
       bankAccountId,
-      fileUrl,
+      fileUrl: storedPath,
       fileType,
-      columnMapping: columnMapping as Record<string, string> | undefined,
+      columnMapping,
     });
 
     await createAuditLog({

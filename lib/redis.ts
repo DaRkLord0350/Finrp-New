@@ -1,5 +1,10 @@
 // ============================================================
-// FinRP — Redis Client
+// FinRP — Redis Client (caching + distributed locks ONLY)
+//
+// Redis is no longer used for background jobs/queues — those moved to
+// Inngest. This module backs the cache layer (lib/cache) and the
+// signup distributed lock. If REDIS_URL is unset everything degrades
+// gracefully to "no cache" via the circuit breaker below.
 //
 // Design principles:
 //   1. maxRetriesPerRequest: 0  — fail fast, never block a request
@@ -7,10 +12,6 @@
 //   3. lazyConnect: true        — don't connect at import time
 //   4. Circuit breaker          — after 5 failures, bypass Redis for 30s
 //   5. TLS auto-detect          — rediss:// activates tls config
-//
-// BullMQ uses a separate plain-options connection because it manages
-// its own internal ioredis instance; passing our IORedis instance
-// causes a structural type mismatch.
 // ============================================================
 
 import IORedis from "ioredis";
@@ -18,55 +19,6 @@ import IORedis from "ioredis";
 const REDIS_URL = process.env.REDIS_URL;
 const effectiveRedisUrl = REDIS_URL || "redis://localhost:6379";
 const isTLS     = effectiveRedisUrl.startsWith("rediss://");
-
-// ---------------------------------------------------------------------------
-// Parse URL → plain options (needed for BullMQ which won't accept a URL string)
-// ---------------------------------------------------------------------------
-function parseUrl(url: string): {
-  host: string;
-  port: number;
-  username?: string;
-  password?: string;
-  db?: number;
-} {
-  try {
-    const u = new URL(url);
-    return {
-      host:     u.hostname || "localhost",
-      port:     parseInt(u.port || (isTLS ? "6380" : "6379"), 10),
-      // username is required for Redis 6 ACL auth (Upstash, Railway, etc.)
-      // Without it, BullMQ sends `AUTH password` instead of `AUTH username password`
-      // and some providers reject the password-only form.
-      ...(u.username ? { username: u.username } : {}),
-      password: u.password || undefined,
-      db:       u.pathname && u.pathname !== "/"
-        ? parseInt(u.pathname.slice(1), 10) || undefined
-        : undefined,
-    };
-  } catch {
-    return { host: "localhost", port: 6379 };
-  }
-}
-
-const parsed = parseUrl(effectiveRedisUrl);
-
-// ---------------------------------------------------------------------------
-// BullMQ connection options — plain object, no ioredis instance.
-// BullMQ Queue / Worker / QueueEvents accept this directly and
-// create their own internal connections.
-// ---------------------------------------------------------------------------
-export const BULLMQ_CONNECTION = {
-  ...parsed,
-  maxRetriesPerRequest: null as null,   // required by BullMQ
-  enableReadyCheck:     false,           // required by BullMQ
-  ...(isTLS ? { tls: { rejectUnauthorized: false } } : {}),
-};
-
-export function getRedisConnection(
-  _role: "queue" | "worker" | "events" | "cache" = "queue"
-): typeof BULLMQ_CONNECTION {
-  return BULLMQ_CONNECTION;
-}
 
 // ---------------------------------------------------------------------------
 // Circuit breaker

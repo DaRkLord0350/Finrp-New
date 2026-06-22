@@ -1,63 +1,39 @@
 // ============================================================
-// FinRP — Analytics Background Worker
-// Run this in a separate process: `node lib/workers/start.js`
-// Each job precomputes snapshots and invalidates Redis cache
-// so dashboards read stale-while-revalidate data instantly.
+// FinRP — Analytics snapshot processor
+// Precomputes dashboard/firm/compliance snapshots and invalidates the
+// Redis cache so dashboards read stale-while-revalidate data instantly.
+// Invoked by the analytics Inngest function (inngest/functions/analytics.ts);
+// `all_orgs` is also driven nightly by the analytics cron.
 // ============================================================
 
-import { Worker } from "bullmq";
-import { BULLMQ_CONNECTION } from "@/lib/redis";
 import { prisma } from "@/lib/prisma";
 import { cacheDel, CacheKey } from "@/lib/cache";
 import type { AnalyticsJobData } from "./analytics-queue";
 
-export function startAnalyticsWorker() {
-  const worker = new Worker<AnalyticsJobData>(
-    "analytics",
-    async (job) => {
-      const data = job.data;
-
-      // Tenant invariant: every per-org job carries organizationId in its
-      // payload and each compute function scopes its queries to that org.
-      // `all_orgs` is the ONLY cross-tenant path and is an internal
-      // maintenance recompute (never enqueued from user input).
-      switch (data.type) {
-        case "dashboard":
-          await computeDashboardSnapshot(data.organizationId);
-          break;
-        case "monthly":
-          await computeMonthlyRevenue(data.organizationId, data.year, data.month);
-          break;
-        case "firm":
-          await computeFirmSnapshot(data.organizationId);
-          break;
-        case "compliance":
-          await computeComplianceStat(data.organizationId);
-          break;
-        case "all_orgs":
-          await recomputeAllOrgs();
-          break;
-      }
-    },
-    {
-      connection: BULLMQ_CONNECTION,
-      // concurrency=2: each job fires up to 9 parallel DB queries;
-      // 2 concurrent jobs = ~18 peak DB ops, safely within pool max.
-      // Was 5 (45 peak ops) which, combined with the main app pool,
-      // exceeded the Supabase free-tier session limit (pool_size=15).
-      concurrency: 2,
-    }
-  );
-
-  worker.on("completed", (job) => {
-    console.log(`[analytics-worker] completed ${job.id}`);
-  });
-
-  worker.on("failed", (job, err) => {
-    console.error(`[analytics-worker] failed ${job?.id}:`, err.message);
-  });
-
-  return worker;
+/**
+ * Dispatch one analytics snapshot job. Tenant invariant: every per-org job
+ * carries organizationId and each compute function scopes its queries to
+ * that org. `all_orgs` is the ONLY cross-tenant path — an internal
+ * maintenance recompute never triggered from user input.
+ */
+export async function runAnalyticsSnapshot(data: AnalyticsJobData): Promise<void> {
+  switch (data.type) {
+    case "dashboard":
+      await computeDashboardSnapshot(data.organizationId);
+      break;
+    case "monthly":
+      await computeMonthlyRevenue(data.organizationId, data.year, data.month);
+      break;
+    case "firm":
+      await computeFirmSnapshot(data.organizationId);
+      break;
+    case "compliance":
+      await computeComplianceStat(data.organizationId);
+      break;
+    case "all_orgs":
+      await recomputeAllOrgs();
+      break;
+  }
 }
 
 // ---------------------------------------------------------------------------

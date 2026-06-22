@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Search, Download, Tag, Link2, Flag, EyeOff,
-  CheckCircle2, MoreHorizontal, X, SlidersHorizontal, RefreshCw,
+  MoreHorizontal, X, SlidersHorizontal, RefreshCw,
   ArrowUpRight, ArrowDownRight, Loader2, ChevronLeft, ChevronRight,
+  ChevronUp, ChevronDown,
 } from "lucide-react";
 import { useBankTransactions, type BankTransaction } from "@/hooks/useBankTransactions";
 import { useBankAccounts } from "@/hooks/useBankAccounts";
@@ -17,19 +18,19 @@ const CATEGORIES = [
 ];
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
-  UNREVIEWED:  { bg: "rgba(245,158,11,0.1)",  text: "#f59e0b" },
-  REVIEWED:    { bg: "rgba(99,102,241,0.1)",  text: "#818cf8" },
-  CATEGORIZED: { bg: "rgba(6,182,212,0.1)",   text: "#06b6d4" },
-  MATCHED:     { bg: "rgba(16,185,129,0.1)",  text: "#10b981" },
-  EXCLUDED:    { bg: "rgba(100,116,139,0.1)", text: "#64748b" },
+  UNREVIEWED: { bg: "rgba(245,158,11,0.1)", text: "#f59e0b" },
+  REVIEWED: { bg: "rgba(99,102,241,0.1)", text: "#818cf8" },
+  CATEGORIZED: { bg: "rgba(6,182,212,0.1)", text: "#06b6d4" },
+  MATCHED: { bg: "rgba(16,185,129,0.1)", text: "#10b981" },
+  EXCLUDED: { bg: "rgba(100,116,139,0.1)", text: "#64748b" },
 };
 
 const RECONCILE_STYLES: Record<string, { bg: string; text: string }> = {
-  UNMATCHED:  { bg: "rgba(245,158,11,0.1)",  text: "#f59e0b" },
-  MATCHED:    { bg: "rgba(16,185,129,0.1)",  text: "#10b981" },
-  PARTIAL:    { bg: "rgba(99,102,241,0.1)",  text: "#818cf8" },
-  DUPLICATE:  { bg: "rgba(239,68,68,0.1)",   text: "#ef4444" },
-  EXCEPTION:  { bg: "rgba(239,68,68,0.1)",   text: "#ef4444" },
+  UNMATCHED: { bg: "rgba(245,158,11,0.1)", text: "#f59e0b" },
+  MATCHED: { bg: "rgba(16,185,129,0.1)", text: "#10b981" },
+  PARTIAL: { bg: "rgba(99,102,241,0.1)", text: "#818cf8" },
+  DUPLICATE: { bg: "rgba(239,68,68,0.1)", text: "#ef4444" },
+  EXCEPTION: { bg: "rgba(239,68,68,0.1)", text: "#ef4444" },
 };
 
 function formatINR(n: number) {
@@ -37,6 +38,68 @@ function formatINR(n: number) {
   if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
   if (n >= 1000) return `₹${(n / 1000).toFixed(0)}K`;
   return `₹${n.toLocaleString("en-IN")}`;
+}
+type SortHeaderProps = {
+  label: string;
+  col: string;
+  sortBy: string;
+  sortDir: "asc" | "desc";
+  onSort: (col: any) => void;
+  align?: "left" | "right" | "center";
+};
+
+function SortHeader({
+  label,
+  col,
+  sortBy,
+  sortDir,
+  onSort,
+  align = "left",
+}: SortHeaderProps) {
+  const active = sortBy === col;
+
+  return (
+    <th
+      onClick={() => onSort(col)}
+      style={{
+        cursor: "pointer",
+        padding: "10px 14px",
+        textAlign: align,
+        userSelect: "none",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        {label}
+        {active &&
+          (sortDir === "asc" ? (
+            <ChevronUp size={14} />
+          ) : (
+            <ChevronDown size={14} />
+          ))}
+      </span>
+    </th>
+  );
+}
+
+function PlainHeader({
+  label,
+  align = "left",
+}: {
+  label: string;
+  align?: "left" | "right" | "center";
+}) {
+  return (
+    <th
+      style={{
+        padding: "10px 14px",
+        textAlign: align,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </th>
+  );
 }
 
 function formatDate(d: string) {
@@ -56,6 +119,18 @@ export default function TransactionsPage() {
     transactions, total, page, pages, isLoading, filters,
     updateFilters, updateTransaction, bulkCategorize, exportTransactions,
   } = useBankTransactions({ limit: 50 });
+
+  // Honour a ?bankAccountId= deep link (e.g. from the Accounts page) on mount.
+  useEffect(() => {
+    const acc = new URLSearchParams(window.location.search).get("bankAccountId");
+    if (acc) updateFilters({ bankAccountId: acc });
+  }, [updateFilters]);
+
+  const sortBy = filters.sortBy ?? "transactionDate";
+  const sortDir = filters.sortDir ?? "desc";
+  const toggleSort = useCallback((col: NonNullable<typeof filters.sortBy>) => {
+    updateFilters({ sortBy: col, sortDir: sortBy === col && sortDir === "desc" ? "asc" : "desc" });
+  }, [sortBy, sortDir, updateFilters]);
 
   const allSelected = transactions.length > 0 && selected.length === transactions.length;
   const toggleAll = () => setSelected(allSelected ? [] : transactions.map(t => t.id));
@@ -198,25 +273,32 @@ export default function TransactionsPage() {
                 <th style={{ padding: "10px 14px", width: 36 }}>
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ cursor: "pointer" }} />
                 </th>
-                {["Date", "Narration / Reference", "Bank", "Debit", "Credit", "Category", "Status", "Reconcile", ""].map(h => (
-                  <th key={h} style={{ padding: "10px 14px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>
-                ))}
+                <SortHeader label="Date" col="transactionDate" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                <PlainHeader label="Narration / Reference" />
+                <PlainHeader label="Bank" />
+                <SortHeader label="Debit" col="debit" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} align="right" />
+                <SortHeader label="Credit" col="credit" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} align="right" />
+                <SortHeader label="Balance" col="balance" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} align="right" />
+                <PlainHeader label="Category" />
+                <PlainHeader label="Status" />
+                <PlainHeader label="Reconcile" />
+                <PlainHeader label="" />
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
-                    {Array.from({ length: 10 }).map((_, j) => (
+                    {Array.from({ length: 11 }).map((_, j) => (
                       <td key={j} style={{ padding: "12px 14px" }}>
-                        <div style={{ height: 12, borderRadius: 3, background: "var(--border)", opacity: 0.4, width: j === 1 ? "80%" : j === 3 || j === 4 ? "60%" : "40%" }} />
+                        <div style={{ height: 12, borderRadius: 3, background: "var(--border)", opacity: 0.4, width: j === 1 ? "80%" : j === 3 || j === 4 || j === 5 ? "60%" : "40%" }} />
                       </td>
                     ))}
                   </tr>
                 ))
               ) : transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={10} style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                  <td colSpan={11} style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
                     No transactions found. {accounts.length === 0 ? "Connect a bank account to get started." : "Try adjusting your filters."}
                   </td>
                 </tr>
@@ -232,7 +314,7 @@ export default function TransactionsPage() {
                       onClick={() => setSelectedTxn(txn === selectedTxn ? null : txn)}
                     >
                       <td style={{ padding: "10px 14px" }} onClick={e => { e.stopPropagation(); toggleOne(txn.id); }}>
-                        <input type="checkbox" checked={isSelected} onChange={() => {}} style={{ cursor: "pointer" }} />
+                        <input type="checkbox" checked={isSelected} onChange={() => { }} style={{ cursor: "pointer" }} />
                       </td>
                       <td style={{ padding: "10px 14px", fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
                         <p style={{ color: "var(--text-primary)", fontWeight: 500 }}>{formatDate(txn.transactionDate)}</p>
@@ -255,6 +337,9 @@ export default function TransactionsPage() {
                       </td>
                       <td style={{ padding: "10px 14px", textAlign: "right" }}>
                         {txn.credit ? <span style={{ fontSize: 13, fontWeight: 600, color: "#10b981" }}>+{formatINR(txn.credit)}</span> : <span style={{ color: "var(--text-muted)", fontSize: 12 }}>—</span>}
+                      </td>
+                      <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                        {txn.balance != null ? <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{formatINR(txn.balance)}</span> : <span style={{ color: "var(--text-muted)", fontSize: 12 }}>—</span>}
                       </td>
                       <td style={{ padding: "10px 14px" }}>
                         <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{txn.category ?? "—"}</span>

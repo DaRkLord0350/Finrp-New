@@ -26,6 +26,7 @@ const MODULE_LABELS: Record<AppModule, string> = {
   erp: "ERP",
   inventory: "Inventory",
   compliance: "Compliance",
+  tax: "Tax & Compliance",
   payroll: "Payroll",
   banking: "Banking",
   reports: "Reports",

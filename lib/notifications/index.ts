@@ -4,7 +4,7 @@
 // ============================================================
 
 import { prisma } from "@/lib/prisma";
-import { sendEmail, buildTaskDueEmail, buildAssignmentEmail, buildDocumentReviewEmail, buildTeamInviteEmail } from "./email";
+import { enqueueEmail, buildTaskDueEmail, buildAssignmentEmail, buildDocumentReviewEmail, buildTeamInviteEmail } from "./email";
 import { sendWhatsApp, buildTaskDueWhatsApp, buildAssignmentWhatsApp } from "./whatsapp";
 
 interface NotifyTaskDueParams {
@@ -76,17 +76,12 @@ export async function notifyTaskDue(params: NotifyTaskDueParams) {
       subject: `Task Due Reminder: ${params.taskTitle}`,
       body: html,
     });
-    sendEmail({
+    await enqueueEmail({
       to: params.recipientEmail,
       subject: `Task Due Reminder: ${params.taskTitle}`,
       html,
-    }).then(async (res) => {
-      if (res.success) {
-        await prisma.notificationQueue.updateMany({
-          where: { organizationId: params.organizationId, recipientEmail: params.recipientEmail, status: "PENDING" },
-          data: { status: "SENT", sentAt: new Date() },
-        }).catch(() => {});
-      }
+      kind: "task-due",
+      organizationId: params.organizationId,
     }).catch(() => {});
   }
 
@@ -114,7 +109,13 @@ export async function notifyAssignment(params: NotifyAssignmentParams) {
       subject: `New Client Assigned: ${params.customerName}`,
       body: html,
     });
-    sendEmail({ to: params.caEmail, subject: `New Client Assigned: ${params.customerName}`, html }).catch(() => {});
+    await enqueueEmail({
+      to: params.caEmail,
+      subject: `New Client Assigned: ${params.customerName}`,
+      html,
+      kind: "assignment",
+      organizationId: params.organizationId,
+    }).catch(() => {});
   }
 
   if (settings?.whatsappEnabled && settings?.notifyAssignment && params.caPhone) {
@@ -154,7 +155,13 @@ export async function notifyTeamInvite(params: NotifyTeamInviteParams) {
     subject,
     body: html,
   });
-  sendEmail({ to: params.recipientEmail, subject, html }).catch(() => {});
+  await enqueueEmail({
+    to: params.recipientEmail,
+    subject,
+    html,
+    kind: "team-invite",
+    organizationId: params.organizationId,
+  }).catch(() => {});
 }
 
 export async function notifyDocumentReview(params: NotifyDocumentReviewParams) {
@@ -170,10 +177,12 @@ export async function notifyDocumentReview(params: NotifyDocumentReviewParams) {
       subject: `Document ${params.status === "APPROVED" ? "Approved" : "Rejected"}: ${params.documentName}`,
       body: html,
     });
-    sendEmail({
+    await enqueueEmail({
       to: params.recipientEmail,
       subject: `Document ${params.status === "APPROVED" ? "Approved" : "Rejected"}: ${params.documentName}`,
       html,
+      kind: "document-review",
+      organizationId: params.organizationId,
     }).catch(() => {});
   }
 }

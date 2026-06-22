@@ -116,11 +116,14 @@ export const plaidExchangeSchema = z.object({
   accountIds: z.array(z.string()).optional(),
 });
 
+// The statement file is uploaded as multipart/form-data and stored server-side
+// (see /api/banking/import), so there is no client-supplied fileUrl. fileType /
+// fileName / fileSize are derived from the uploaded File on the server; only the
+// optional bankAccountId + columnMapping arrive as form fields.
 export const importStatementSchema = z.object({
   bankAccountId: z.string().cuid().optional(),
   fileType: z.enum(["CSV", "EXCEL", "PDF", "OFX", "MT940"]),
-  fileUrl: z.string().url(),
-  fileName: z.string(),
+  fileName: z.string().min(1),
   fileSize: z.number().int().positive().optional(),
   columnMapping: z.record(z.string(), z.string()).optional(),
 });

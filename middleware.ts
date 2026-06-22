@@ -9,6 +9,10 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
   "/pricing(.*)",
   "/api/webhooks(.*)",
+  // Inngest serve endpoint — authenticated by Inngest's own request signing
+  // (INNGEST_SIGNING_KEY), never by Clerk. Must stay public or the Dev Server /
+  // Inngest Cloud get a 404 on sync (PUT) and invocation (POST) → discovery fails.
+  "/api/inngest(.*)",
   // Public invoice share links — authorized by token (+ optional password)
   "/i/(.*)",
   "/api/public/(.*)",

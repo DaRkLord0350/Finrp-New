@@ -320,14 +320,15 @@ async function sendInviteEmail(
   caOrganizationId: string
 ) {
   try {
-    const { sendEmail } = await import("@/lib/notifications/email");
+    const { enqueueEmail } = await import("@/lib/notifications/email");
     const ca = await prisma.organization.findUnique({
       where: { id: caOrganizationId },
       select: { name: true },
     });
     const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "https://app.finrp.org";
     const link = `${appUrl}/sign-up?caInvite=${relationshipId}`;
-    await sendEmail({
+    await enqueueEmail({
+      kind: "ca-invite",
       to: email,
       subject: `${ca?.name ?? "Your CA"} invited you to FinRP`,
       html: `

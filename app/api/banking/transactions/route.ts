@@ -21,6 +21,20 @@ export async function GET(req: NextRequest) {
   const to = searchParams.get("to");
   const search = searchParams.get("q");
 
+  // Server-side sorting (whitelisted columns only). A trailing createdAt key
+  // keeps ordering stable when the primary key ties (e.g. many rows share the
+  // same transactionDate after a statement import).
+  const sortDir: "asc" | "desc" = searchParams.get("sortDir") === "asc" ? "asc" : "desc";
+  const orderBy = (() => {
+    switch (searchParams.get("sortBy")) {
+      case "credit": return [{ credit: sortDir }, { createdAt: "desc" as const }];
+      case "debit": return [{ debit: sortDir }, { createdAt: "desc" as const }];
+      case "balance": return [{ balance: sortDir }, { createdAt: "desc" as const }];
+      case "createdAt": return [{ createdAt: sortDir }];
+      default: return [{ transactionDate: sortDir }, { createdAt: "desc" as const }];
+    }
+  })();
+
   const where: Record<string, unknown> = { organizationId: orgId };
   if (bankAccountId) where.bankAccountId = bankAccountId;
   if (status) where.status = status;
@@ -41,7 +55,7 @@ export async function GET(req: NextRequest) {
   const [transactions, total] = await Promise.all([
     prisma.bankTransaction.findMany({
       where,
-      orderBy: { transactionDate: "desc" },
+      orderBy,
       skip: (page - 1) * limit,
       take: limit,
       include: {

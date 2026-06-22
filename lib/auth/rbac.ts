@@ -28,6 +28,7 @@ export type AppModule =
   | "erp"
   | "inventory"
   | "compliance"
+  | "tax"
   | "payroll"
   | "banking"
   | "reports"
@@ -54,6 +55,7 @@ const MODULE_RESOURCES: Record<AppModule, string[]> = {
   erp: ["erp"],
   inventory: ["inventory", "items"],
   compliance: ["compliance"],
+  tax: ["tax"],
   payroll: ["payroll", "employees"],
   banking: ["banking"],
   reports: ["analytics"],
