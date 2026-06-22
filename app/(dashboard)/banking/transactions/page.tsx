@@ -18,19 +18,19 @@ const CATEGORIES = [
 ];
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
-  UNREVIEWED:  { bg: "rgba(245,158,11,0.1)",  text: "#f59e0b" },
-  REVIEWED:    { bg: "rgba(99,102,241,0.1)",  text: "#818cf8" },
-  CATEGORIZED: { bg: "rgba(6,182,212,0.1)",   text: "#06b6d4" },
-  MATCHED:     { bg: "rgba(16,185,129,0.1)",  text: "#10b981" },
-  EXCLUDED:    { bg: "rgba(100,116,139,0.1)", text: "#64748b" },
+  UNREVIEWED: { bg: "rgba(245,158,11,0.1)", text: "#f59e0b" },
+  REVIEWED: { bg: "rgba(99,102,241,0.1)", text: "#818cf8" },
+  CATEGORIZED: { bg: "rgba(6,182,212,0.1)", text: "#06b6d4" },
+  MATCHED: { bg: "rgba(16,185,129,0.1)", text: "#10b981" },
+  EXCLUDED: { bg: "rgba(100,116,139,0.1)", text: "#64748b" },
 };
 
 const RECONCILE_STYLES: Record<string, { bg: string; text: string }> = {
-  UNMATCHED:  { bg: "rgba(245,158,11,0.1)",  text: "#f59e0b" },
-  MATCHED:    { bg: "rgba(16,185,129,0.1)",  text: "#10b981" },
-  PARTIAL:    { bg: "rgba(99,102,241,0.1)",  text: "#818cf8" },
-  DUPLICATE:  { bg: "rgba(239,68,68,0.1)",   text: "#ef4444" },
-  EXCEPTION:  { bg: "rgba(239,68,68,0.1)",   text: "#ef4444" },
+  UNMATCHED: { bg: "rgba(245,158,11,0.1)", text: "#f59e0b" },
+  MATCHED: { bg: "rgba(16,185,129,0.1)", text: "#10b981" },
+  PARTIAL: { bg: "rgba(99,102,241,0.1)", text: "#818cf8" },
+  DUPLICATE: { bg: "rgba(239,68,68,0.1)", text: "#ef4444" },
+  EXCEPTION: { bg: "rgba(239,68,68,0.1)", text: "#ef4444" },
 };
 
 function formatINR(n: number) {
@@ -38,6 +38,68 @@ function formatINR(n: number) {
   if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
   if (n >= 1000) return `₹${(n / 1000).toFixed(0)}K`;
   return `₹${n.toLocaleString("en-IN")}`;
+}
+type SortHeaderProps = {
+  label: string;
+  col: string;
+  sortBy: string;
+  sortDir: "asc" | "desc";
+  onSort: (col: any) => void;
+  align?: "left" | "right" | "center";
+};
+
+function SortHeader({
+  label,
+  col,
+  sortBy,
+  sortDir,
+  onSort,
+  align = "left",
+}: SortHeaderProps) {
+  const active = sortBy === col;
+
+  return (
+    <th
+      onClick={() => onSort(col)}
+      style={{
+        cursor: "pointer",
+        padding: "10px 14px",
+        textAlign: align,
+        userSelect: "none",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        {label}
+        {active &&
+          (sortDir === "asc" ? (
+            <ChevronUp size={14} />
+          ) : (
+            <ChevronDown size={14} />
+          ))}
+      </span>
+    </th>
+  );
+}
+
+function PlainHeader({
+  label,
+  align = "left",
+}: {
+  label: string;
+  align?: "left" | "right" | "center";
+}) {
+  return (
+    <th
+      style={{
+        padding: "10px 14px",
+        textAlign: align,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </th>
+  );
 }
 
 function formatDate(d: string) {
@@ -252,7 +314,7 @@ export default function TransactionsPage() {
                       onClick={() => setSelectedTxn(txn === selectedTxn ? null : txn)}
                     >
                       <td style={{ padding: "10px 14px" }} onClick={e => { e.stopPropagation(); toggleOne(txn.id); }}>
-                        <input type="checkbox" checked={isSelected} onChange={() => {}} style={{ cursor: "pointer" }} />
+                        <input type="checkbox" checked={isSelected} onChange={() => { }} style={{ cursor: "pointer" }} />
                       </td>
                       <td style={{ padding: "10px 14px", fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
                         <p style={{ color: "var(--text-primary)", fontWeight: 500 }}>{formatDate(txn.transactionDate)}</p>
