@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
   },
 
   // ── Server-side only packages (never bundle into client JS) ────────────────
-  serverExternalPackages: ["@react-pdf/renderer", "ioredis", "bullmq"],
+  serverExternalPackages: ["@react-pdf/renderer", "ioredis"],
 
   // ── Image optimization ─────────────────────────────────────────────────────
   images: {

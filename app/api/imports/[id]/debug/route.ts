@@ -1,14 +1,13 @@
 // ============================================================
 // GET /api/imports/[id]/debug
 // Full lifecycle diagnostics for a specific import job.
-// Returns DB state, BullMQ state, and actionable recommendations.
+// Returns DB state, BackgroundJob (Inngest) state, and recommendations.
 // ============================================================
 
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
-import { getImportQueue } from "@/lib/jobs/queues";
 
 export const dynamic = "force-dynamic";
 
@@ -33,41 +32,46 @@ export async function GET(
 
   const now = Date.now();
 
-  // ── BullMQ state ──────────────────────────────────────────────────────────
+  // ── BackgroundJob (Inngest) state ─────────────────────────────────────────
   let queueState: Record<string, unknown> = { available: false };
 
-  if (importJob.bullmqJobId) {
-    try {
-      const q = getImportQueue();
-      const bJob = await q.getJob(importJob.bullmqJobId);
-
-      if (bJob) {
-        const state = await bJob.getState();
-        queueState = {
-          available:    true,
-          jobState:     state,
-          progress:     bJob.progress,
-          attemptsMade: bJob.attemptsMade,
-          failedReason: bJob.failedReason ?? null,
-          timestamp:    bJob.timestamp,
-          processedOn:  bJob.processedOn,
-          finishedOn:   bJob.finishedOn,
-          logs:         await (bJob as unknown as { getLogs: (s: number, e: number) => Promise<{ logs: string[] }> }).getLogs(0, 20).then((l) => l.logs).catch(() => []),
-        };
-      } else {
-        queueState = {
-          available: true,
-          jobState:  "not_found",
-          note:      "BullMQ job not found in Redis (may have been cleaned up)",
-        };
-      }
-    } catch (err) {
+  try {
+    const bg = await prisma.backgroundJob.findFirst({
+      where: { type: "csv.import", referenceId: id, organizationId: user.organizationId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        status: true,
+        progress: true,
+        attempts: true,
+        error: true,
+        runId: true,
+        eventId: true,
+        startedAt: true,
+        completedAt: true,
+      },
+    });
+    if (bg) {
       queueState = {
-        available: false,
-        error:     (err as Error).message,
-        note:      "Could not connect to Redis",
+        available: true,
+        jobState: bg.status,
+        progress: bg.progress,
+        attemptsMade: bg.attempts,
+        failedReason: bg.error ?? null,
+        runId: bg.runId,
+        eventId: bg.eventId,
+        startedAt: bg.startedAt,
+        finishedOn: bg.completedAt,
+        note: "Live execution state is also visible in the Inngest dashboard (run id above).",
+      };
+    } else {
+      queueState = {
+        available: true,
+        jobState: "not_found",
+        note: "No BackgroundJob ledger row yet — the import event may not have been picked up.",
       };
     }
+  } catch (err) {
+    queueState = { available: false, error: (err as Error).message };
   }
 
   // ── Recent import errors ──────────────────────────────────────────────────
@@ -111,9 +115,9 @@ export async function GET(
   }
 
   if (status === "QUEUED" && stuckForMs > 5 * 60 * 1000) {
-    issues.push("Import stuck in QUEUED >5 min — worker may be down or Redis disconnected");
-    recommendation = "Check that the worker process (npx tsx workers/index.ts) is running. " +
-      "Check Redis connectivity. The stuck-job checker will auto-retry within 5 min.";
+    issues.push("Import stuck in QUEUED >5 min — the Inngest function may not have picked up the event");
+    recommendation = "Check that the Inngest dev server (or Inngest Cloud) is connected to /api/inngest. " +
+      "The stuck-job-checker cron will re-dispatch or fail it within 5 min.";
   }
 
   if (status === "PROCESSING") {

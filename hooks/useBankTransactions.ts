@@ -36,6 +36,8 @@ export interface TransactionFilters {
   q?: string;
   page?: number;
   limit?: number;
+  sortBy?: "transactionDate" | "credit" | "debit" | "balance" | "createdAt";
+  sortDir?: "asc" | "desc";
 }
 
 async function fetchTransactions(filters: TransactionFilters) {
@@ -47,6 +49,8 @@ async function fetchTransactions(filters: TransactionFilters) {
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
   if (filters.q) params.set("q", filters.q);
+  if (filters.sortBy) params.set("sortBy", filters.sortBy);
+  if (filters.sortDir) params.set("sortDir", filters.sortDir);
   params.set("page", String(filters.page ?? 1));
   params.set("limit", String(filters.limit ?? 50));
 

@@ -1,13 +1,13 @@
 // ============================================================
 // GET /api/imports/queue-health
 // Production observability for the import pipeline.
-// Returns BullMQ queue depths + stuck imports + worker health.
+// Returns BackgroundJob ledger depths + stuck imports + health.
+// (Inngest owns execution; depths are read from the DB ledger.)
 // ============================================================
 
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getImportQueue } from "@/lib/jobs/queues";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export async function GET() {
 
   const user = await getCurrentUser();
 
-  // ── BullMQ queue state ────────────────────────────────────────────────────
+  // ── BackgroundJob ledger state (type = csv.import, tenant-scoped) ──────────
   let queueCounts: Record<string, number> = {};
   let queueError: string | null = null;
   let activeJobs: unknown[] = [];
@@ -30,34 +30,46 @@ export async function GET() {
   let activeWorkers = 0;
 
   try {
-    const q = getImportQueue();
-    queueCounts = await q.getJobCounts(
-      "waiting", "active", "completed", "failed", "delayed", "paused"
-    );
-
-    const [active, waiting] = await Promise.all([
-      q.getActive(0, 20),
-      q.getWaiting(0, 20),
+    const ledgerWhere = { type: "csv.import", organizationId: user.organizationId };
+    const [grouped, active, waiting] = await Promise.all([
+      prisma.backgroundJob.groupBy({ by: ["status"], where: ledgerWhere, _count: { _all: true } }),
+      prisma.backgroundJob.findMany({
+        where: { ...ledgerWhere, status: { in: ["RUNNING", "RETRYING"] } },
+        select: { id: true, referenceId: true, progress: true, attempts: true, startedAt: true },
+        take: 20,
+        orderBy: { startedAt: "desc" },
+      }),
+      prisma.backgroundJob.findMany({
+        where: { ...ledgerWhere, status: "QUEUED" },
+        select: { id: true, referenceId: true, createdAt: true },
+        take: 20,
+        orderBy: { createdAt: "asc" },
+      }),
     ]);
 
+    const by = Object.fromEntries(grouped.map((g) => [g.status, g._count._all])) as Record<string, number>;
+    queueCounts = {
+      waiting: by.QUEUED ?? 0,
+      active: (by.RUNNING ?? 0) + (by.RETRYING ?? 0),
+      completed: by.COMPLETED ?? 0,
+      failed: by.FAILED ?? 0,
+      delayed: 0,
+      paused: 0,
+    };
+
     activeJobs = active.map((j) => ({
-      id:           j.id,
-      importJobId:  (j.data as { importJobId?: string }).importJobId,
-      organizationId: (j.data as { organizationId?: string }).organizationId,
-      entity:       (j.data as { entity?: string }).entity,
-      progress:     j.progress,
-      attemptsMade: j.attemptsMade,
-      timestamp:    j.timestamp,
+      id: j.id,
+      importJobId: j.referenceId,
+      progress: j.progress,
+      attemptsMade: j.attempts,
+      timestamp: j.startedAt?.getTime(),
     }));
-
     waitingJobs = waiting.map((j) => ({
-      id:          j.id,
-      importJobId: (j.data as { importJobId?: string }).importJobId,
-      entity:      (j.data as { entity?: string }).entity,
-      timestamp:   j.timestamp,
+      id: j.id,
+      importJobId: j.referenceId,
+      timestamp: j.createdAt.getTime(),
     }));
-
-    activeWorkers = active.length; // proxy for active workers
+    activeWorkers = active.length; // proxy for in-flight runs
   } catch (err) {
     queueError = err instanceof Error ? err.message : String(err);
   }
@@ -149,7 +161,7 @@ export async function GET() {
 
   return NextResponse.json({
     queue: {
-      name:          "finrp-import",
+      name:          "csv.import",
       counts:        queueCounts,
       activeJobs,
       waitingJobs,
@@ -164,7 +176,7 @@ export async function GET() {
     health: {
       isHealthy: queueError === null && stuckImports.length === 0,
       issues: [
-        ...(queueError ? [`Redis error: ${queueError}`] : []),
+        ...(queueError ? [`Ledger error: ${queueError}`] : []),
         ...(stuckQueued.length   ? [`${stuckQueued.length} import(s) stuck in QUEUED`] : []),
         ...(stuckProcessing.length ? [`${stuckProcessing.length} import(s) stuck in PROCESSING (heartbeat stale)`] : []),
         ...(stuckMapping.length  ? [`${stuckMapping.length} import(s) stuck in MAPPING >10 min`] : []),

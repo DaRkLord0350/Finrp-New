@@ -1,13 +1,16 @@
 // ============================================================
 // lib/tax/queue.ts
 //
-// BullMQ queue for heavy tax computations (GSTR generation, 2B
-// reconciliation, filing status polling). Mirrors the banking queue
-// pattern. A TaxJobRun row tracks each dispatch for the admin monitor.
+// Tax compute dispatch (Inngest-backed). enqueueTaxJob records a
+// TaxJobRun row (the admin monitor reads it) and emits a
+// `tax/job.requested` event. The tax Inngest function dispatches by
+// jobName to the GST engine and advances the TaxJobRun via the
+// markJob* helpers below. Deterministic event id per (jobName, gstin,
+// period) so duplicate clicks don't double-process.
 // ============================================================
 
-import { Queue } from "bullmq";
-import { getRedisConnection } from "@/lib/redis";
+import { inngest } from "@/inngest/client";
+import { EVENTS } from "@/inngest/events";
 import { QUEUE_NAMES } from "@/lib/jobs/queues";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
@@ -27,32 +30,11 @@ export interface TaxJobData {
   meta?: Record<string, unknown>;
 }
 
-const TAX_JOB_OPTIONS = {
-  attempts: 3,
-  backoff: { type: "exponential" as const, delay: 3000 },
-  removeOnComplete: { count: 500 },
-  removeOnFail: { count: 500 },
-};
-
-let taxQueue: Queue<TaxJobData> | null = null;
-
-export function getTaxQueue(): Queue<TaxJobData> {
-  if (!taxQueue) {
-    taxQueue = new Queue<TaxJobData>(QUEUE_NAMES.TAX, {
-      connection: getRedisConnection("queue"),
-      defaultJobOptions: TAX_JOB_OPTIONS,
-    });
-  }
-  return taxQueue;
-}
-
 /**
- * Enqueue a tax compute job + record a TaxJobRun for monitoring.
- * Deterministic jobId per (jobName, gstin, period) so duplicate clicks
- * don't double-process.
+ * Record a TaxJobRun for monitoring and emit the compute event.
+ * Deterministic event id collapses duplicate dispatches.
  */
 export async function enqueueTaxJob(data: TaxJobData): Promise<string> {
-  const q = getTaxQueue();
   const jobId = `${data.jobName}_${data.gstin}_${data.period}`;
 
   await prisma.taxJobRun.create({
@@ -66,8 +48,8 @@ export async function enqueueTaxJob(data: TaxJobData): Promise<string> {
     },
   });
 
-  const job = await q.add(data.jobName, data, { jobId });
-  return job.id ?? jobId;
+  await inngest.send({ name: EVENTS.TAX_JOB_REQUESTED, data, id: jobId });
+  return jobId;
 }
 
 export async function markJobRunning(jobId: string) {

@@ -1,90 +1,39 @@
 // ============================================================
-// FinRP Banking OS — Bank Statement Import BullMQ Worker
-// Processes uploaded CSV/Excel/PDF files, deduplicates,
-// stores transactions, runs categorization + risk checks.
+// FinRP Banking OS — Bank Statement Import processor
+// Pure processing logic (no queue runtime): parses uploaded
+// CSV/Excel/PDF files, deduplicates, stores transactions, runs
+// categorization + risk checks. Invoked by the bank-import Inngest
+// function; `onProgress` reports 0..100 for the BackgroundJob ledger.
 // ============================================================
 
-import { Worker, Queue, type Job } from "bullmq";
-import { getRedisConnection } from "@/lib/redis";
 import { prisma } from "@/lib/prisma";
-import { parseCSV, parseExcel, parsePDF, detectColumnMapping } from "../integrations/statement-parser";
-import { filterDuplicates, computeTxnSignature } from "../duplicate-detector";
-import { bulkCategorize } from "../categorization-engine";
-import { analyzeRecentTransactions } from "../risk-detector";
-import { updateAccountBalance } from "../ledger-integration";
-import type { BankImportJobData, ParsedBankTransaction } from "../types";
+import { parseCSV, parseExcel, parsePDF } from "./integrations/statement-parser";
+import { filterDuplicates, computeTxnSignature } from "./duplicate-detector";
+import { bulkCategorize } from "./categorization-engine";
+import { analyzeRecentTransactions } from "./risk-detector";
+import { updateAccountBalance } from "./ledger-integration";
+import type { BankImportJobData } from "./types";
 
-export const BANK_IMPORT_QUEUE = "finrp-bank-import";
+type ProgressFn = (progress: number) => void | Promise<void>;
 
-let importQueue: Queue<BankImportJobData> | null = null;
-
-export function getBankImportQueue(): Queue<BankImportJobData> {
-  if (!importQueue) {
-    importQueue = new Queue<BankImportJobData>(BANK_IMPORT_QUEUE, {
-      connection: getRedisConnection("queue"),
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: "exponential", delay: 3000 },
-        removeOnComplete: { count: 500 },
-        removeOnFail: { count: 200 },
-      },
-    });
-  }
-  return importQueue;
-}
-
-export async function enqueueBankImport(data: BankImportJobData): Promise<string> {
-  const q = getBankImportQueue();
-  const job = await q.add("process-bank-import", data, {
-    jobId: `bank-import-${data.importId}`,
-  });
-  return job.id ?? `bank-import-${data.importId}`;
-}
-
-// ---------------------------------------------------------------------------
-// Create worker
-// ---------------------------------------------------------------------------
-export function createBankImportWorker() {
-  const worker = new Worker<BankImportJobData>(
-    BANK_IMPORT_QUEUE,
-    async (job: Job<BankImportJobData>) => {
-      return processBankImport(job);
-    },
-    {
-      connection: getRedisConnection("worker"),
-      concurrency: 2,
-      limiter: { max: 5, duration: 60_000 },
-    }
-  );
-
-  worker.on("completed", (job) => {
-    console.log(`[BankImportWorker] ${job.id} completed`);
-  });
-  worker.on("failed", (job, err) => {
-    console.error(`[BankImportWorker] ${job?.id} failed: ${err.message}`);
-  });
-
-  return worker;
-}
-
-// ---------------------------------------------------------------------------
-// Core import processor
-// ---------------------------------------------------------------------------
-async function processBankImport(job: Job<BankImportJobData>): Promise<void> {
-  const { importId, organizationId, bankAccountId, fileUrl, fileType, columnMapping } = job.data;
+export async function processBankImport(
+  data: BankImportJobData,
+  onProgress: ProgressFn = () => {}
+): Promise<void> {
+  const { importId, organizationId, bankAccountId, fileUrl, fileType, columnMapping } = data;
 
   await prisma.bankStatementImport.update({
     where: { id: importId },
     data: { status: "PROCESSING" },
   });
 
-  await job.updateProgress(5);
+  await onProgress(5);
 
   let parseResult;
 
   try {
     const fileBuffer = await downloadFile(fileUrl);
-    await job.updateProgress(20);
+    await onProgress(20);
 
     switch (fileType) {
       case "CSV":
@@ -100,7 +49,7 @@ async function processBankImport(job: Job<BankImportJobData>): Promise<void> {
         throw new Error(`Unsupported file type: ${fileType}`);
     }
 
-    await job.updateProgress(40);
+    await onProgress(40);
 
     if (parseResult.transactions.length === 0) {
       await prisma.bankStatementImport.update({
@@ -117,34 +66,32 @@ async function processBankImport(job: Job<BankImportJobData>): Promise<void> {
       return;
     }
 
-    const targetAccountId = bankAccountId ?? await resolveAccountFromStatement(
-      organizationId,
-      parseResult.detectedBank
-    );
+    const targetAccountId =
+      bankAccountId ?? (await resolveAccountFromStatement(organizationId, parseResult.detectedBank));
 
     if (!targetAccountId) {
       throw new Error("No bank account specified or detectable from statement");
     }
 
     // Deduplicate
-    const { unique, duplicateCount } = await filterDuplicates(
-      targetAccountId,
-      parseResult.transactions
-    );
+    const { unique, duplicateCount } = await filterDuplicates(targetAccountId, parseResult.transactions);
 
-    await job.updateProgress(60);
+    await onProgress(60);
 
     // Batch insert
-    const source = fileType === "CSV" ? "CSV_UPLOAD" as const
-      : fileType === "EXCEL" ? "EXCEL_UPLOAD" as const
-      : "PDF_UPLOAD" as const;
+    const source =
+      fileType === "CSV"
+        ? ("CSV_UPLOAD" as const)
+        : fileType === "EXCEL"
+          ? ("EXCEL_UPLOAD" as const)
+          : ("PDF_UPLOAD" as const);
 
     const batches = chunk(unique, 100);
     let successRows = 0;
     let errorRows = parseResult.errorRows;
 
     for (const batch of batches) {
-      const createData = batch.map(txn => {
+      const createData = batch.map((txn) => {
         const sig = computeTxnSignature(targetAccountId, txn);
         return {
           organizationId,
@@ -165,18 +112,15 @@ async function processBankImport(job: Job<BankImportJobData>): Promise<void> {
       });
 
       try {
-        await prisma.bankTransaction.createMany({
-          data: createData,
-          skipDuplicates: true,
-        });
+        await prisma.bankTransaction.createMany({ data: createData, skipDuplicates: true });
         successRows += batch.length;
       } catch (batchErr) {
-        console.error("[BankImportWorker] Batch insert error:", (batchErr as Error).message);
+        console.error("[bank-import] Batch insert error:", (batchErr as Error).message);
         errorRows += batch.length;
       }
     }
 
-    await job.updateProgress(80);
+    await onProgress(80);
 
     // Post-import pipeline
     const syncStart = new Date(Date.now() - 60_000);
@@ -184,13 +128,10 @@ async function processBankImport(job: Job<BankImportJobData>): Promise<void> {
     await analyzeRecentTransactions(organizationId, targetAccountId, syncStart);
     await updateAccountBalance(targetAccountId, organizationId);
 
-    await job.updateProgress(95);
+    await onProgress(95);
 
-    const finalStatus = errorRows > 0 && successRows === 0
-      ? "FAILED"
-      : errorRows > 0
-      ? "PARTIAL"
-      : "COMPLETED";
+    const finalStatus =
+      errorRows > 0 && successRows === 0 ? "FAILED" : errorRows > 0 ? "PARTIAL" : "COMPLETED";
 
     await prisma.bankStatementImport.update({
       where: { id: importId },
@@ -207,18 +148,19 @@ async function processBankImport(job: Job<BankImportJobData>): Promise<void> {
       },
     });
 
-    await job.updateProgress(100);
-
+    await onProgress(100);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await prisma.bankStatementImport.update({
-      where: { id: importId },
-      data: {
-        status: "FAILED",
-        errors: [{ row: 0, message }] as never,
-        processedAt: new Date(),
-      },
-    }).catch(() => {});
+    await prisma.bankStatementImport
+      .update({
+        where: { id: importId },
+        data: {
+          status: "FAILED",
+          errors: [{ row: 0, message }] as never,
+          processedAt: new Date(),
+        },
+      })
+      .catch(() => {});
     throw err;
   }
 }
@@ -226,10 +168,17 @@ async function processBankImport(job: Job<BankImportJobData>): Promise<void> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+// `fileUrl` is either an http(s) URL (object storage) or a local filesystem
+// path for a statement uploaded through /api/banking/import (saved under tmp/,
+// mirroring the main CSV import). Read whichever form was stored.
 async function downloadFile(fileUrl: string): Promise<Buffer> {
-  const res = await fetch(fileUrl);
-  if (!res.ok) throw new Error(`Failed to download file: ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+  if (/^https?:\/\//i.test(fileUrl)) {
+    const res = await fetch(fileUrl);
+    if (!res.ok) throw new Error(`Failed to download file: ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  }
+  const { readFile } = await import("fs/promises");
+  return readFile(fileUrl);
 }
 
 async function resolveAccountFromStatement(

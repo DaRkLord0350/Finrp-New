@@ -1,46 +1,36 @@
 // ============================================================
-// FinRP — Analytics BullMQ Queue
-// Use analyticsQueue.add() from API routes/actions to schedule
-// background precomputation after data mutations.
+// FinRP — Analytics dispatch (Inngest-backed)
+// Call these helpers from API routes/actions after data mutations to
+// schedule background precomputation of dashboard/firm/compliance
+// snapshots. Coalescing of rapid bursts is handled by the analytics
+// Inngest function's `debounce` config (inngest/functions/analytics.ts).
 // ============================================================
 
-import { Queue } from "bullmq";
-import { BULLMQ_CONNECTION } from "@/lib/redis";
+import { inngest } from "@/inngest/client";
+import { EVENTS } from "@/inngest/events";
 
 export type AnalyticsJobData =
-  | { type: "dashboard";   organizationId: string }
-  | { type: "monthly";     organizationId: string; year: number; month: number }
-  | { type: "firm";        organizationId: string }
-  | { type: "compliance";  organizationId: string }
-  | { type: "all_orgs" };   // admin cron: recompute every org
+  | { type: "dashboard"; organizationId: string }
+  | { type: "monthly"; organizationId: string; year: number; month: number }
+  | { type: "firm"; organizationId: string }
+  | { type: "compliance"; organizationId: string }
+  | { type: "all_orgs" }; // admin cron: recompute every org
 
-export const analyticsQueue = new Queue<AnalyticsJobData>("analytics", {
-  connection: BULLMQ_CONNECTION,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: "exponential", delay: 2_000 },
-    removeOnComplete: { count: 200 },
-    removeOnFail:    { count: 100 },
-  },
-});
+export async function enqueueAnalyticsSnapshot(data: AnalyticsJobData): Promise<void> {
+  await inngest.send({ name: EVENTS.ANALYTICS_SNAPSHOT_REQUESTED, data });
+}
 
 // Convenience helpers used in API routes after mutations
 export async function scheduleOrgSnapshot(organizationId: string) {
-  await analyticsQueue.add(
-    `dashboard:${organizationId}`,
-    { type: "dashboard", organizationId },
-    { jobId: `dashboard:${organizationId}`, delay: 2_000 } // de-duplicate within 2s
-  );
+  await enqueueAnalyticsSnapshot({ type: "dashboard", organizationId });
 }
 
 export async function scheduleMonthlySnapshot(organizationId: string) {
   const now = new Date();
-  await analyticsQueue.add(
-    `monthly:${organizationId}:${now.getFullYear()}-${now.getMonth() + 1}`,
-    { type: "monthly", organizationId, year: now.getFullYear(), month: now.getMonth() + 1 },
-    {
-      jobId: `monthly:${organizationId}:${now.getFullYear()}-${now.getMonth() + 1}`,
-      delay: 5_000,
-    }
-  );
+  await enqueueAnalyticsSnapshot({
+    type: "monthly",
+    organizationId,
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+  });
 }

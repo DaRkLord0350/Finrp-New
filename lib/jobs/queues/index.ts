@@ -1,19 +1,22 @@
 // ============================================================
-// FinRP — BullMQ Queue Registry
-// Three queues: import, sync, webhook.
-// Each queue gets its own dedicated Redis connection.
+// FinRP — Async dispatch helpers (Inngest-backed)
+//
+// Historically this module created BullMQ queues. It now sends typed
+// Inngest events. The public surface (enqueueImport / enqueueSync /
+// enqueueWebhook + the *JobData interfaces) is unchanged so every
+// caller keeps working without modification — the worker logic lives
+// in inngest/functions/* and Inngest owns retries + scheduling.
 // ============================================================
 
-import { Queue, QueueEvents } from "bullmq";
-import { getRedisConnection } from "@/lib/redis";
+import { inngest } from "@/inngest/client";
+import { EVENTS } from "@/inngest/events";
+import { getBackgroundJobHealth } from "@/lib/jobs/background-job";
 
 // ---------------------------------------------------------------------------
-// Queue names
+// Stable labels — used as BackgroundJob.type / TaxJobRun.queue values and as
+// human-facing identifiers. (No longer Redis queue names.)
 // ---------------------------------------------------------------------------
 export const QUEUE_NAMES = {
-  // IMPORT: "finrp:import",
-  // SYNC: "finrp:sync",
-  // WEBHOOK: "finrp:webhook",
   IMPORT: "finrp-import",
   SYNC: "finrp-sync",
   WEBHOOK: "finrp-webhook",
@@ -23,20 +26,7 @@ export const QUEUE_NAMES = {
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
 // ---------------------------------------------------------------------------
-// Default job options
-// ---------------------------------------------------------------------------
-const DEFAULT_JOB_OPTIONS = {
-  attempts: 3,
-  backoff: {
-    type: "exponential" as const,
-    delay: 2000, // 2s, 4s, 8s
-  },
-  removeOnComplete: { count: 1000 },
-  removeOnFail: { count: 500 },
-};
-
-// ---------------------------------------------------------------------------
-// Job data interfaces (typed payloads per queue)
+// Typed event payloads (unchanged shapes — preserved for every importer)
 // ---------------------------------------------------------------------------
 
 export interface ImportJobData {
@@ -69,176 +59,73 @@ export interface WebhookJobData {
 }
 
 // ---------------------------------------------------------------------------
-// Queue singletons — lazy initialized
-// ---------------------------------------------------------------------------
-let importQueue: Queue<ImportJobData> | null = null;
-let syncQueue: Queue<SyncJobData> | null = null;
-let webhookQueue: Queue<WebhookJobData> | null = null;
-
-export function getImportQueue(): Queue<ImportJobData> {
-  if (!importQueue) {
-    importQueue = new Queue<ImportJobData>(QUEUE_NAMES.IMPORT, {
-      connection: getRedisConnection("queue"),
-      defaultJobOptions: DEFAULT_JOB_OPTIONS,
-    });
-  }
-  return importQueue;
-}
-
-export function getSyncQueue(): Queue<SyncJobData> {
-  if (!syncQueue) {
-    syncQueue = new Queue<SyncJobData>(QUEUE_NAMES.SYNC, {
-      connection: getRedisConnection("queue"),
-      defaultJobOptions: {
-        ...DEFAULT_JOB_OPTIONS,
-        attempts: 5, // syncs get more retries
-        backoff: { type: "exponential", delay: 5000 },
-      },
-    });
-  }
-  return syncQueue;
-}
-
-export function getWebhookQueue(): Queue<WebhookJobData> {
-  if (!webhookQueue) {
-    webhookQueue = new Queue<WebhookJobData>(QUEUE_NAMES.WEBHOOK, {
-      connection: getRedisConnection("queue"),
-      defaultJobOptions: {
-        ...DEFAULT_JOB_OPTIONS,
-        attempts: 5,
-        backoff: { type: "exponential", delay: 1000 },
-      },
-    });
-  }
-  return webhookQueue;
-}
-
-// ---------------------------------------------------------------------------
-// Job enqueue helpers
+// Dispatch helpers — thin wrappers over inngest.send(). Each returns the
+// Inngest event id, which callers persist in the (legacy-named) bullmqJobId
+// column purely as a correlation handle.
+//
+// Idempotency note: we deliberately do NOT set a permanent event id here.
+// The import/sync/webhook functions re-read the owning DB record and skip
+// terminal states, so a failed job can still be retried from the UI while
+// duplicate concurrent dispatches are absorbed by that status check. Inngest
+// additionally retries transient failures automatically.
 // ---------------------------------------------------------------------------
 
 export async function enqueueImport(data: ImportJobData): Promise<string> {
-  console.log("[QUEUE] enqueue start", data.importJobId);
-
-  const q = getImportQueue();
-
-  // Log queue depth — lets us detect Redis connectivity issues or backlogs.
-  const counts = await q.getJobCounts("waiting", "active", "completed", "failed");
-  console.log("[QUEUE COUNTS]", counts);
-
-  const bullmqJobId = `import_${data.importJobId}`;
-
-  const job = await q.add("process-import", data, {
-    jobId: bullmqJobId, // deterministic — safe to call twice without duplicating
-  });
-
-  // BullMQ returns job.id === undefined when the job already exists in the queue
-  // (deduplication). Fall back to the constructed ID we intended to use, NOT the
-  // raw importJobId — the BullMQ key prefix matters for cross-referencing in Redis.
-  const resolvedId = job.id ?? bullmqJobId;
-
-  if (!job.id) {
-    console.warn(
-      `[QUEUE] Job already exists in queue for importJobId=${data.importJobId}. ` +
-      `Using existing bullmqJobId=${resolvedId}`
-    );
-  }
-
-  console.log("[QUEUE] enqueue success", {
-    importJobId: data.importJobId,
-    bullmqJobId: resolvedId,
-  });
-
-  return resolvedId;
+  const { ids } = await inngest.send({ name: EVENTS.CSV_IMPORT_REQUESTED, data });
+  const eventId = ids[0] ?? `import_${data.importJobId}`;
+  console.log("[dispatch] csv/import.requested", { importJobId: data.importJobId, eventId });
+  return eventId;
 }
 
 export async function enqueueSync(data: SyncJobData, delayMs = 0): Promise<string> {
-  const q = getSyncQueue();
-  const job = await q.add("run-sync", data, {
-    jobId: `sync_${data.syncJobId}`,
-    delay: delayMs,
+  const { ids } = await inngest.send({
+    name: EVENTS.INTEGRATION_SYNC_REQUESTED,
+    data,
+    // Inngest delays delivery when `ts` is in the future (batches webhook bursts).
+    ...(delayMs > 0 ? { ts: Date.now() + delayMs } : {}),
   });
-  return job.id ?? data.syncJobId;
+  return ids[0] ?? data.syncJobId;
 }
 
 export async function enqueueWebhook(data: WebhookJobData): Promise<string> {
-  const q = getWebhookQueue();
-  const job = await q.add("process-webhook", data);
-  return job.id!;
+  const { ids } = await inngest.send({ name: EVENTS.WEBHOOK_ZOHO_RECEIVED, data });
+  return ids[0] ?? data.webhookEventId;
 }
 
 // ---------------------------------------------------------------------------
-// Schedule repeatable sync (cron)
+// Scheduled per-integration sync.
+//
+// Replaced by the `integration-scheduled-sync` cron function which scans for
+// integrations due for refresh (see inngest/functions/scheduled.ts). Kept as
+// a no-op so existing callers (e.g. the Zoho OAuth callback) don't break.
 // ---------------------------------------------------------------------------
 export async function scheduleRepeatingSync(
   integrationId: string,
-  organizationId: string,
-  connectorType: string,
-  intervalMinutes: number
+  _organizationId: string,
+  _connectorType: string,
+  _intervalMinutes: number
 ): Promise<void> {
-  const q = getSyncQueue();
-  const cronJobId = `cron_sync:${integrationId}`;
-
-  // Remove old repeat if it exists
-  await q.removeRepeatable("run-sync", {
-    jobId: cronJobId,
-    every: intervalMinutes * 60 * 1000,
-  });
-
-  await q.add(
-    "run-sync",
-    {
-      syncJobId: `scheduled-${integrationId}`,
-      organizationId,
-      integrationId,
-      connectorType,
-      isIncremental: true,
-    },
-    {
-      jobId: cronJobId,
-      repeat: { every: intervalMinutes * 60 * 1000 },
-    }
+  console.log(
+    `[dispatch] scheduleRepeatingSync is a no-op — integration ${integrationId} ` +
+      `is now refreshed by the integration-scheduled-sync cron.`
   );
 }
 
 // ---------------------------------------------------------------------------
-// Queue Events (for monitoring / SSE progress)
+// Queue health — now derived from the BackgroundJob ledger, mapped onto the
+// legacy { waiting, active, completed, failed } shape the health route reads.
 // ---------------------------------------------------------------------------
-let importQueueEvents: QueueEvents | null = null;
-
-export function getImportQueueEvents(): QueueEvents {
-  if (!importQueueEvents) {
-    importQueueEvents = new QueueEvents(QUEUE_NAMES.IMPORT, {
-      connection: getRedisConnection("events"),
-    });
-  }
-  return importQueueEvents;
-}
-
-// ---------------------------------------------------------------------------
-// Health check
-// ---------------------------------------------------------------------------
-export async function getQueueHealth(): Promise<Record<string, {
-  waiting: number;
-  active: number;
-  completed: number;
-  failed: number;
-}>> {
-  const [iq, sq, wq] = await Promise.all([
-    getImportQueue(),
-    getSyncQueue(),
-    getWebhookQueue(),
-  ]);
-
-  const [importCounts, syncCounts, webhookCounts] = await Promise.all([
-    iq.getJobCounts("waiting", "active", "completed", "failed"),
-    sq.getJobCounts("waiting", "active", "completed", "failed"),
-    wq.getJobCounts("waiting", "active", "completed", "failed"),
-  ]);
-
-  return {
-    import: importCounts as { waiting: number; active: number; completed: number; failed: number },
-    sync: syncCounts as { waiting: number; active: number; completed: number; failed: number },
-    webhook: webhookCounts as { waiting: number; active: number; completed: number; failed: number },
+export async function getQueueHealth(): Promise<
+  Record<string, { waiting: number; active: number; completed: number; failed: number }>
+> {
+  const health = await getBackgroundJobHealth();
+  const shape = {
+    waiting: health.QUEUED,
+    active: health.RUNNING + health.RETRYING,
+    completed: health.COMPLETED,
+    failed: health.FAILED,
   };
+  // The per-domain split is no longer meaningful with a single ledger; we
+  // surface the same aggregate under each key to preserve the response shape.
+  return { import: shape, sync: shape, webhook: shape };
 }

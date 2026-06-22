@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
 import { hasActionPermission } from "@/lib/auth/rbac";
 import { createAuditLog } from "@/lib/audit";
-import { sendEmail, buildInviteEmail } from "@/lib/notifications/email";
+import { enqueueEmail, buildInviteEmail } from "@/lib/notifications/email";
 import { appUrl } from "@/lib/url";
 import { assertWithinUserLimit, PlanLimitError } from "@/lib/billing/guards";
 
@@ -116,29 +116,20 @@ export async function POST(req: Request) {
     const inviteUrl = appUrl(`/sign-up?email=${encodeURIComponent(normalizedEmail)}`);
     const subject = `You're invited to join ${workspaceName} on FinRP`;
 
-    const emailResult = await sendEmail({
+    // Queue the invitation email for durable, retried delivery via Inngest.
+    // Optimistic UX: the invite row stands and we report success immediately;
+    // delivery (and any transient-failure retries) happen in the background.
+    await enqueueEmail({
       to: normalizedEmail,
       subject,
       html: buildInviteEmail({ workspaceName, inviterName, roleLabel, inviteUrl }),
+      kind: "workspace-invite",
+      organizationId: tenantId,
+      dedupeKey: `workspace-invite:${invitation.id}`,
     });
 
-    if (!emailResult.success) {
-      // Don't leave a phantom "pending" row claiming an email went out.
-      // (Keep a pre-existing invite from an earlier successful send.)
-      if (!isResend) {
-        await prisma.invitation.delete({ where: { id: invitation.id } }).catch(() => {});
-      }
-      console.error(
-        `[SETTINGS_INVITATIONS_POST] Email send failed for ${normalizedEmail} (org ${tenantId}): ${emailResult.error}`
-      );
-      return NextResponse.json(
-        { error: `Couldn't send the invitation email: ${emailResult.error ?? "unknown error"}` },
-        { status: 502 }
-      );
-    }
-
     console.info(
-      `[SETTINGS_INVITATIONS_POST] Invitation ${isResend ? "re-sent" : "sent"} to ${normalizedEmail} (org ${tenantId}, role ${role})`
+      `[SETTINGS_INVITATIONS_POST] Invitation ${isResend ? "re-queued" : "queued"} for ${normalizedEmail} (org ${tenantId}, role ${role})`
     );
 
     await createAuditLog({

@@ -8,8 +8,7 @@
 import { NextResponse } from "next/server";
 import { withTenant } from "@/lib/auth/require-tenant";
 import { prisma } from "@/lib/prisma";
-import { getTaxQueue } from "@/lib/tax/queue";
-import { getDlq } from "@/lib/jobs/queues/dlq";
+import { getDlqHealth } from "@/lib/jobs/queues/dlq";
 import { getFilingProvider } from "@/lib/tax/filing/factory";
 
 export const GET = withTenant(async (_req, { organizationId }) => {
@@ -43,16 +42,31 @@ export const GET = withTenant(async (_req, { organizationId }) => {
         take: 20,
       }),
       provider.healthCheck().catch((e) => ({ ok: false, detail: (e as Error).message })),
-      getTaxQueue().getJobCounts("waiting", "active", "completed", "failed").catch(() => null),
-      getDlq().getJobCounts("waiting", "failed").catch(() => null),
+      // Tax job stats now come from the TaxJobRun ledger (Inngest-backed).
+      prisma.taxJobRun
+        .groupBy({ by: ["status"], where: { organizationId }, _count: { _all: true } })
+        .catch(() => null),
+      getDlqHealth().catch(() => null),
     ]);
 
   const filingStatus: Record<string, number> = {};
   for (const g of statusGroups) filingStatus[g.status] = g._count._all;
 
+  const taxCounts = queueCounts
+    ? (() => {
+        const by = Object.fromEntries(queueCounts.map((g) => [g.status, g._count._all]));
+        return {
+          waiting: by.QUEUED ?? 0,
+          active: by.RUNNING ?? 0,
+          completed: by.COMPLETED ?? 0,
+          failed: by.FAILED ?? 0,
+        };
+      })()
+    : null;
+
   return NextResponse.json({
     provider: { name: provider.name, isLive: provider.isLive, health: providerHealth },
-    queue: { tax: queueCounts, dlq: dlqCounts },
+    queue: { tax: taxCounts, dlq: dlqCounts },
     filingStatus,
     recentJobs,
     failedValidations,

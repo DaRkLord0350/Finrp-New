@@ -1,73 +1,33 @@
 // ============================================================
-// FinRP — Sync BullMQ Worker
-// Processes SyncJob records: instantiates the correct connector
-// via the factory, runs entity sync, updates SyncJob progress.
-// Writes per-entity SyncLog records for audit/monitoring.
+// FinRP — Integration Sync processor
+// Instantiates the correct connector via the factory, runs entity
+// syncs, updates SyncJob progress, writes per-entity SyncLog records.
+// Ported from the former BullMQ sync worker; invoked by the
+// integration-sync Inngest function. `attempt` lets resumable cursor
+// logic mirror the old attemptsMade behaviour.
 // ============================================================
 
-import { Worker, type Job } from "bullmq";
-import { getRedisConnection } from "@/lib/redis";
-import { QUEUE_NAMES, type SyncJobData } from "@/lib/jobs/queues";
 import { prisma } from "@/lib/prisma";
 import { createConnector } from "@/lib/connectors/factory";
 import type { SyncStats, SyncCursor } from "@/lib/connectors/base/types";
+import type { SyncJobData } from "@/lib/jobs/queues";
 
-// ---------------------------------------------------------------------------
-// Worker
-// ---------------------------------------------------------------------------
+type ProgressFn = (progress: number) => void | Promise<void>;
 
-export function createSyncWorker() {
-  const worker = new Worker<SyncJobData>(
-    QUEUE_NAMES.SYNC,
-    async (job: Job<SyncJobData>) => {
-      return processSyncJob(job);
-    },
-    {
-      connection: getRedisConnection("worker"),
-      concurrency: 5,
-      limiter: {
-        max: 20,
-        duration: 60_000,
-      },
-    }
-  );
-
-  worker.on("completed", (job) => {
-    console.log(`[SyncWorker] Job ${job.id} completed`);
-  });
-
-  worker.on("failed", (job, err) => {
-    console.error(`[SyncWorker] Job ${job?.id} failed:`, err.message);
-  });
-
-  worker.on("error", (err) => {
-    console.error("[SyncWorker] Worker error:", err);
-  });
-
-  return worker;
-}
-
-// ---------------------------------------------------------------------------
-// Core processor
-// ---------------------------------------------------------------------------
-
-async function processSyncJob(job: Job<SyncJobData>): Promise<void> {
-  const { syncJobId, organizationId, integrationId, entity, isIncremental, cursor } = job.data;
+export async function processSync(
+  data: SyncJobData,
+  onProgress: ProgressFn = () => {}
+): Promise<void> {
+  const { syncJobId, organizationId, integrationId, entity, isIncremental, cursor } = data;
 
   // ── 1. Create or find SyncJob record ──
-  let syncJob = await prisma.syncJob.findFirst({
-    where: { id: syncJobId, organizationId },
-  });
+  let syncJob = await prisma.syncJob.findFirst({ where: { id: syncJobId, organizationId } });
 
   if (!syncJob) {
-    // Scheduled jobs create their own SyncJob record
-    const integration = await prisma.integration.findUnique({
-      where: { id: integrationId },
-    });
+    const integration = await prisma.integration.findUnique({ where: { id: integrationId } });
     if (!integration || integration.organizationId !== organizationId) {
       throw new Error(`Integration ${integrationId} not found`);
     }
-
     syncJob = await prisma.syncJob.create({
       data: {
         organizationId,
@@ -76,86 +36,75 @@ async function processSyncJob(job: Job<SyncJobData>): Promise<void> {
         entity: entity ?? "all",
         status: "RUNNING",
         startedAt: new Date(),
-        bullmqJobId: job.id,
       },
     });
   } else {
+    if (syncJob.status === "COMPLETED") {
+      // Idempotent: a duplicate dispatch for an already-finished sync.
+      return;
+    }
     await prisma.syncJob.update({
       where: { id: syncJob.id },
-      data: { status: "RUNNING", startedAt: new Date(), bullmqJobId: job.id },
+      data: { status: "RUNNING", startedAt: new Date() },
     });
   }
 
-  await job.updateProgress(5);
+  await onProgress(5);
 
   try {
     // ── 2. Instantiate connector ──
     const connector = await createConnector(integrationId, organizationId);
-    await job.updateProgress(10);
+    await onProgress(10);
 
     // ── 3. Resolve cursor for incremental sync ──
-    const syncCursor: SyncCursor | undefined = isIncremental && cursor
-      ? { lastModifiedAt: cursor }
-      : isIncremental
-      ? await getLastSyncCursor(integrationId, organizationId)
-      : undefined;
+    const syncCursor: SyncCursor | undefined =
+      isIncremental && cursor
+        ? { lastModifiedAt: cursor }
+        : isIncremental
+          ? await getLastSyncCursor(integrationId, organizationId)
+          : undefined;
 
-    await job.updateProgress(15);
+    await onProgress(15);
 
     // ── 4. Run entity syncs ──
     const entitiesToSync = resolveEntities(entity ?? "all");
     const totalEntities = entitiesToSync.length;
 
-    const aggregateStats: SyncStats = {
-      created: 0, updated: 0, skipped: 0, failed: 0, merged: 0,
-    };
+    const aggregateStats: SyncStats = { created: 0, updated: 0, skipped: 0, failed: 0, merged: 0 };
 
     for (let i = 0; i < entitiesToSync.length; i++) {
       const entityName = entitiesToSync[i];
 
-      await prisma.syncJob.update({
-        where: { id: syncJob.id },
-        data: { entity: entityName },
-      });
+      await prisma.syncJob.update({ where: { id: syncJob.id }, data: { entity: entityName } });
 
       const entityStartMs = Date.now();
       let entityStats: SyncStats = { created: 0, updated: 0, skipped: 0, failed: 0, merged: 0 };
 
       try {
         entityStats = await connector.sync(entityName, syncCursor);
-
         await writeSyncLog({
           syncJobId: syncJob.id,
-          organizationId,
-          integrationId,
           entity: entityName,
           action: "CREATE",
           status: "SUCCESS",
           durationMs: Date.now() - entityStartMs,
           stats: entityStats,
         });
-
         mergeStats(aggregateStats, entityStats);
       } catch (err) {
         const errMessage = err instanceof Error ? err.message : String(err);
-
         await writeSyncLog({
           syncJobId: syncJob.id,
-          organizationId,
-          integrationId,
           entity: entityName,
           action: "ERROR",
           status: "FAILED",
           durationMs: Date.now() - entityStartMs,
           error: errMessage,
         });
-
-        // Individual entity failure should not abort other entities
-        console.error(`[SyncWorker] Entity "${entityName}" sync failed:`, errMessage);
+        console.error(`[sync] Entity "${entityName}" sync failed:`, errMessage);
       }
 
-      const progress = 15 + Math.round(((i + 1) / totalEntities) * 80);
-      await job.updateProgress(progress);
+      await onProgress(15 + Math.round(((i + 1) / totalEntities) * 80));
     }
 
     // ── 5. Mark integration as synced ──
@@ -177,7 +126,8 @@ async function processSyncJob(job: Job<SyncJobData>): Promise<void> {
             ? "FAILED"
             : "COMPLETED",
         completedAt: new Date(),
-        totalRecords: aggregateStats.created + aggregateStats.updated + aggregateStats.skipped + aggregateStats.failed,
+        totalRecords:
+          aggregateStats.created + aggregateStats.updated + aggregateStats.skipped + aggregateStats.failed,
         processedRecords: aggregateStats.created + aggregateStats.updated + aggregateStats.skipped,
         successRecords: aggregateStats.created + aggregateStats.updated,
         failedRecords: aggregateStats.failed,
@@ -185,8 +135,7 @@ async function processSyncJob(job: Job<SyncJobData>): Promise<void> {
       },
     });
 
-    await job.updateProgress(100);
-
+    await onProgress(100);
   } catch (err) {
     await prisma.syncJob.update({
       where: { id: syncJob.id },
@@ -201,9 +150,6 @@ async function processSyncJob(job: Job<SyncJobData>): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function resolveEntities(entity: string): string[] {
   if (entity === "all") return ["customers", "invoices", "products"];
   return [entity];
@@ -213,27 +159,17 @@ async function getLastSyncCursor(
   integrationId: string,
   organizationId: string
 ): Promise<SyncCursor | undefined> {
-  // Get cursor from the last successfully completed sync job
   const lastJob = await prisma.syncJob.findFirst({
-    where: {
-      integrationId,
-      organizationId,
-      status: "COMPLETED",
-      lastCursor: { not: null },
-    },
+    where: { integrationId, organizationId, status: "COMPLETED", lastCursor: { not: null } },
     orderBy: { completedAt: "desc" },
     select: { lastCursor: true },
   });
-
   if (!lastJob?.lastCursor) return undefined;
-
   return { lastModifiedAt: lastJob.lastCursor };
 }
 
 async function writeSyncLog(params: {
   syncJobId: string;
-  organizationId: string;
-  integrationId: string;
   entity: string;
   action: string;
   status: "SUCCESS" | "FAILED" | "SKIPPED" | "WARNING";
@@ -261,7 +197,7 @@ async function writeSyncLog(params: {
       },
     });
   } catch (err) {
-    console.error("[SyncWorker] Failed to write sync log:", err);
+    console.error("[sync] Failed to write sync log:", err);
   }
 }
 

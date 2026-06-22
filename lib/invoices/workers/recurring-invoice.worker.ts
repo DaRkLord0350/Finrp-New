@@ -7,10 +7,8 @@
 // schedule once it passes endDate. Generation is idempotent per run date.
 // ============================================================
 
-import { Worker, Queue } from "bullmq";
 import { addDays, addMonths, addYears, startOfDay, endOfDay } from "date-fns";
 import { Prisma } from "@prisma/client";
-import { getRedisConnection } from "@/lib/redis";
 import { prisma } from "@/lib/prisma";
 import { generateNextInvoiceNumber } from "@/lib/generators/invoice-number";
 import { computeInvoiceTotals, type TotalsLineInput } from "@/lib/invoices/totals";
@@ -212,36 +210,6 @@ export async function processDueRecurringInvoices(now = new Date()): Promise<{ g
   return { generated, scanned: due.length };
 }
 
-// ── Queue + repeatable scan ────────────────────────────────
-let queue: Queue | null = null;
-export function getRecurringInvoiceQueue(): Queue {
-  if (!queue) {
-    queue = new Queue(RECURRING_INVOICE_QUEUE, {
-      connection: getRedisConnection("queue"),
-      defaultJobOptions: { attempts: 2, backoff: { type: "exponential", delay: 5000 }, removeOnComplete: { count: 100 }, removeOnFail: { count: 50 } },
-    });
-  }
-  return queue;
-}
-
-/** Register the hourly repeatable scan (idempotent — fixed jobId). */
-export async function scheduleRecurringInvoiceScan(): Promise<void> {
-  const q = getRecurringInvoiceQueue();
-  await q.add(
-    "scan",
-    {},
-    { jobId: "recurring-invoice-scan", repeat: { every: 60 * 60 * 1000 } } // hourly
-  );
-}
-
-export function createRecurringInvoiceWorker(): Worker {
-  return new Worker(
-    RECURRING_INVOICE_QUEUE,
-    async () => {
-      const result = await processDueRecurringInvoices();
-      console.log(`[RecurringInvoice] scanned=${result.scanned} generated=${result.generated}`);
-      return result;
-    },
-    { connection: getRedisConnection("worker"), concurrency: 1 }
-  );
-}
+// The hourly scan is now driven by the recurring-invoice cron Inngest
+// function (inngest/functions/scheduled.ts), which calls
+// processDueRecurringInvoices() above.

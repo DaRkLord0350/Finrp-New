@@ -5784,6 +5784,59 @@ model TaxJobRun {
 }
 
 // ============================================================
+// BACKGROUND JOB — unified Inngest run registry / progress ledger
+//
+// One row per dispatched asynchronous workload. Per-domain tables
+// (ImportJob, SyncJob, BankStatementImport, BulkAccountUpdateJob,
+// TaxJobRun, ...) keep their own detailed progress; this table is the
+// cross-cutting monitor surface the frontend can poll for any job type.
+//
+// Written by Inngest functions via lib/jobs/background-job.ts. Plain
+// String organizationId (no relation) mirrors TaxJobRun so the model
+// stays self-contained.
+// ============================================================
+model BackgroundJob {
+  id             String              @id @default(cuid())
+  organizationId String?
+  type           String // e.g. "csv.import", "integration.sync", "bank.sync", "tax.gst.gstr1", "email.send"
+  status         BackgroundJobStatus @default(QUEUED)
+  progress       Int                 @default(0) // 0..100
+
+  // ── Inngest correlation ─────────────────────────────────────
+  eventName      String?
+  eventId        String?
+  runId          String?
+  idempotencyKey String? @unique // collapses duplicate dispatches
+
+  // ── Context + outcome ───────────────────────────────────────
+  referenceId String? // id of the owning domain record (importJobId, syncJobId, …)
+  metadata    Json?
+  result      Json?
+  error       String?
+  attempts    Int     @default(0)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([organizationId, status])
+  @@index([type, status])
+  @@index([referenceId])
+  @@index([createdAt])
+  @@map("background_jobs")
+}
+
+enum BackgroundJobStatus {
+  QUEUED
+  RUNNING
+  RETRYING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ============================================================
 // ============ GST MODULE ====================================
 // ============================================================
 

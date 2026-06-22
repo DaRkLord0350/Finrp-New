@@ -39,13 +39,16 @@ export { getBankingProvider, SetuProvider, BankingProviderError } from "./provid
 export { initiateConsent, refreshConsentStatus, revokeConsent, linkDiscoveredAccounts } from "./consent-service";
 export { runBankSync } from "./sync-service";
 export { processBankWebhook, normalizeWebhookPayload } from "./webhook-service";
-export { enqueueBankSync, getBankSyncQueue, scheduleBankAutoSyncScan } from "./queue";
+export {
+  enqueueBankSync,
+  enqueueBankImport,
+  scheduleBankAutoSyncScan,
+  BANK_SYNC_QUEUE,
+  BANK_IMPORT_QUEUE,
+} from "./queue";
+export { processBankImport } from "./bank-import-processor";
 export { getSetuConfig, isSetuConfigured, SetuConfigError } from "./setu/config";
 
 // Integrations
 export { createLinkToken, exchangePublicToken, syncTransactions, syncBalances, processPlaidWebhook } from "./integrations/plaid-client";
 export { parseCSV, parseExcel, parsePDF, detectColumnMapping, detectBank } from "./integrations/statement-parser";
-
-// Workers
-export { createBankSyncWorker, BANK_SYNC_QUEUE } from "./workers/bank-sync.worker";
-export { createBankImportWorker, getBankImportQueue, enqueueBankImport, BANK_IMPORT_QUEUE } from "./workers/bank-import.worker";
