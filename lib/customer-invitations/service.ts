@@ -15,9 +15,9 @@ import { prisma } from "@/lib/prisma";
 import {
   EMAIL_REGEX,
   MAX_INVITE_RESENDS,
-  customerInviteUrl,
   inviteExpiry,
 } from "./constants";
+import { trackedInviteUrl } from "@/lib/firm/onboarding";
 import type { CustomerInvitation } from "@prisma/client";
 
 /** Firm user acting as the inviter (CA or CA_FIRM_ADMIN). */
@@ -224,7 +224,7 @@ async function dispatch(
       firmName,
       inviterName: actor.name ?? actor.email,
       message: invite.message ?? undefined,
-      inviteUrl: customerInviteUrl(invite.token, invite.email),
+      inviteUrl: trackedInviteUrl(invite.token),
     });
 
     await repo.markSent(invite.id, isResend);

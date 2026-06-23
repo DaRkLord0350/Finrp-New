@@ -16,6 +16,9 @@ const isPublicRoute = createRouteMatcher([
   // Public invoice share links — authorized by token (+ optional password)
   "/i/(.*)",
   "/api/public/(.*)",
+  // Invite open-tracking — hit by unauthenticated email recipients before
+  // they sign up; stamps emailOpenedAt then 302s to /sign-up.
+  "/api/track/(.*)",
 ]);
 
 // All role-based routing (CA vs CUSTOMER vs ADMIN) is handled by the

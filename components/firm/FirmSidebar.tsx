@@ -8,51 +8,32 @@ import {
   UserCog,
   UserPlus,
   ClipboardList,
-  FolderOpen,
-  BarChart3,
   Settings,
   X,
   Briefcase,
-  FileText,
-  Activity,
-  TrendingUp,
-  PenLine,
-  Palette,
-  Bell,
-  CalendarDays,
-  Handshake,
+  Rocket,
+  Network,
+  Shuffle,
   CreditCard,
-  Mail,
-  MonitorSmartphone,
+  Handshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const practiceItems = [
-  { label: "Dashboard",    href: "/firm",              icon: LayoutDashboard, exact: true },
-  { label: "Customers",    href: "/firm/customers",    icon: Users },
-  { label: "Connections",  href: "/firm/connections",  icon: Handshake },
-  { label: "Team",         href: "/firm/team",         icon: UserCog },
-  { label: "Invitations",  href: "/firm/invitations",  icon: Mail },
-  { label: "Assignments",  href: "/firm/assignments",  icon: UserPlus },
-  { label: "Tasks",        href: "/firm/tasks",        icon: ClipboardList },
-  { label: "Templates",    href: "/firm/templates",    icon: FileText },
-  { label: "Documents",    href: "/firm/documents",    icon: FolderOpen },
-  { label: "Client Portal", href: "/firm/client-portal", icon: MonitorSmartphone },
-];
-
-const operationsItems = [
-  { label: "Calendar",    href: "/firm/calendar",     icon: CalendarDays },
-  { label: "Workload",     href: "/firm/workload",     icon: Activity },
-  { label: "Analytics",   href: "/firm/analytics",    icon: TrendingUp },
-  { label: "Reports",     href: "/firm/reports",      icon: BarChart3 },
-  { label: "E-Sign",      href: "/firm/esign",        icon: PenLine },
+  { label: "Dashboard",     href: "/firm",               icon: LayoutDashboard, exact: true },
+  { label: "Team",          href: "/firm/team",          icon: UserCog },
+  { label: "Onboarding",    href: "/firm/onboarding",    icon: Rocket },
+  { label: "Customers",     href: "/firm/customers",     icon: Users },
+  { label: "Relationships", href: "/firm/relationships", icon: Network },
+  { label: "Tasks",         href: "/firm/tasks",         icon: ClipboardList },
+  { label: "Assignments",   href: "/firm/assignments",   icon: Shuffle },
+  { label: "Add CA",        href: "/firm/add-ca",        icon: UserPlus },
 ];
 
 const settingsItems = [
-  { label: "Plan & Billing", href: "/firm/billing",   icon: CreditCard },
-  { label: "Branding",    href: "/firm/branding",     icon: Palette },
-  { label: "Notifications", href: "/firm/notifications", icon: Bell },
-  { label: "Settings",    href: "/firm/settings",     icon: Settings, exact: true },
+  { label: "Plan & Billing", href: "/firm/billing",      icon: CreditCard },
+  { label: "Connections",    href: "/firm/connections",  icon: Handshake },
+  { label: "Settings",       href: "/firm/settings",     icon: Settings, exact: true },
 ];
 
 interface FirmSidebarProps {
@@ -133,11 +114,6 @@ export default function FirmSidebar({ open = false, onClose }: FirmSidebarProps)
             Practice
           </p>
           {renderItems(practiceItems)}
-
-          <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)", padding: "8px 12px 4px" }}>
-            Operations
-          </p>
-          {renderItems(operationsItems)}
         </nav>
 
         {/* Bottom */}
@@ -178,7 +154,7 @@ export default function FirmSidebar({ open = false, onClose }: FirmSidebarProps)
               />
               <div>
                 <p style={{ fontSize: 11, fontWeight: 600, color: "#34d399" }}>CA Firm Portal</p>
-                <p style={{ fontSize: 10, color: "var(--text-muted)" }}>Phase 2 Active</p>
+                <p style={{ fontSize: 10, color: "var(--text-muted)" }}>Practice OS</p>
               </div>
             </div>
           </div>

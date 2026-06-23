@@ -92,6 +92,9 @@ export async function joinOrganizationFromInvite(
         firmRole: pendingInvite.firmRole,
         specialization: pendingInvite.specialization,
         joiningDate: pendingInvite.joiningDate ?? new Date(),
+        // Firm-level capability flags + reporting manager (Add-CA wizard)
+        firmPermissions: pendingInvite.firmPermissions,
+        managerId: pendingInvite.managerId,
       },
       include: USER_INCLUDE,
     });

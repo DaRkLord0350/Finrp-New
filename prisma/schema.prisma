@@ -241,11 +241,16 @@ model User {
   specialization         Specialization?
   joiningDate            DateTime?
   defaultPermissions     ClientPermission[] @default([]) // applied when assigned to a client workspace
+  firmPermissions        FirmPermission[]   @default([]) // firm-level capability flags (Add-CA wizard)
+  profileCompletedAt     DateTime? // stamped when a CA finishes their profile (onboarding stage)
+  managerId              String? // reporting manager within the firm (self-relation)
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
 
   organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   firm                    Firm?                @relation("FirmUsers", fields: [firmId], references: [id])
+  manager                 User?                @relation("FirmManager", fields: [managerId], references: [id], onDelete: SetNull)
+  reports                 User[]               @relation("FirmManager")
   auditLogs               AuditLog[]
   notifications           Notification[]
   memberships             Membership[]
@@ -284,8 +289,19 @@ model User {
 enum FirmMemberRole {
   CA
   MANAGER
+  PARTNER
   ARTICLE_ASSISTANT
   ADMIN
+}
+
+// Firm-level capability flags granted to a team member (distinct from
+// ClientPermission, which scopes per-client-workspace access). Set on
+// the Add-CA wizard and carried from Invitation → User on accept.
+enum FirmPermission {
+  MANAGE_CUSTOMERS
+  ASSIGN_TASKS
+  VIEW_REPORTS
+  MANAGE_TEAM
 }
 
 // Practice area a team member specialises in.
@@ -2463,6 +2479,9 @@ model Invitation {
   specialization Specialization?
   joiningDate    DateTime?
   userRole       UserRole? // CA | CA_FIRM_ADMIN to grant on accept
+  firmPermissions FirmPermission[] @default([]) // carried to User on accept (Add-CA wizard)
+  managerId      String? // reporting manager carried to User on accept
+  emailOpenedAt  DateTime? // onboarding stage: invite link engaged (EMAIL_OPENED)
   status         InviteStatus    @default(PENDING)
   revokedAt      DateTime?
 
@@ -3625,7 +3644,11 @@ model CustomerInvitation {
   expiresAt              DateTime
   sentAt                 DateTime? // first successful email dispatch
   lastSentAt             DateTime? // most recent dispatch (resends)
+  emailOpenedAt          DateTime? // onboarding stage: invite link engaged
   acceptedAt             DateTime?
+  documentsUploadedAt    DateTime? // onboarding stage: first document uploaded
+  bankConnectedAt        DateTime? // onboarding stage: bank account linked
+  completedAt            DateTime? // onboarding stage: fully onboarded
   revokedAt              DateTime?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
