@@ -4,7 +4,7 @@
 // ============================================================
 
 import { prisma } from "@/lib/prisma";
-import { enqueueEmail, buildTaskDueEmail, buildAssignmentEmail, buildDocumentReviewEmail, buildTeamInviteEmail } from "./email";
+import { enqueueEmail, buildTaskDueEmail, buildAssignmentEmail, buildDocumentReviewEmail, buildTeamInviteEmail, buildCustomerInviteEmail } from "./email";
 import { sendWhatsApp, buildTaskDueWhatsApp, buildAssignmentWhatsApp } from "./whatsapp";
 
 interface NotifyTaskDueParams {
@@ -160,6 +160,46 @@ export async function notifyTeamInvite(params: NotifyTeamInviteParams) {
     subject,
     html,
     kind: "team-invite",
+    organizationId: params.organizationId,
+  }).catch(() => {});
+}
+
+interface NotifyCustomerInviteParams {
+  organizationId: string;
+  recipientEmail: string;
+  recipientName: string;
+  firmName: string;
+  inviterName: string;
+  inviteUrl: string;
+  message?: string;
+}
+
+export async function notifyCustomerInvite(params: NotifyCustomerInviteParams) {
+  const settings = await getSettings(params.organizationId);
+  // Onboarding invites are transactional — send unless email is explicitly disabled.
+  if (settings?.emailEnabled === false) return;
+
+  const html = buildCustomerInviteEmail({
+    name: params.recipientName,
+    firmName: params.firmName,
+    inviterName: params.inviterName,
+    inviteUrl: params.inviteUrl,
+    message: params.message,
+  });
+  const subject = `${params.firmName} invited you to onboard onto FinRP`;
+
+  await queueNotification({
+    organizationId: params.organizationId,
+    recipientEmail: params.recipientEmail,
+    channel: "EMAIL",
+    subject,
+    body: html,
+  });
+  await enqueueEmail({
+    to: params.recipientEmail,
+    subject,
+    html,
+    kind: "customer-invite",
     organizationId: params.organizationId,
   }).catch(() => {});
 }

@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     where: {
       organizationId: admin.organizationId,
       email: { equals: email, mode: "insensitive" },
-      status: "PENDING",
+      status: { in: ["PENDING", "SENT"] },
     },
     select: { id: true },
   });
@@ -95,7 +95,9 @@ export async function POST(req: NextRequest) {
       joiningDate,
       firmId: admin.firmId,
       invitedBy: admin.id,
-      status: "PENDING",
+      // SENT once the email is dispatched below; PENDING when the admin
+      // chose to create the seat without emailing yet.
+      status: sendInvite ? "SENT" : "PENDING",
       expiresAt,
     },
   });

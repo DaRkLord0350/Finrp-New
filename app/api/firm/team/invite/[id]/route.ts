@@ -36,7 +36,8 @@ export async function POST(
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
   await prisma.invitation.update({
     where: { id },
-    data: { status: "PENDING", expiresAt, revokedAt: null },
+    // Re-dispatching the email — mark SENT and refresh expiry.
+    data: { status: "SENT", expiresAt, revokedAt: null },
   });
 
   const org = await prisma.organization.findUnique({

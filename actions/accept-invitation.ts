@@ -49,7 +49,8 @@ export async function actionAcceptInvitationForCurrentUser(): Promise<AcceptInvi
     const invite = await prisma.invitation.findFirst({
       where: {
         email: { equals: user.email, mode: "insensitive" },
-        status: "PENDING",
+        // PENDING = created; SENT = email dispatched. Both joinable.
+        status: { in: ["PENDING", "SENT"] },
         expiresAt: { gt: new Date() },
       },
       orderBy: { createdAt: "desc" },

@@ -2,8 +2,15 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { getOrganizationId } from "@/lib/auth/organization";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { format } from "date-fns";
 import { Upload, CheckCircle2, XCircle, Clock, FolderOpen } from "lucide-react";
+import { resolvePortalClient } from "@/lib/client-portal/context";
+import { listDocumentRequests } from "@/lib/client-portal/queries";
+import {
+  CustomerDocumentRequests,
+  type CustomerDocRequestRow,
+} from "@/components/portal/CustomerDocumentRequests";
 
 async function getCustomerDocuments(orgId: string) {
   return prisma.complianceDocument.findMany({
@@ -45,6 +52,32 @@ export default async function CustomerDocumentsPage() {
   const organizationId = await getOrganizationId();
   const docs = await getCustomerDocuments(organizationId);
 
+  // Portal document requests from the firm (bridged to the firm org).
+  const ctx = await resolvePortalClient({
+    id: user.id,
+    email: user.email,
+    organizationId: user.organizationId,
+    firmId: user.firmId,
+    userRole: user.userRole,
+  });
+  const requestRows = ctx
+    ? await listDocumentRequests(ctx.organizationId, { customerId: ctx.customerId })
+    : [];
+  const portalRequests: CustomerDocRequestRow[] = requestRows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    category: r.category,
+    status: r.status,
+    dueDate: r.dueDate?.toISOString() ?? null,
+    uploads: r.uploads.map((u) => ({
+      id: u.id,
+      fileName: u.fileName,
+      status: u.status,
+      reviewNotes: u.reviewNotes,
+    })),
+  }));
+
   const pending = docs.filter((d) => d.reviewStatus === "PENDING").length;
   const approved = docs.filter((d) => d.reviewStatus === "APPROVED").length;
   const rejected = docs.filter((d) => d.reviewStatus === "REJECTED").length;
@@ -54,17 +87,20 @@ export default async function CustomerDocumentsPage() {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 28 }}>
         <div>
           <h1 className="section-title">My Documents</h1>
-          <p className="section-subtitle">Compliance documents you've uploaded</p>
+          <p className="section-subtitle">Compliance documents you&apos;ve uploaded</p>
         </div>
-        <a
+        <Link
           href="/compliance/submissions"
           className="btn-brand"
           style={{ display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}
         >
           <Upload size={15} />
           Upload Document
-        </a>
+        </Link>
       </div>
+
+      {/* Portal document requests from your CA — upload here */}
+      <CustomerDocumentRequests requests={portalRequests} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
         {[
@@ -88,13 +124,13 @@ export default async function CustomerDocumentsPage() {
             <p style={{ fontSize: 14, color: "var(--text-muted)", maxWidth: 320, textAlign: "center" }}>
               Upload compliance documents through your submissions portal for your CA to review.
             </p>
-            <a
+            <Link
               href="/compliance/submissions"
               className="btn-brand"
               style={{ textDecoration: "none" }}
             >
               Go to Compliance
-            </a>
+            </Link>
           </div>
         </div>
       ) : (

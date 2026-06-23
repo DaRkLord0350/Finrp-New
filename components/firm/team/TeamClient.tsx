@@ -125,7 +125,7 @@ export function TeamClient({ initialMembers, initialInvites, initialActivity }: 
     { label: "Team Members", value: members.length, color: "#6366f1" },
     { label: "CA Members", value: caCount, color: "#0ea5e9" },
     { label: "Active Assignments", value: totalAssignments, color: "#10b981" },
-    { label: "Pending Invites", value: invites.filter((i) => i.status === "PENDING").length, color: "#f59e0b" },
+    { label: "Pending Invites", value: invites.filter((i) => i.status === "PENDING" || i.status === "SENT").length, color: "#f59e0b" },
   ];
 
   return (
@@ -145,8 +145,8 @@ export function TeamClient({ initialMembers, initialInvites, initialActivity }: 
           <h1 className="section-title">Team</h1>
           <p className="section-subtitle">
             {members.length} member{members.length !== 1 ? "s" : ""}
-            {invites.filter((i) => i.status === "PENDING").length > 0 &&
-              ` · ${invites.filter((i) => i.status === "PENDING").length} pending`}
+            {invites.filter((i) => i.status === "PENDING" || i.status === "SENT").length > 0 &&
+              ` · ${invites.filter((i) => i.status === "PENDING" || i.status === "SENT").length} pending`}
           </p>
         </div>
 

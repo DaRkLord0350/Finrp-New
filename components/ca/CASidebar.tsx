@@ -32,6 +32,8 @@ import {
   BarChart3,
   TrendingUp,
   Bot,
+  Inbox,
+  BadgeCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SidebarNavGroup, type NavGroupConfig } from "@/components/SidebarNavGroup";
@@ -56,6 +58,8 @@ const caNavGroups: NavGroupConfig[] = [
       { label: "My Tasks",          href: "/ca/tasks",         icon: ClipboardList },
       { label: "Compliance Center", href: "/ca/compliance",    icon: ShieldCheck },
       { label: "Documents",         href: "/ca/documents",     icon: CheckSquare },
+      { label: "Document Requests", href: "/ca/document-requests", icon: Inbox },
+      { label: "Approvals",         href: "/ca/approvals",     icon: BadgeCheck },
       { label: "Verification",      href: "/ca/verification",  icon: CheckSquare },
       { label: "Deadlines",         href: "/ca/deadlines",     icon: Calendar },
       { label: "Messages",          href: "/ca/messages",      icon: MessageSquare },

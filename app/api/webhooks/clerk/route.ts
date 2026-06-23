@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { Webhook } from "svix";
 import { seedSystemAccounts } from "@/lib/accounting/system-accounts";
 import { joinOrganizationFromInvite } from "@/lib/auth/invitations";
+import { findPendingCustomerInvite, finalizeCustomerInvitation } from "@/lib/customer-invitations/accept";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -166,6 +167,14 @@ async function handleUserCreated(
     );
   }
 
+  // ── Customer onboarding invite ─────────────────────────────
+  // A CA/firm invited this email as a CLIENT. Unlike a team invite,
+  // the customer gets their OWN organization (separate tenant); the
+  // firm only holds a CRM Customer record + assignments. We still
+  // create the org below (as a normal tenant), but stamp the user as
+  // CUSTOMER and finalize the firm-side linking after commit.
+  const customerInvite = await findPendingCustomerInvite(email);
+
   // Create everything in a single transaction
   const result = await prisma.$transaction(async (tx) => {
     // 1. Create the Organization (one per user in this SaaS model)
@@ -216,7 +225,10 @@ async function handleUserCreated(
         email,
         name,
         role: "OWNER",
-        ...(userRole !== null ? { userRole } : {}),
+        // A pending customer invite forces the CUSTOMER portal; otherwise
+        // honour an explicit Clerk publicMetadata role, else leave null
+        // (triggers the /onboarding/role screen on first login).
+        ...(customerInvite ? { userRole: "CUSTOMER" } : userRole !== null ? { userRole } : {}),
         avatarUrl: data.image_url ?? null,
         phone: data.phone_numbers?.[0]?.phone_number ?? null,
         isActive: true,
@@ -250,6 +262,22 @@ async function handleUserCreated(
   console.log(
     `[Clerk webhook] Provisioned org ${result.organization.id} for user ${result.user.id} (${email})`
   );
+
+  // ── Finalize a customer onboarding invite (after org commit) ──
+  // Creates the firm-side CRM Customer + CustomerAssignment +
+  // ClientAssignment and marks the invite ACCEPTED. Idempotent, so a
+  // concurrent autoProvision running the same finalize is harmless.
+  if (customerInvite) {
+    try {
+      await finalizeCustomerInvitation({
+        invite: customerInvite,
+        userName: name,
+        organizationId: result.organization.id,
+      });
+    } catch (err) {
+      console.error("[Clerk webhook] finalizeCustomerInvitation failed:", err);
+    }
+  }
 
   return NextResponse.json({
     message: "User and organization provisioned",

@@ -232,6 +232,46 @@ export function buildTeamInviteEmail(params: {
   `;
 }
 
+export function buildCustomerInviteEmail(params: {
+  name: string;
+  firmName: string;
+  inviterName: string;
+  inviteUrl: string;
+  message?: string;
+}): string {
+  const note = params.message
+    ? `<div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 14px 16px; border-radius: 4px; margin-bottom: 20px;">
+         <p style="margin: 0; color: #78350f; font-size: 14px; line-height: 1.6;">${params.message}</p>
+       </div>`
+    : "";
+  return `
+    <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2 style="color: #1a1a1a; margin-bottom: 8px;">${params.firmName} invited you to FinRP</h2>
+      <p style="color: #555; margin-bottom: 24px;">Hi ${params.name},</p>
+      <div style="background: #f8f9fa; border-left: 4px solid #6366f1; padding: 16px; border-radius: 4px; margin-bottom: 20px;">
+        <p style="margin: 0; color: #1a1a1a; font-size: 14px; line-height: 1.6;">
+          ${params.inviterName} from <strong>${params.firmName}</strong> has invited you to onboard onto
+          <strong>FinRP</strong> — a secure workspace to manage your invoices, documents, banking and
+          compliance together with your accountant.
+        </p>
+      </div>
+      ${note}
+      <p style="color: #555; font-size: 14px; margin-bottom: 20px;">
+        Get started by creating your account with this email address. Your workspace is set up automatically.
+      </p>
+      <a href="${params.inviteUrl}" style="display: inline-block; background: #6366f1; color: white; text-decoration: none; padding: 11px 22px; border-radius: 8px; font-size: 14px; font-weight: 600;">
+        Accept &amp; Set Up Account
+      </a>
+      <p style="color: #9ca3af; font-size: 12px; margin-top: 18px;">
+        If the button doesn't work, copy and paste this link into your browser:<br/>
+        <span style="color: #6366f1; word-break: break-all;">${params.inviteUrl}</span>
+      </p>
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px;" />
+      <p style="color: #9ca3af; font-size: 12px;">FinRP — Practice Management Platform</p>
+    </div>
+  `;
+}
+
 export function buildInviteEmail(params: {
   inviteeName?: string;
   workspaceName: string;

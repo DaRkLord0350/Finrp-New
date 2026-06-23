@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { format } from "date-fns";
 import { Users, Mail, Phone, ClipboardList } from "lucide-react";
+import { customerInvitationRepository } from "@/lib/repositories/customer-invitation.repository";
+import { CAOnboarding, type CAInviteRow } from "@/components/ca/CAOnboarding";
 
 async function getAssignedCustomers(caId: string) {
   return prisma.customerAssignment.findMany({
@@ -60,6 +62,20 @@ export default async function CACustomersPage() {
   const customerIds = assignments.map((a) => a.customer.id);
   const pendingCounts = await getTaskCountsByCustomer(user.id, customerIds);
 
+  // Onboarding invitations this CA created / owns.
+  const inviteRows = await customerInvitationRepository.list(user.organizationId, { caId: user.id });
+  const invites: CAInviteRow[] = inviteRows.map((i) => ({
+    id: i.id,
+    email: i.email,
+    name: i.name,
+    company: i.company,
+    status: i.status,
+    resendCount: i.resendCount,
+    createdAt: i.createdAt.toISOString(),
+    expiresAt: i.expiresAt.toISOString(),
+    acceptedAt: i.acceptedAt?.toISOString() ?? null,
+  }));
+
   return (
     <div className="page-container animate-fade-in">
       <div style={{ marginBottom: 28 }}>
@@ -68,6 +84,9 @@ export default async function CACustomersPage() {
           {assignments.length} customer{assignments.length !== 1 ? "s" : ""} assigned to you
         </p>
       </div>
+
+      {/* Customer onboarding — invite + track */}
+      <CAOnboarding invites={invites} />
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28 }}>

@@ -22,6 +22,8 @@ import {
   CalendarDays,
   Handshake,
   CreditCard,
+  Mail,
+  MonitorSmartphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,10 +32,12 @@ const practiceItems = [
   { label: "Customers",    href: "/firm/customers",    icon: Users },
   { label: "Connections",  href: "/firm/connections",  icon: Handshake },
   { label: "Team",         href: "/firm/team",         icon: UserCog },
+  { label: "Invitations",  href: "/firm/invitations",  icon: Mail },
   { label: "Assignments",  href: "/firm/assignments",  icon: UserPlus },
   { label: "Tasks",        href: "/firm/tasks",        icon: ClipboardList },
   { label: "Templates",    href: "/firm/templates",    icon: FileText },
   { label: "Documents",    href: "/firm/documents",    icon: FolderOpen },
+  { label: "Client Portal", href: "/firm/client-portal", icon: MonitorSmartphone },
 ];
 
 const operationsItems = [

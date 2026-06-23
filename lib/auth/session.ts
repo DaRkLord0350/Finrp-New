@@ -26,6 +26,7 @@ import { Prisma } from "@prisma/client";
 import { cacheGet, cacheSet, cacheDel, CacheKey, TTL } from "@/lib/cache";
 import { acquireLock, releaseLock } from "@/lib/redis";
 import { joinOrganizationFromInvite } from "./invitations";
+import { findPendingCustomerInvite, finalizeCustomerInvitation } from "@/lib/customer-invitations/accept";
 
 // ---------------------------------------------------------------------------
 // Return type — explicit Prisma payload to avoid circular type inference
@@ -182,6 +183,12 @@ async function autoProvision(userId: string) {
       throw inviteErr;
     }
 
+    // ── Customer onboarding invite (webhook may not have fired yet) ────────
+    // A CA/firm invited this email as a CLIENT. The customer gets their own
+    // org (created below) stamped as CUSTOMER; firm-side linking is finalized
+    // after commit. Idempotent with the Clerk-webhook path.
+    const customerInvite = await findPendingCustomerInvite(email);
+
     // ── Single transaction: create org → user → membership ─────────────────
     // If user.create throws P2002 (concurrent winner), the transaction rolls
     // back entirely — org is not persisted — so no orphan organizations.
@@ -223,6 +230,7 @@ async function autoProvision(userId: string) {
             email,
             name,
             role:           "OWNER",
+            ...(customerInvite ? { userRole: "CUSTOMER" as const } : {}),
             avatarUrl:      clerkUser.imageUrl ?? null,
             isActive:       true,
             organizationId: organization.id,
@@ -269,6 +277,20 @@ async function autoProvision(userId: string) {
     }
 
     console.log(`[session] provisioned user ${provisioned.id} (${email})`);
+
+    // Finalize a pending customer invite (firm-side CRM + assignments).
+    // Idempotent with the Clerk-webhook path; never blocks login.
+    if (customerInvite) {
+      try {
+        await finalizeCustomerInvitation({
+          invite: customerInvite,
+          userName: name,
+          organizationId: provisioned.organizationId,
+        });
+      } catch (err) {
+        console.error("[session] finalizeCustomerInvitation failed:", err);
+      }
+    }
 
     // Prime both caches so the first API call and layout render skip DB
     await cacheSet(CacheKey.user(userId),   provisioned,                    TTL.USER_SESSION);

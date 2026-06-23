@@ -29,7 +29,7 @@ export async function getTeamRoster(organizationId: string): Promise<TeamRoster>
       orderBy: { createdAt: "asc" },
     }),
     prisma.invitation.findMany({
-      where: { organizationId, status: { in: ["PENDING", "EXPIRED"] } },
+      where: { organizationId, status: { in: ["PENDING", "SENT", "EXPIRED"] } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.teamActivityLog.findMany({
@@ -70,8 +70,11 @@ export async function getTeamRoster(organizationId: string): Promise<TeamRoster>
     specialization: inv.specialization,
     userRole: inv.userRole,
     joiningDate: inv.joiningDate ? inv.joiningDate.toISOString() : null,
-    isActive: inv.status === "PENDING",
-    status: inv.status === "PENDING" && inv.expiresAt < now ? "EXPIRED" : inv.status,
+    isActive: inv.status === "PENDING" || inv.status === "SENT",
+    status:
+      (inv.status === "PENDING" || inv.status === "SENT") && inv.expiresAt < now
+        ? "EXPIRED"
+        : inv.status,
     customerCount: 0,
     openTaskCount: 0,
     defaultPermissions: [],
