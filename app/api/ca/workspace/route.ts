@@ -218,7 +218,7 @@ export async function DELETE(req: NextRequest) {
     const redirect =
       user.userRole === "ADMIN" ? "/admin"
       : user.userRole === "CA_FIRM_ADMIN" ? "/firm"
-      : "/ca/customers/assigned";
+      : "/ca/virtual-access";
 
     const res = NextResponse.json({ ok: true, redirect });
     res.cookies.delete(WORKSPACE_COOKIE);

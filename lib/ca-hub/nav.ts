@@ -300,10 +300,10 @@ export const CA_HUB_MODULES: CaHubModule[] = [
     subNav: [
       { label: "Portal Home", href: "/ca-hub/client-portal" },
       // client workspace launchers — these live in the CA Portal shell
-      { label: "All Clients", href: "/ca/customers/all" },
-      { label: "Assigned Clients", href: "/ca/customers/assigned" },
-      { label: "Activities", href: "/ca/customers/activity" },
-      { label: "Records", href: "/ca/customers" },
+      { label: "My Clients", href: "/ca/clients" },
+      { label: "Virtual Access", href: "/ca/virtual-access" },
+      { label: "Documents", href: "/ca/documents" },
+      { label: "Compliance", href: "/ca/compliance" },
     ],
   },
   {
