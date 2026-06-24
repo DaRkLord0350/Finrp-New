@@ -320,15 +320,15 @@ async function sendInviteEmail(
   caOrganizationId: string
 ) {
   try {
-    const { enqueueEmail } = await import("@/lib/notifications/email");
+    const { sendEmail } = await import("@/lib/notifications/email");
     const ca = await prisma.organization.findUnique({
       where: { id: caOrganizationId },
       select: { name: true },
     });
     const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "https://app.finrp.org";
     const link = `${appUrl}/sign-up?caInvite=${relationshipId}`;
-    await enqueueEmail({
-      kind: "ca-invite",
+    console.log("[INVITE] Sending CA→business invite email", { email, relationshipId });
+    const result = await sendEmail({
       to: email,
       subject: `${ca?.name ?? "Your CA"} invited you to FinRP`,
       html: `
@@ -341,6 +341,11 @@ async function sendInviteEmail(
           <p style="color:#64748b;font-size:12px">If you weren't expecting this, you can ignore this email.</p>
         </div>`,
     });
+    if (result.success) {
+      console.log("[INVITE] CA→business invite email sent", { email, messageId: result.id });
+    } else {
+      console.error("[INVITE] CA→business invite email FAILED", { email, error: result.error });
+    }
   } catch (err) {
     console.error("[ca-relationship] invite email failed:", (err as Error).message);
   }

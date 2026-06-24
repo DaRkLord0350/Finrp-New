@@ -29,6 +29,22 @@ const MAX_ATTEMPTS = 3;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Non-throwing snapshot of the email configuration. Used by the
+ * /api/debug/resend health check and for structured logging — never
+ * exposes the secret key, only whether it is present.
+ */
+export function emailConfigStatus() {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  const from = (process.env.RESEND_FROM_EMAIL ?? "noreply@finrp.org").trim();
+  return {
+    hasApiKey: Boolean(apiKey),
+    apiKeyPrefix: apiKey ? `${apiKey.slice(0, 3)}…` : null,
+    from,
+    appUrl: process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? null,
+  };
+}
+
+/**
  * Send a transactional email via Resend.
  *
  * - Env values are trimmed (a stray space in RESEND_FROM_EMAIL makes
@@ -38,7 +54,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  *   backoff. Permanent failures (4xx, e.g. an unverified domain) are
  *   surfaced immediately with Resend's real message — never swallowed.
  */
-export async function sendEmail(opts: SendEmailOptions): Promise<{ success: boolean; error?: string }> {
+export async function sendEmail(
+  opts: SendEmailOptions
+): Promise<{ success: boolean; id?: string; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) {
     console.error("[email] RESEND_API_KEY not configured — cannot send email");
@@ -73,8 +91,10 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
       });
 
       if (res.ok) {
+        // Resend returns { id: "<message-id>" } on success.
+        const json = (await res.json().catch(() => null)) as { id?: string } | null;
         if (attempt > 1) console.info(`[email] Sent to ${recipients.join(", ")} on attempt ${attempt}`);
-        return { success: true };
+        return { success: true, id: json?.id };
       }
 
       lastError = (await res.text()) || `Resend responded ${res.status}`;

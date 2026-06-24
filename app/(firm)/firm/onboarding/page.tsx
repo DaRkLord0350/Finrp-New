@@ -74,6 +74,10 @@ export default async function OnboardingPage() {
       progress: progressPct(stage, CA_STAGES),
       managerName,
       lastActivity: u?.lastActiveAt?.toISOString() ?? null,
+      inviteStatus: inv.status,
+      emailSentAt: inv.emailSentAt?.toISOString() ?? null,
+      emailError: inv.emailError,
+      accepted: Boolean(inv.acceptedAt) || Boolean(u),
     };
   });
 

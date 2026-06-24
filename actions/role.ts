@@ -43,11 +43,30 @@ export async function actionSelectRole(
       return { success: false, error: "Invalid role selection" };
     }
 
-    // 1. Persist role to DB
-    await prisma.user.update({
-      where: { id: user.id },
+    // 1. Persist role to DB.
+    //    The session payload can be served from a stale Redis cache whose
+    //    user.id no longer matches a live row (re-provisioned / removed),
+    //    so key the write on the stable clerkId via updateMany — which
+    //    returns a count instead of throwing P2025 when nothing matches.
+    let { count } = await prisma.user.updateMany({
+      where: { clerkId: user.clerkId },
       data: { userRole: selectedRole as UserRole },
     });
+
+    // No live row for this clerkId → the cached session was stale. Bust
+    // the cache, re-read/provision the real row, and retry the write once.
+    if (count === 0) {
+      await invalidateUserCache(user.clerkId);
+      const fresh = await getCurrentUser();
+      ({ count } = await prisma.user.updateMany({
+        where: { clerkId: fresh.clerkId },
+        data: { userRole: selectedRole as UserRole },
+      }));
+    }
+
+    if (count === 0) {
+      return { success: false, error: "Could not find your account. Please refresh and try again." };
+    }
 
     // 2. Sync to Clerk publicMetadata so the JWT reflects the role
     const client = await clerkClient();

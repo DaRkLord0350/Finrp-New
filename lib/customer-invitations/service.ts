@@ -217,7 +217,7 @@ async function dispatch(
     });
     const firmName = org?.businessProfile?.businessName ?? org?.name ?? "your accountant";
 
-    await notifyCustomerInvite({
+    const result = await notifyCustomerInvite({
       organizationId: actor.organizationId,
       recipientEmail: invite.email,
       recipientName: invite.name ?? invite.email,
@@ -226,6 +226,13 @@ async function dispatch(
       message: invite.message ?? undefined,
       inviteUrl: trackedInviteUrl(invite.token),
     });
+
+    // Only flip to SENT when Resend actually accepted the message — a
+    // failed send leaves the invite PENDING so it can be retried.
+    if (!result.success) {
+      console.error("[customer-invite] dispatch failed:", result.error);
+      return false;
+    }
 
     await repo.markSent(invite.id, isResend);
     return true;
