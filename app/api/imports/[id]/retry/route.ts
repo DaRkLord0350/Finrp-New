@@ -4,7 +4,7 @@
 
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getOrganizationId } from "@/lib/auth/organization";
 import { ETLPipeline } from "@/lib/etl/pipeline";
 
 export async function POST(
@@ -15,11 +15,11 @@ export async function POST(
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const user = await getCurrentUser();
+  const organizationId = await getOrganizationId();
 
   try {
     const pipeline = new ETLPipeline();
-    const result = await pipeline.retryFailed(id, user.organizationId);
+    const result = await pipeline.retryFailed(id, organizationId);
 
     return NextResponse.json(result);
   } catch (err) {

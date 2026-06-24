@@ -7,6 +7,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
+import { resolveOnboardingEntry } from "@/lib/auth/onboarding-entry";
 import { isOnboardingComplete } from "@/services/onboardingService";
 
 export const metadata = {
@@ -25,8 +26,9 @@ export default async function OnboardingPage() {
     redirect("/sign-in");
   }
 
-  // No entry path chosen yet → welcome screen
-  if (!user.userRole) redirect("/onboarding/welcome");
+  // No role yet → resolve any pending invitation automatically (or
+  // fall back to the self-signup role picker).
+  if (!user.userRole) redirect((await resolveOnboardingEntry(user)).redirectTo);
 
   // Role-specific routing
   const done = await isOnboardingComplete(user.organizationId);
@@ -43,8 +45,5 @@ export default async function OnboardingPage() {
 
   // CA and ADMIN users shouldn't be in onboarding
   if (user.userRole === "CA") redirect("/ca");
-  if (user.userRole === "ADMIN") redirect("/admin");
-
-  // Fallback
-  redirect("/onboarding/welcome");
+  redirect("/admin");
 }

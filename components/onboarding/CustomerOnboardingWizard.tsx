@@ -94,7 +94,7 @@ const STEPS = [
   { id: 6, title: "Finish", icon: CheckCircle2 },
 ];
 
-const INDUSTRIES = [
+export const INDUSTRIES = [
   "Technology", "Manufacturing", "Retail / E-commerce", "Healthcare",
   "Financial Services", "Real Estate", "Education", "Hospitality & Tourism",
   "Agriculture", "Logistics & Transport", "Media & Entertainment", "Other",
@@ -167,11 +167,48 @@ const navBtnBase: React.CSSProperties = {
 };
 
 // ---------------------------------------------------------------------------
+// Pre-fill (from a CA firm's customer invitation + any saved profile)
+// ---------------------------------------------------------------------------
+export interface OnboardingPrefill {
+  companyName?: string;
+  gstNumber?: string;
+  pan?: string;
+  industry?: string;
+  businessType?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+}
+
+interface WizardProps {
+  /** Values already known from the firm's invitation / a saved profile. */
+  prefill?: OnboardingPrefill;
+  /** Business-info/address fields the customer still needs to provide. */
+  missingBusinessFields?: string[];
+  /** Starting step — 3 when the firm already provided everything. */
+  initialStep?: number;
+}
+
+function PrefilledHint() {
+  return (
+    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: "var(--accent-500)" }}>
+      Pre-filled by your CA — review and confirm
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Wizard component
 // ---------------------------------------------------------------------------
-export function CustomerOnboardingWizard() {
+export function CustomerOnboardingWizard({
+  prefill = {},
+  missingBusinessFields = [],
+  initialStep = 1,
+}: WizardProps) {
   const router = useRouter();
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(initialStep);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [importChoice, setImportChoice] = useState<ImportChoice>("SKIP");
@@ -184,14 +221,31 @@ export function CustomerOnboardingWizard() {
     state?: string;
     country?: string;
     currency?: string;
-  }>({});
+  }>({
+    companyName: prefill.companyName,
+    businessType: prefill.businessType,
+    industry: prefill.industry,
+    address: prefill.address,
+    city: prefill.city,
+    state: prefill.state,
+    country: prefill.country,
+  });
+
+  const isPrefilled = (field: string) =>
+    !missingBusinessFields.includes(field) && initialStep < 3;
 
   const progressPct = ((step - 1) / (STEPS.length - 1)) * 100;
 
   // ── Step 1: Business Info ────────────────────────────────────────────────
   const bizForm = useForm<BusinessInfoInput>({
     resolver: zodResolver(businessInfoSchema),
-    defaultValues: { companyName: "", pan: "", gstNumber: "", industry: "", businessType: "" },
+    defaultValues: {
+      companyName: prefill.companyName ?? "",
+      pan: prefill.pan ?? "",
+      gstNumber: prefill.gstNumber ?? "",
+      industry: prefill.industry ?? "",
+      businessType: prefill.businessType ?? "",
+    },
   });
 
   async function handleBizNext(data: BusinessInfoInput) {
@@ -218,7 +272,13 @@ export function CustomerOnboardingWizard() {
   // ── Step 2: Address ──────────────────────────────────────────────────────
   const addrForm = useForm<AddressInput>({
     resolver: zodResolver(addressSchema),
-    defaultValues: { address: "", city: "", state: "", country: "India", pincode: "" },
+    defaultValues: {
+      address: prefill.address ?? "",
+      city: prefill.city ?? "",
+      state: prefill.state ?? "",
+      country: prefill.country ?? "India",
+      pincode: prefill.pincode ?? "",
+    },
   });
 
   async function handleAddrNext(data: AddressInput) {
@@ -417,7 +477,7 @@ export function CustomerOnboardingWizard() {
               <form onSubmit={bizForm.handleSubmit(handleBizNext)}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                   <div>
-                    <label style={labelStyle}>Company Name *</label>
+                    <label style={labelStyle}>Company Name * {isPrefilled("companyName") && <PrefilledHint />}</label>
                     <input {...bizForm.register("companyName")} placeholder="e.g. Acme Private Limited" style={inputStyle} disabled={isLoading} />
                     {bizForm.formState.errors.companyName && <span style={errorStyle}>{bizForm.formState.errors.companyName.message}</span>}
                   </div>
@@ -432,7 +492,7 @@ export function CustomerOnboardingWizard() {
                       {bizForm.formState.errors.businessType && <span style={errorStyle}>{bizForm.formState.errors.businessType.message}</span>}
                     </div>
                     <div>
-                      <label style={labelStyle}>Industry *</label>
+                      <label style={labelStyle}>Industry * {isPrefilled("industry") && <PrefilledHint />}</label>
                       <select {...bizForm.register("industry")} style={{ ...inputStyle, cursor: "pointer" }} disabled={isLoading}>
                         <option value="">Select industry...</option>
                         {INDUSTRIES.map((i) => <option key={i} value={i}>{i}</option>)}
@@ -443,12 +503,12 @@ export function CustomerOnboardingWizard() {
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                     <div>
-                      <label style={labelStyle}>PAN Number <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(Optional)</span></label>
+                      <label style={labelStyle}>PAN Number <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(Optional)</span> {isPrefilled("pan") && <PrefilledHint />}</label>
                       <input {...bizForm.register("pan")} placeholder="ABCDE1234F" style={{ ...inputStyle, textTransform: "uppercase" }} disabled={isLoading} />
                       {bizForm.formState.errors.pan && <span style={errorStyle}>{bizForm.formState.errors.pan.message}</span>}
                     </div>
                     <div>
-                      <label style={labelStyle}>GST Number <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(Optional)</span></label>
+                      <label style={labelStyle}>GST Number <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(Optional)</span> {isPrefilled("gstNumber") && <PrefilledHint />}</label>
                       <input {...bizForm.register("gstNumber")} placeholder="22AAAAA0000A1Z5" style={{ ...inputStyle, textTransform: "uppercase" }} disabled={isLoading} />
                       {bizForm.formState.errors.gstNumber && <span style={errorStyle}>{bizForm.formState.errors.gstNumber.message}</span>}
                     </div>
@@ -468,19 +528,19 @@ export function CustomerOnboardingWizard() {
               <form onSubmit={addrForm.handleSubmit(handleAddrNext)}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                   <div>
-                    <label style={labelStyle}>Street Address *</label>
+                    <label style={labelStyle}>Street Address * {isPrefilled("address") && <PrefilledHint />}</label>
                     <input {...addrForm.register("address")} placeholder="e.g. 42 MG Road, Koramangala" style={inputStyle} disabled={isLoading} />
                     {addrForm.formState.errors.address && <span style={errorStyle}>{addrForm.formState.errors.address.message}</span>}
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                     <div>
-                      <label style={labelStyle}>City *</label>
+                      <label style={labelStyle}>City * {isPrefilled("city") && <PrefilledHint />}</label>
                       <input {...addrForm.register("city")} placeholder="Bangalore" style={inputStyle} disabled={isLoading} />
                       {addrForm.formState.errors.city && <span style={errorStyle}>{addrForm.formState.errors.city.message}</span>}
                     </div>
                     <div>
-                      <label style={labelStyle}>State *</label>
+                      <label style={labelStyle}>State * {isPrefilled("state") && <PrefilledHint />}</label>
                       <input {...addrForm.register("state")} placeholder="Karnataka" style={inputStyle} disabled={isLoading} />
                       {addrForm.formState.errors.state && <span style={errorStyle}>{addrForm.formState.errors.state.message}</span>}
                     </div>
@@ -488,7 +548,7 @@ export function CustomerOnboardingWizard() {
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                     <div>
-                      <label style={labelStyle}>Country *</label>
+                      <label style={labelStyle}>Country * {isPrefilled("country") && <PrefilledHint />}</label>
                       <input {...addrForm.register("country")} placeholder="India" style={inputStyle} disabled={isLoading} />
                       {addrForm.formState.errors.country && <span style={errorStyle}>{addrForm.formState.errors.country.message}</span>}
                     </div>

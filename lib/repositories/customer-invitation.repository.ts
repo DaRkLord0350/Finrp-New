@@ -31,6 +31,14 @@ export interface CreateCustomerInvitationInput {
   assignedCaId: string | null;
   customerId: string | null;
   expiresAt: Date;
+  gstin?: string | null;
+  pan?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  pincode?: string | null;
+  industry?: string | null;
 }
 
 export const customerInvitationRepository = {

@@ -44,6 +44,15 @@ interface CreateInput {
   assignedCaId?: string | null;
   /** Link to a pre-existing CRM Customer record. */
   customerId?: string | null;
+  // ── Pre-filled business profile (passed through to onboarding) ──
+  gstin?: string | null;
+  pan?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  pincode?: string | null;
+  industry?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +128,14 @@ export async function createCustomerInvitation(
     assignedCaId,
     customerId,
     expiresAt: inviteExpiry(),
+    gstin: input.gstin ? String(input.gstin).trim().toUpperCase() : null,
+    pan: input.pan ? String(input.pan).trim().toUpperCase() : null,
+    address: input.address ? String(input.address).trim() : null,
+    city: input.city ? String(input.city).trim() : null,
+    state: input.state ? String(input.state).trim() : null,
+    country: input.country ? String(input.country).trim() : null,
+    pincode: input.pincode ? String(input.pincode).trim() : null,
+    industry: input.industry ? String(input.industry).trim() : null,
   });
 
   await createAuditLog({

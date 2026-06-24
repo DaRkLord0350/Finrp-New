@@ -11,9 +11,6 @@ import {
   Search,
   CheckCircle2,
   XCircle,
-  RefreshCw,
-  Clock,
-  AlertCircle,
   ArrowRight,
   Zap,
   FileSpreadsheet,
@@ -23,7 +20,9 @@ import {
   Shield,
   Globe,
   BarChart3,
+  HeartPulse,
 } from "lucide-react";
+import { STATUS_ICON, STATUS_COLOR, STATUS_LABEL, timeAgo } from "@/lib/integrations/status-presentation";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -222,47 +221,6 @@ const CONNECTOR_CATALOG: ConnectorDef[] = [
     features: ["Company Search", "Directors", "Filings", "Charges"],
   },
 ];
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
-const STATUS_ICON: Record<string, React.FC<{ size?: number; className?: string }>> = {
-  ACTIVE: CheckCircle2,
-  SYNCING: RefreshCw,
-  EXPIRED: AlertCircle,
-  ERROR: AlertCircle,
-  PENDING_AUTH: Clock,
-  INACTIVE: XCircle,
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  ACTIVE: "#10b981",
-  SYNCING: "#3b82f6",
-  EXPIRED: "#f59e0b",
-  ERROR: "#ef4444",
-  PENDING_AUTH: "#f59e0b",
-  INACTIVE: "#6b7280",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  ACTIVE: "Connected",
-  SYNCING: "Syncing",
-  EXPIRED: "Token Expired",
-  ERROR: "Error",
-  PENDING_AUTH: "Auth Pending",
-  INACTIVE: "Inactive",
-};
 
 // ---------------------------------------------------------------------------
 // Integration card
@@ -570,22 +528,38 @@ export default function IntegrationsPage({ initialConnected = [] }: { initialCon
               </div>
             </div>
 
-            {/* Right: CTA */}
-            <Link href="/integrations/csv" style={{ textDecoration: "none", flexShrink: 0 }}>
-              <button style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "11px 20px",
-                background: "linear-gradient(135deg, #3b82f6, #06b6d4)",
-                color: "white", borderRadius: 12,
-                fontSize: 13, fontWeight: 700, cursor: "pointer",
-                border: "none",
-                boxShadow: "0 4px 16px #3b82f640",
-                transition: "opacity 0.15s",
-              }}>
-                <FileSpreadsheet size={15} />
-                CSV Import Center
-              </button>
-            </Link>
+            {/* Right: CTAs */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+              <Link href="/integrations/health" style={{ textDecoration: "none" }}>
+                <button style={{
+                  display: "inline-flex", alignItems: "center", gap: 8,
+                  padding: "11px 20px",
+                  background: "var(--bg-surface)",
+                  color: "var(--text-primary)", borderRadius: 12,
+                  fontSize: 13, fontWeight: 700, cursor: "pointer",
+                  border: "1px solid var(--border)",
+                  transition: "opacity 0.15s",
+                }}>
+                  <HeartPulse size={15} />
+                  Integration Health
+                </button>
+              </Link>
+              <Link href="/integrations/csv" style={{ textDecoration: "none" }}>
+                <button style={{
+                  display: "inline-flex", alignItems: "center", gap: 8,
+                  padding: "11px 20px",
+                  background: "linear-gradient(135deg, #3b82f6, #06b6d4)",
+                  color: "white", borderRadius: 12,
+                  fontSize: 13, fontWeight: 700, cursor: "pointer",
+                  border: "none",
+                  boxShadow: "0 4px 16px #3b82f640",
+                  transition: "opacity 0.15s",
+                }}>
+                  <FileSpreadsheet size={15} />
+                  CSV Import Center
+                </button>
+              </Link>
+            </div>
           </div>
         </div>
 

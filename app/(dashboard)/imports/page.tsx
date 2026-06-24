@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getOrganizationId } from "@/lib/auth/organization";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/badge";
@@ -79,11 +79,11 @@ async function ImportsContent() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
-  const user = await getCurrentUser();
+  const organizationId = await getOrganizationId();
 
   const [imports, stats] = await Promise.all([
     (prisma as any).importJob.findMany({
-      where: { organizationId: user.organizationId },
+      where: { organizationId },
       orderBy: { createdAt: "desc" },
       take: 50,
       select: {
@@ -95,7 +95,7 @@ async function ImportsContent() {
     }),
     (prisma as any).importJob.groupBy({
       by: ["status"],
-      where: { organizationId: user.organizationId },
+      where: { organizationId },
       _count: { _all: true },
     }),
   ]);

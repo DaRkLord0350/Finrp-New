@@ -3639,6 +3639,15 @@ model CustomerInvitation {
   phone                  String?
   company                String?
   message                String? // optional personal note included in the email
+  // ── Pre-filled business profile (captured by the firm at invite time) ──
+  gstin                  String?
+  pan                    String?
+  address                String?
+  city                   String?
+  state                  String?
+  country                String?
+  pincode                String?
+  industry               String?
   token                  String       @unique @default(cuid())
   status                 InviteStatus @default(PENDING)
   invitedById            String // CA / firm admin who created the invite

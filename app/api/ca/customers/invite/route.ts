@@ -61,6 +61,14 @@ export async function POST(req: NextRequest) {
     message: body.message,
     assignedCaId: body.assignedCaId,
     customerId: body.customerId,
+    gstin: body.gstin,
+    pan: body.pan,
+    address: body.address,
+    city: body.city,
+    state: body.state,
+    country: body.country,
+    pincode: body.pincode,
+    industry: body.industry,
   });
 
   if (!result.ok) {

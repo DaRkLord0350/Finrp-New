@@ -19,6 +19,7 @@
 // ============================================================
 
 import { getCurrentUser } from "@/lib/auth/session";
+import { resolveOnboardingEntry } from "@/lib/auth/onboarding-entry";
 import { resolvePermissions } from "@/lib/auth/permission-resolver";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -46,8 +47,9 @@ export default async function DashboardLayout({
     redirect("/sign-in");
   }
 
-  // New users haven't picked an entry path yet → welcome screen
-  if (!user.userRole) redirect("/onboarding/welcome");
+  // New users haven't picked a role yet → resolve their invitation
+  // automatically (or fall back to the self-signup picker).
+  if (!user.userRole) redirect((await resolveOnboardingEntry(user)).redirectTo);
 
   // ── CA / Firm Admin / Admin: workspace (impersonation) mode ──
   if (user.userRole !== "CUSTOMER") {

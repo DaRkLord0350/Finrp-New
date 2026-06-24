@@ -5,7 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getOrganizationId } from "@/lib/auth/organization";
 import { prisma } from "@/lib/prisma";
 import { generateErrorCSV } from "@/lib/connectors/excel/parser";
 
@@ -17,10 +17,10 @@ export async function GET(
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const user = await getCurrentUser();
+  const organizationId = await getOrganizationId();
 
   const importJob = await (prisma as any).importJob.findFirst({
-    where: { id, organizationId: user.organizationId },
+    where: { id, organizationId },
     select: { id: true, originalName: true, detectedColumns: true },
   });
 
