@@ -6,6 +6,8 @@
 // auto-provision + auto-assign). See service.ts / accept.ts.
 // ============================================================
 
+import { getAppBaseUrl } from "@/lib/url";
+
 export { EMAIL_REGEX } from "@/lib/team/constants";
 
 /** How long a customer invitation stays valid before it expires. */
@@ -16,11 +18,7 @@ export const MAX_INVITE_RESENDS = 5;
 
 /** Public base URL used to build the tokenised sign-up / accept link. */
 export function appBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.APP_URL ||
-    "https://app.finrp.in"
-  ).replace(/\/$/, "");
+  return getAppBaseUrl();
 }
 
 /**

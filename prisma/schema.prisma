@@ -3649,6 +3649,9 @@ model CustomerInvitation {
   sentAt                 DateTime? // first successful email dispatch
   lastSentAt             DateTime? // most recent dispatch (resends)
   emailOpenedAt          DateTime? // onboarding stage: invite link engaged
+  // ── Email delivery status (Resend) ──────────────────────────
+  emailMessageId         String? // Resend message id for the last dispatch
+  emailError             String? // last send failure (null once a send succeeds)
   acceptedAt             DateTime?
   documentsUploadedAt    DateTime? // onboarding stage: first document uploaded
   bankConnectedAt        DateTime? // onboarding stage: bank account linked

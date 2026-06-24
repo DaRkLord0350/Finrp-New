@@ -231,13 +231,16 @@ async function dispatch(
     // failed send leaves the invite PENDING so it can be retried.
     if (!result.success) {
       console.error("[customer-invite] dispatch failed:", result.error);
+      await repo.markFailed(invite.id, result.error ?? "Unknown send failure").catch(() => {});
       return false;
     }
 
-    await repo.markSent(invite.id, isResend);
+    await repo.markSent(invite.id, isResend, result.id);
     return true;
   } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[customer-invite] dispatch failed:", err);
+    await repo.markFailed(invite.id, message).catch(() => {});
     return false;
   }
 }
