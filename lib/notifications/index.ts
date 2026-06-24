@@ -4,7 +4,7 @@
 // ============================================================
 
 import { prisma } from "@/lib/prisma";
-import { enqueueEmail, buildTaskDueEmail, buildAssignmentEmail, buildDocumentReviewEmail, buildTeamInviteEmail, buildCustomerInviteEmail } from "./email";
+import { enqueueEmail, sendEmail, buildTaskDueEmail, buildAssignmentEmail, buildDocumentReviewEmail, buildTeamInviteEmail, buildCustomerInviteEmail } from "./email";
 import { sendWhatsApp, buildTaskDueWhatsApp, buildAssignmentWhatsApp } from "./whatsapp";
 
 interface NotifyTaskDueParams {
@@ -134,10 +134,18 @@ interface NotifyTeamInviteParams {
   inviteUrl: string;
 }
 
-export async function notifyTeamInvite(params: NotifyTeamInviteParams) {
+export type InviteSendResult = { success: boolean; id?: string; error?: string };
+
+export async function notifyTeamInvite(params: NotifyTeamInviteParams): Promise<InviteSendResult> {
   const settings = await getSettings(params.organizationId);
   // Team invites are transactional — send unless email is explicitly disabled.
-  if (settings?.emailEnabled === false) return;
+  if (settings?.emailEnabled === false) {
+    console.warn("[INVITE] Email disabled for org — skipping team invite send", {
+      organizationId: params.organizationId,
+      email: params.recipientEmail,
+    });
+    return { success: false, error: "Email notifications are disabled for this firm" };
+  }
 
   const html = buildTeamInviteEmail({
     name: params.recipientName,
@@ -148,6 +156,7 @@ export async function notifyTeamInvite(params: NotifyTeamInviteParams) {
   });
   const subject = `You've been invited to join ${params.firmName} on FinRP`;
 
+  // Keep the in-app/DB notification record (best-effort).
   await queueNotification({
     organizationId: params.organizationId,
     recipientEmail: params.recipientEmail,
@@ -155,13 +164,26 @@ export async function notifyTeamInvite(params: NotifyTeamInviteParams) {
     subject,
     body: html,
   });
-  await enqueueEmail({
+
+  // Send the invitation email DIRECTLY via Resend (transactional — must
+  // complete within the request, not be queued to a background worker
+  // that may never run). Errors are surfaced, never swallowed.
+  console.log("[INVITE] Sending team invite email", {
+    email: params.recipientEmail,
+    organizationId: params.organizationId,
+    inviteUrl: params.inviteUrl,
+  });
+  const result = await sendEmail({
     to: params.recipientEmail,
     subject,
     html,
-    kind: "team-invite",
-    organizationId: params.organizationId,
-  }).catch(() => {});
+  });
+  if (result.success) {
+    console.log("[INVITE] Team invite email sent", { email: params.recipientEmail, messageId: result.id });
+  } else {
+    console.error("[INVITE] Team invite email FAILED", { email: params.recipientEmail, error: result.error });
+  }
+  return result;
 }
 
 interface NotifyCustomerInviteParams {
@@ -174,10 +196,16 @@ interface NotifyCustomerInviteParams {
   message?: string;
 }
 
-export async function notifyCustomerInvite(params: NotifyCustomerInviteParams) {
+export async function notifyCustomerInvite(params: NotifyCustomerInviteParams): Promise<InviteSendResult> {
   const settings = await getSettings(params.organizationId);
   // Onboarding invites are transactional — send unless email is explicitly disabled.
-  if (settings?.emailEnabled === false) return;
+  if (settings?.emailEnabled === false) {
+    console.warn("[INVITE] Email disabled for org — skipping customer invite send", {
+      organizationId: params.organizationId,
+      email: params.recipientEmail,
+    });
+    return { success: false, error: "Email notifications are disabled for this firm" };
+  }
 
   const html = buildCustomerInviteEmail({
     name: params.recipientName,
@@ -195,13 +223,24 @@ export async function notifyCustomerInvite(params: NotifyCustomerInviteParams) {
     subject,
     body: html,
   });
-  await enqueueEmail({
+
+  // Send directly via Resend (transactional). See notifyTeamInvite.
+  console.log("[INVITE] Sending customer invite email", {
+    email: params.recipientEmail,
+    organizationId: params.organizationId,
+    inviteUrl: params.inviteUrl,
+  });
+  const result = await sendEmail({
     to: params.recipientEmail,
     subject,
     html,
-    kind: "customer-invite",
-    organizationId: params.organizationId,
-  }).catch(() => {});
+  });
+  if (result.success) {
+    console.log("[INVITE] Customer invite email sent", { email: params.recipientEmail, messageId: result.id });
+  } else {
+    console.error("[INVITE] Customer invite email FAILED", { email: params.recipientEmail, error: result.error });
+  }
+  return result;
 }
 
 export async function notifyDocumentReview(params: NotifyDocumentReviewParams) {

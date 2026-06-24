@@ -96,6 +96,9 @@ export async function POST(req: NextRequest) {
 
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
+  // Seat is created PENDING; it flips to SENT only after a confirmed
+  // email dispatch below (so the UI never shows "Sent" for an email
+  // that never left the server).
   const invite = await prisma.invitation.create({
     data: {
       organizationId: admin.organizationId,
@@ -111,11 +114,16 @@ export async function POST(req: NextRequest) {
       managerId,
       firmId: admin.firmId,
       invitedBy: admin.id,
-      // SENT once the email is dispatched below; PENDING when the admin
-      // chose to create the seat without emailing yet.
-      status: sendInvite ? "SENT" : "PENDING",
+      status: "PENDING",
       expiresAt,
     },
+  });
+
+  console.log("[INVITE] Created team invitation", {
+    invitationId: invite.id,
+    email,
+    organizationId: admin.organizationId,
+    sendInvite,
   });
 
   await logTeamActivity({
@@ -128,13 +136,20 @@ export async function POST(req: NextRequest) {
     ipAddress: clientIpFrom(req),
   });
 
+  let emailSent = false;
+  let emailError: string | null = null;
+  let messageId: string | undefined;
+
   if (sendInvite) {
     const org = await prisma.organization.findUnique({
       where: { id: admin.organizationId },
       select: { name: true, businessProfile: { select: { businessName: true } } },
     });
     const firmName = org?.businessProfile?.businessName ?? org?.name ?? "your firm";
-    notifyTeamInvite({
+
+    // Await the send (Vercel serverless freezes the function after the
+    // response returns — fire-and-forget email work would be killed).
+    const result = await notifyTeamInvite({
       organizationId: admin.organizationId,
       recipientEmail: email,
       recipientName: name,
@@ -142,8 +157,27 @@ export async function POST(req: NextRequest) {
       inviterName: admin.name ?? admin.email,
       role: FIRM_ROLE_LABELS[firmRole],
       inviteUrl: trackedInviteUrl(invite.token),
-    }).catch(() => {});
+    });
+
+    emailSent = result.success;
+    emailError = result.success ? null : result.error ?? "Email failed to send";
+    messageId = result.id;
+
+    await prisma.invitation.update({
+      where: { id: invite.id },
+      data: result.success
+        ? { status: "SENT", emailSentAt: new Date(), emailMessageId: result.id ?? null, emailError: null }
+        : { emailError: emailError },
+    });
   }
 
-  return NextResponse.json({ invite: { id: invite.id } }, { status: 201 });
+  return NextResponse.json(
+    {
+      invite: { id: invite.id, status: emailSent ? "SENT" : "PENDING" },
+      emailSent,
+      emailError,
+      messageId,
+    },
+    { status: 201 }
+  );
 }

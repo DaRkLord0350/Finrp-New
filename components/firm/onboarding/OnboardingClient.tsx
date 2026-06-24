@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Rocket, UserCheck, Users, Send, X } from "lucide-react";
+import { Rocket, UserCheck, Users, Send, X, RefreshCw, MailCheck, AlertTriangle, Clock } from "lucide-react";
 import {
   CA_STAGE_LABELS,
   CA_STAGE_COLORS,
@@ -25,6 +25,10 @@ export interface CaOnboardingRow {
   progress: number;
   managerName: string | null;
   lastActivity: string | null;
+  inviteStatus: string;
+  emailSentAt: string | null;
+  emailError: string | null;
+  accepted: boolean;
 }
 
 export interface CustomerOnboardingRow {
@@ -115,8 +119,10 @@ export function OnboardingClient({
                   <th>Email</th>
                   <th>Invitation Date</th>
                   <th style={{ minWidth: 200 }}>Status</th>
+                  <th>Email</th>
                   <th>Assigned Manager</th>
                   <th>Last Activity</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -135,8 +141,10 @@ export function OnboardingClient({
                     <td>
                       <StageCell label={CA_STAGE_LABELS[r.stage]} color={CA_STAGE_COLORS[r.stage]} progress={r.progress} />
                     </td>
+                    <td><EmailStatusCell row={r} /></td>
                     <td style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>{r.managerName ?? "—"}</td>
                     <td style={{ fontSize: 12.5, color: "var(--text-muted)" }}>{fmtDate(r.lastActivity)}</td>
+                    <td style={{ textAlign: "right" }}><ResendButton row={r} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -197,6 +205,79 @@ function StageCell({ label, color, progress }: { label: string; color: string; p
         <span style={{ fontSize: 11, color: "var(--text-muted)", width: 32, textAlign: "right" }}>{progress}%</span>
       </div>
     </div>
+  );
+}
+
+function EmailStatusCell({ row }: { row: CaOnboardingRow }) {
+  if (row.emailError) {
+    return (
+      <span
+        title={row.emailError}
+        style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "#ef4444", cursor: "help" }}
+      >
+        <AlertTriangle size={13} /> Failed
+      </span>
+    );
+  }
+  if (row.emailSentAt || row.inviteStatus === "SENT") {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "#10b981" }}>
+        <MailCheck size={13} /> {row.emailSentAt ? `Sent ${fmtDate(row.emailSentAt)}` : "Sent"}
+      </span>
+    );
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--text-muted)" }}>
+      <Clock size={13} /> Not sent
+    </span>
+  );
+}
+
+function ResendButton({ row }: { row: CaOnboardingRow }) {
+  const router = useRouter();
+  const [sending, setSending] = useState(false);
+
+  // Accepted invites can't be resent (the seat is already claimed).
+  if (row.accepted || row.inviteStatus === "ACCEPTED") return <span style={{ color: "var(--text-muted)", fontSize: 12 }}>—</span>;
+
+  async function resend() {
+    setSending(true);
+    try {
+      const res = await fetch(`/api/firm/team/invite/${row.id}`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.emailSent === false) {
+        throw new Error(data.error ?? "Failed to resend invitation");
+      }
+      toast.success(`Invitation resent to ${row.email}`);
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to resend invitation");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={resend}
+      disabled={sending}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "6px 10px",
+        background: "var(--bg-elevated)",
+        color: "var(--text-secondary)",
+        border: "1px solid var(--border)",
+        borderRadius: 7,
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: sending ? "not-allowed" : "pointer",
+        opacity: sending ? 0.6 : 1,
+      }}
+    >
+      <RefreshCw size={12} className={sending ? "animate-spin" : undefined} /> {sending ? "Sending…" : "Resend"}
+    </button>
   );
 }
 

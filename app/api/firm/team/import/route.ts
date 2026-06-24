@@ -132,13 +132,15 @@ export async function POST(req: NextRequest) {
     ipAddress: clientIpFrom(req),
   });
 
-  // Fire invite emails (best-effort, non-blocking).
+  // Send invite emails. Await them (serverless kills fire-and-forget
+  // work after the response) and flip each successfully-emailed invite
+  // to SENT; failures stay PENDING and can be resent individually.
   const org = await prisma.organization.findUnique({
     where: { id: admin.organizationId },
     select: { name: true, businessProfile: { select: { businessName: true } } },
   });
   const firmName = org?.businessProfile?.businessName ?? org?.name ?? "your firm";
-  void Promise.allSettled(
+  const sendResults = await Promise.allSettled(
     emailJobs.map((j) =>
       notifyTeamInvite({
         organizationId: admin.organizationId,
@@ -152,5 +154,24 @@ export async function POST(req: NextRequest) {
     )
   );
 
-  return NextResponse.json({ created: creates.length, skipped });
+  const sentEmails = emailJobs
+    .filter((_, i) => {
+      const r = sendResults[i];
+      return r.status === "fulfilled" && r.value.success;
+    })
+    .map((j) => j.email.toLowerCase());
+  let emailsSent = 0;
+  if (sentEmails.length) {
+    const upd = await prisma.invitation.updateMany({
+      where: {
+        organizationId: admin.organizationId,
+        email: { in: sentEmails, mode: "insensitive" },
+        status: "PENDING",
+      },
+      data: { status: "SENT", emailSentAt: new Date(), emailError: null },
+    });
+    emailsSent = upd.count;
+  }
+
+  return NextResponse.json({ created: creates.length, skipped, emailsSent });
 }

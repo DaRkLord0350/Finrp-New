@@ -2482,6 +2482,10 @@ model Invitation {
   firmPermissions FirmPermission[] @default([]) // carried to User on accept (Add-CA wizard)
   managerId      String? // reporting manager carried to User on accept
   emailOpenedAt  DateTime? // onboarding stage: invite link engaged (EMAIL_OPENED)
+  // ── Email delivery status (Resend) ──────────────────────────
+  emailSentAt    DateTime? // when Resend accepted the invite email
+  emailMessageId String? // Resend message id for the last dispatch
+  emailError     String? // last send failure (null once a send succeeds)
   status         InviteStatus    @default(PENDING)
   revokedAt      DateTime?
 

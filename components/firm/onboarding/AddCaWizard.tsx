@@ -81,7 +81,17 @@ export function AddCaWizard({ managers }: { managers: ManagerOption[] }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Failed to send invitation");
-      toast.success(`Invitation sent to ${email.trim()}`);
+      // The seat is created either way, but the email may have failed to
+      // dispatch — tell the truth so the admin can resend if needed.
+      if (data.emailSent === false) {
+        toast.warning(
+          `Seat created, but the invitation email could not be sent${
+            data.emailError ? `: ${data.emailError}` : ""
+          }. You can resend it from Onboarding.`
+        );
+      } else {
+        toast.success(`Invitation sent to ${email.trim()}`);
+      }
       router.push("/firm/onboarding");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to send invitation");
