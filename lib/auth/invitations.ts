@@ -60,7 +60,9 @@ export async function joinOrganizationFromInvite(
   const pendingInvite = await client.invitation.findFirst({
     where: {
       email: { equals: email, mode: "insensitive" },
-      status: "PENDING",
+      // PENDING = created; SENT = email dispatched. Both are acceptable —
+      // an invite the firm emailed must still let the invitee join.
+      status: { in: ["PENDING", "SENT"] },
       expiresAt: { gt: new Date() },
     },
     orderBy: { createdAt: "desc" },
@@ -90,6 +92,9 @@ export async function joinOrganizationFromInvite(
         firmRole: pendingInvite.firmRole,
         specialization: pendingInvite.specialization,
         joiningDate: pendingInvite.joiningDate ?? new Date(),
+        // Firm-level capability flags + reporting manager (Add-CA wizard)
+        firmPermissions: pendingInvite.firmPermissions,
+        managerId: pendingInvite.managerId,
       },
       include: USER_INCLUDE,
     });

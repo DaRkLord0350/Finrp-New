@@ -9,6 +9,7 @@ export interface TeamMember {
   name: string | null;
   email: string;
   phone: string | null;
+  avatarUrl: string | null;
   firmRole: string | null;       // FirmMemberRole
   specialization: string | null; // Specialization
   userRole: string | null;       // platform UserRole (users only)

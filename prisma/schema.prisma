@@ -127,6 +127,9 @@ model Organization {
   // ── Firm team management (Phase 3) ──────────
   teamActivityLogs TeamActivityLog[]
 
+  // ── Customer onboarding invitations ─────────
+  customerInvitations CustomerInvitation[] @relation("OrgCustomerInvitations")
+
   // ── Customer document vault (Phase 5) ───────
   vaultDocuments CustomerDocument[] @relation("OrgVaultDocuments")
 
@@ -238,11 +241,16 @@ model User {
   specialization         Specialization?
   joiningDate            DateTime?
   defaultPermissions     ClientPermission[] @default([]) // applied when assigned to a client workspace
+  firmPermissions        FirmPermission[]   @default([]) // firm-level capability flags (Add-CA wizard)
+  profileCompletedAt     DateTime? // stamped when a CA finishes their profile (onboarding stage)
+  managerId              String? // reporting manager within the firm (self-relation)
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
 
   organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   firm                    Firm?                @relation("FirmUsers", fields: [firmId], references: [id])
+  manager                 User?                @relation("FirmManager", fields: [managerId], references: [id], onDelete: SetNull)
+  reports                 User[]               @relation("FirmManager")
   auditLogs               AuditLog[]
   notifications           Notification[]
   memberships             Membership[]
@@ -268,6 +276,8 @@ model User {
   clientAssignmentsMade   ClientAssignment[]   @relation("ClientAssignmentCreatedBy")
   clientActivityLogs      ClientActivityLog[]  @relation("ClientActivityCA")
   teamActivityLogs        TeamActivityLog[]    @relation("TeamActivityTarget")
+  customerInvitesSent     CustomerInvitation[] @relation("CustomerInviteInvitedBy")
+  customerInvitesAssigned CustomerInvitation[] @relation("CustomerInviteAssignedCa")
 
   @@index([organizationId])
   @@index([userRole])
@@ -279,8 +289,19 @@ model User {
 enum FirmMemberRole {
   CA
   MANAGER
+  PARTNER
   ARTICLE_ASSISTANT
   ADMIN
+}
+
+// Firm-level capability flags granted to a team member (distinct from
+// ClientPermission, which scopes per-client-workspace access). Set on
+// the Add-CA wizard and carried from Invitation → User on accept.
+enum FirmPermission {
+  MANAGE_CUSTOMERS
+  ASSIGN_TASKS
+  VIEW_REPORTS
+  MANAGE_TEAM
 }
 
 // Practice area a team member specialises in.
@@ -295,6 +316,7 @@ enum Specialization {
 
 enum InviteStatus {
   PENDING
+  SENT
   ACCEPTED
   EXPIRED
   REVOKED
@@ -402,6 +424,12 @@ model Customer {
   firmTasks           FirmTask[]           @relation("CustomerFirmTasks")
   templateAssignments TemplateAssignment[] @relation("CustomerTemplateAssignments")
   vaultDocuments      CustomerDocument[]   @relation("CustomerVaultDocuments")
+  invitations         CustomerInvitation[] @relation("CustomerInviteLinks")
+  portalAccess        ClientPortalAccess[] @relation("CustomerPortalAccess")
+  documentRequests    DocumentRequest[]    @relation("CustomerDocumentRequests")
+  documentUploads     DocumentUpload[]     @relation("CustomerDocumentUploads")
+  filingApprovals     FilingApproval[]     @relation("CustomerFilingApprovals")
+  conversations       Conversation[]       @relation("CustomerConversations")
 
   @@unique([organizationId, customerCode])
   @@index([organizationId, customerType])
@@ -2451,6 +2479,9 @@ model Invitation {
   specialization Specialization?
   joiningDate    DateTime?
   userRole       UserRole? // CA | CA_FIRM_ADMIN to grant on accept
+  firmPermissions FirmPermission[] @default([]) // carried to User on accept (Add-CA wizard)
+  managerId      String? // reporting manager carried to User on accept
+  emailOpenedAt  DateTime? // onboarding stage: invite link engaged (EMAIL_OPENED)
   status         InviteStatus    @default(PENDING)
   revokedAt      DateTime?
 
@@ -3545,11 +3576,12 @@ model Firm {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  users         User[]                    @relation("FirmUsers")
-  customers     Customer[]                @relation("FirmCustomers")
-  templates     ComplianceTemplate[]      @relation("FirmTemplates")
-  branding      FirmBranding?             @relation("FirmBranding")
-  notifSettings FirmNotificationSettings? @relation("FirmNotifSettings")
+  users               User[]                    @relation("FirmUsers")
+  customers           Customer[]                @relation("FirmCustomers")
+  templates           ComplianceTemplate[]      @relation("FirmTemplates")
+  branding            FirmBranding?             @relation("FirmBranding")
+  notifSettings       FirmNotificationSettings? @relation("FirmNotifSettings")
+  customerInvitations CustomerInvitation[]      @relation("FirmCustomerInvitations")
 
   @@index([ownerId])
   @@map("firms")
@@ -3579,6 +3611,60 @@ model CustomerAssignment {
   @@index([customerId])
   @@index([customerId, isActive])
   @@map("customer_assignments")
+}
+
+// ============================================================
+// CUSTOMER INVITATION
+//
+// A CA (or firm admin) invites a customer to onboard onto FinRP via
+// email. The invitee signs up through Clerk; on acceptance a brand-new
+// customer Organization is provisioned for them, a CRM Customer record
+// is created in the firm's org, and the inviting CA is auto-assigned
+// (CustomerAssignment for CRM + ClientAssignment for workspace access).
+//
+// Lifecycle: PENDING → SENT → ACCEPTED, or → EXPIRED (also REVOKED on
+// manual cancel). See lib/customer-invitations/*.
+// ============================================================
+model CustomerInvitation {
+  id                     String       @id @default(cuid())
+  organizationId         String // firm's org (tenant that owns this invite)
+  firmId                 String? // firm record (when firm-scoped)
+  customerId             String? // optional link to a pre-existing CRM Customer
+  email                  String
+  name                   String?
+  phone                  String?
+  company                String?
+  message                String? // optional personal note included in the email
+  token                  String       @unique @default(cuid())
+  status                 InviteStatus @default(PENDING)
+  invitedById            String // CA / firm admin who created the invite
+  assignedCaId           String? // CA to auto-assign on accept (defaults to inviter)
+  acceptedOrganizationId String? // the customer's own org created on accept
+  resendCount            Int          @default(0)
+  expiresAt              DateTime
+  sentAt                 DateTime? // first successful email dispatch
+  lastSentAt             DateTime? // most recent dispatch (resends)
+  emailOpenedAt          DateTime? // onboarding stage: invite link engaged
+  acceptedAt             DateTime?
+  documentsUploadedAt    DateTime? // onboarding stage: first document uploaded
+  bankConnectedAt        DateTime? // onboarding stage: bank account linked
+  completedAt            DateTime? // onboarding stage: fully onboarded
+  revokedAt              DateTime?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  organization Organization @relation("OrgCustomerInvitations", fields: [organizationId], references: [id], onDelete: Cascade)
+  firm         Firm?        @relation("FirmCustomerInvitations", fields: [firmId], references: [id])
+  customer     Customer?    @relation("CustomerInviteLinks", fields: [customerId], references: [id])
+  invitedBy    User         @relation("CustomerInviteInvitedBy", fields: [invitedById], references: [id])
+  assignedCa   User?        @relation("CustomerInviteAssignedCa", fields: [assignedCaId], references: [id])
+
+  @@index([organizationId])
+  @@index([firmId])
+  @@index([email])
+  @@index([status])
+  @@index([assignedCaId])
+  @@map("customer_invitations")
 }
 
 // ============================================================
@@ -3714,6 +3800,8 @@ model CustomerDocument {
   customer     Customer                  @relation("CustomerVaultDocuments", fields: [customerId], references: [id], onDelete: Cascade)
   versions     CustomerDocumentVersion[]
   downloads    DocumentDownloadLog[]
+  reviews        DocumentReview[]        @relation("CADocReviews")
+  checklistItems ClientChecklistItem[]   @relation("CAChecklistItemDoc")
 
   @@index([organizationId])
   @@index([customerId])
@@ -3767,19 +3855,272 @@ model Message {
   isRead         Boolean   @default(false)
   readAt         DateTime?
   parentId       String?
+  // ── Client Portal conversation grouping (optional; legacy DMs leave null)
+  conversationId String?
   createdAt      DateTime  @default(now())
 
-  sender       User         @relation("MessageSender", fields: [senderId], references: [id])
-  receiver     User         @relation("MessageReceiver", fields: [receiverId], references: [id])
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  parent       Message?     @relation("MessageThread", fields: [parentId], references: [id])
-  replies      Message[]    @relation("MessageThread")
+  sender       User                @relation("MessageSender", fields: [senderId], references: [id])
+  receiver     User                @relation("MessageReceiver", fields: [receiverId], references: [id])
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       Message?            @relation("MessageThread", fields: [parentId], references: [id])
+  replies      Message[]           @relation("MessageThread")
+  conversation Conversation?       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments  MessageAttachment[]
 
   @@index([senderId, receiverId])
   @@index([organizationId])
   @@index([parentId])
   @@index([receiverId, isRead])
+  @@index([conversationId])
   @@map("messages")
+}
+
+// ============================================================
+// ============ CLIENT PORTAL =================================
+// ============================================================
+// Firm-org-scoped client collaboration: document requests &
+// uploads, filing (GST/ITR) e-approvals, conversations, and
+// portal notifications. Records live in the FIRM's organization
+// (plain `organizationId String`, ca_hub convention) and reference
+// the CRM Customer. ClientPortalAccess bridges the logged-in
+// customer (their own org/user) to their Customer row.
+// See lib/client-portal/*.
+// ============================================================
+
+enum ClientPortalAccessStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+}
+
+model ClientPortalAccess {
+  id                   String                   @id @default(cuid())
+  organizationId       String // firm org
+  firmId               String?
+  customerId           String // CRM customer
+  clientUserId         String? // logged-in customer User.id (bridge)
+  clientOrganizationId String? // customer's own org id (bridge)
+  status               ClientPortalAccessStatus @default(ACTIVE)
+  grantedById          String?
+  lastAccessAt         DateTime?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  customer Customer @relation("CustomerPortalAccess", fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, customerId])
+  @@index([organizationId, status])
+  @@index([clientUserId])
+  @@index([clientOrganizationId])
+  @@index([firmId])
+  @@map("client_portal_access")
+}
+
+enum DocumentRequestStatus {
+  PENDING // awaiting customer upload
+  UPLOADED // customer uploaded, awaiting review
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model DocumentRequest {
+  id             String                @id @default(cuid())
+  organizationId String // firm org
+  customerId     String
+  requestedById  String // CA user
+  title          String
+  description    String?
+  category       DocumentFolder        @default(OTHER)
+  dueDate        DateTime?
+  status         DocumentRequestStatus @default(PENDING)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  customer Customer         @relation("CustomerDocumentRequests", fields: [customerId], references: [id], onDelete: Cascade)
+  uploads  DocumentUpload[]
+
+  @@index([organizationId, status])
+  @@index([customerId, status])
+  @@index([requestedById])
+  @@map("document_requests")
+}
+
+enum DocumentUploadStatus {
+  PENDING_REVIEW
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model DocumentUpload {
+  id             String               @id @default(cuid())
+  organizationId String
+  customerId     String
+  requestId      String? // null = unsolicited upload
+  uploadedById   String? // customer user
+  fileName       String
+  fileUrl        String
+  mimeType       String?
+  fileSize       Int                  @default(0)
+  status         DocumentUploadStatus @default(PENDING_REVIEW)
+  reviewedById   String? // CA user
+  reviewNotes    String?
+  reviewedAt     DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  customer Customer         @relation("CustomerDocumentUploads", fields: [customerId], references: [id], onDelete: Cascade)
+  request  DocumentRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([customerId])
+  @@index([requestId])
+  @@map("document_uploads")
+}
+
+enum FilingType {
+  GST
+  ITR
+  TDS
+  ROC
+  OTHER
+}
+
+enum FilingApprovalStatus {
+  DRAFT
+  PENDING // awaiting customer approval
+  APPROVED
+  REJECTED
+  FILED
+}
+
+model FilingApproval {
+  id              String               @id @default(cuid())
+  organizationId  String
+  customerId      String
+  createdById     String // CA user
+  type            FilingType           @default(GST)
+  title           String
+  period          String? // e.g. "Q1 FY24-25" / "May 2026"
+  summary         String?
+  amount          Decimal?             @db.Decimal(16, 2)
+  status          FilingApprovalStatus @default(PENDING)
+  customerComment String?
+  decidedById     String?
+  decidedAt       DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  customer  Customer         @relation("CustomerFilingApprovals", fields: [customerId], references: [id], onDelete: Cascade)
+  documents FilingDocument[]
+  comments  FilingComment[]
+
+  @@index([organizationId, status])
+  @@index([customerId, status])
+  @@index([createdById])
+  @@map("filing_approvals")
+}
+
+model FilingDocument {
+  id           String   @id @default(cuid())
+  filingId     String
+  fileName     String
+  fileUrl      String
+  mimeType     String?
+  fileSize     Int      @default(0)
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  filing FilingApproval @relation(fields: [filingId], references: [id], onDelete: Cascade)
+
+  @@index([filingId])
+  @@map("filing_documents")
+}
+
+model FilingComment {
+  id         String   @id @default(cuid())
+  filingId   String
+  authorId   String?
+  authorName String?
+  body       String   @db.Text
+  createdAt  DateTime @default(now())
+
+  filing FilingApproval @relation(fields: [filingId], references: [id], onDelete: Cascade)
+
+  @@index([filingId])
+  @@map("filing_comments")
+}
+
+model Conversation {
+  id             String   @id @default(cuid())
+  organizationId String // firm org
+  customerId     String
+  subject        String?
+  createdById    String // CA or customer user who started it
+  lastMessageAt  DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  customer Customer  @relation("CustomerConversations", fields: [customerId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+model MessageAttachment {
+  id        String   @id @default(cuid())
+  messageId String
+  fileName  String
+  fileUrl   String
+  mimeType  String?
+  fileSize  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("message_attachments")
+}
+
+enum PortalNotificationAudience {
+  CUSTOMER
+  CA
+  FIRM
+}
+
+enum PortalNotificationType {
+  DOCUMENT_REQUESTED
+  DOCUMENT_UPLOADED
+  FILING_APPROVAL_REQUESTED
+  FILING_APPROVED
+  FILING_REJECTED
+  MESSAGE_RECEIVED
+}
+
+model PortalNotification {
+  id              String                     @id @default(cuid())
+  organizationId  String // firm org
+  customerId      String?
+  recipientUserId String? // specific user; null = role-broadcast within org
+  audience        PortalNotificationAudience
+  type            PortalNotificationType
+  title           String
+  body            String?
+  referenceId     String?
+  referenceType   String?
+  isRead          Boolean                    @default(false)
+  readAt          DateTime?
+  createdAt       DateTime                   @default(now())
+
+  @@index([organizationId, audience, isRead])
+  @@index([recipientUserId, isRead])
+  @@index([customerId])
+  @@map("portal_notifications")
 }
 
 // ============================================================
@@ -6534,4 +6875,234 @@ model AuditReport {
   @@unique([organizationId, formType, financialYear])
   @@index([organizationId])
   @@map("audit_reports")
+}
+
+// ============================================================
+// ============ CA PORTAL (REBUILD) ===========================
+// ============================================================
+// Customer-centric CA workspace. Convention (mirrors tax/ca_hub
+// models): plain scalar customerId / organizationId / caUserId
+// (firm tenant + CRM Customer ids) with NO back-relations on the
+// shared User / Customer / Organization models. The only relation
+// is to CustomerDocument, which needs nested includes.
+//   • customerId      → CRM Customer (firm-scoped)
+//   • organizationId  → firm's org (tenant that owns the row)
+//   • caUserId        → assigned CA User
+// Virtual Access maps these 5 tiers onto the existing
+// ClientPermission[] impersonation system (lib/workspace/*).
+// ============================================================
+
+// ── Virtual Access — 5-tier governance layer ────────────────
+enum CAWorkspaceAccessTier {
+  READ_ONLY
+  READ_WRITE
+  ACCOUNTING_ONLY
+  COMPLIANCE_ONLY
+  FULL_ACCESS
+}
+
+model CAWorkspacePermission {
+  id             String                @id @default(cuid())
+  caUserId       String
+  customerId     String
+  organizationId String? // customer's onboarded org (bridge), null until onboarded
+  tier           CAWorkspaceAccessTier @default(READ_ONLY)
+  grantedById    String
+  isActive       Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@unique([caUserId, customerId])
+  @@index([caUserId])
+  @@index([customerId])
+  @@index([organizationId])
+  @@map("ca_workspace_permissions")
+}
+
+// ── Client checklist (required onboarding documents) ─────────
+enum ClientChecklistDocType {
+  PAN
+  GST
+  COI
+  AADHAAR
+  BANK_STATEMENT
+  MOA
+  AOA
+  ITR
+  OTHER
+}
+
+enum ClientChecklistItemStatus {
+  MISSING
+  PENDING_REVIEW
+  UPLOADED
+  EXPIRED
+}
+
+model ClientChecklist {
+  id             String                @id @default(cuid())
+  customerId     String                @unique
+  organizationId String
+  name           String                @default("Client Document Checklist")
+  createdById    String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  items ClientChecklistItem[]
+
+  @@index([organizationId])
+  @@map("ca_client_checklists")
+}
+
+model ClientChecklistItem {
+  id                 String                    @id @default(cuid())
+  checklistId        String
+  docType            ClientChecklistDocType
+  label              String
+  status             ClientChecklistItemStatus @default(MISSING)
+  customerDocumentId String?
+  expiresAt          DateTime?
+  notes              String?
+  sortOrder          Int                       @default(0)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  checklist        ClientChecklist   @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  customerDocument CustomerDocument? @relation("CAChecklistItemDoc", fields: [customerDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([checklistId])
+  @@index([status])
+  @@map("ca_client_checklist_items")
+}
+
+// ── Agreement summaries (firm + customer) ────────────────────
+enum AgreementKind {
+  FIRM
+  CUSTOMER
+}
+
+model ClientAgreementSummary {
+  id                 String        @id @default(cuid())
+  customerId         String
+  organizationId     String
+  kind               AgreementKind
+  serviceScope       String?
+  renewalDate        DateTime?
+  monthlyFee         Decimal?      @db.Decimal(12, 2)
+  slaHours           Int?
+  notes              String?
+  status             String        @default("ACTIVE") // ACTIVE | EXPIRED | DRAFT
+  signatureRequestId String? // e-sign hook
+  createdById        String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@unique([customerId, kind])
+  @@index([customerId])
+  @@index([organizationId])
+  @@map("ca_client_agreements")
+}
+
+// ── Compliance calendar ──────────────────────────────────────
+enum ComplianceCalendarType {
+  GST
+  TDS
+  ROC
+  ITR
+  PF
+  ESI
+}
+
+enum ComplianceCalendarStatus {
+  UPCOMING
+  DUE
+  OVERDUE
+  COMPLETED
+}
+
+model ComplianceCalendarEntry {
+  id             String                   @id @default(cuid())
+  customerId     String
+  organizationId String
+  type           ComplianceCalendarType
+  title          String
+  period         String? // e.g. "Jun 2026" / "Q1 FY26"
+  dueDate        DateTime
+  status         ComplianceCalendarStatus @default(UPCOMING)
+  completedAt    DateTime?
+  assignedCaId   String?
+  notes          String?
+  createdById    String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@index([customerId])
+  @@index([organizationId])
+  @@index([dueDate])
+  @@index([status])
+  @@map("ca_compliance_calendar")
+}
+
+// ── Document reviews (approve / reject / re-upload) ──────────
+enum DocumentReviewDecision {
+  PENDING
+  APPROVED
+  REJECTED
+  REUPLOAD_REQUESTED
+}
+
+model DocumentReview {
+  id                 String                 @id @default(cuid())
+  customerDocumentId String
+  customerId         String
+  organizationId     String
+  reviewerId         String
+  decision           DocumentReviewDecision @default(PENDING)
+  comment            String?
+  version            Int                    @default(1)
+  signatureRequestId String? // e-sign hook
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  document CustomerDocument @relation("CADocReviews", fields: [customerDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([customerDocumentId])
+  @@index([customerId])
+  @@index([organizationId])
+  @@map("ca_document_reviews")
+}
+
+// ── Onboarding stage tracker ─────────────────────────────────
+enum OnboardingStageKey {
+  INVITATION_SENT
+  ACCEPTED
+  PROFILE_COMPLETED
+  BANK_CONNECTED
+  DOCUMENTS_UPLOADED
+  AGREEMENT_SIGNED
+  READY
+}
+
+enum OnboardingStageStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model ClientOnboardingStage {
+  id             String                @id @default(cuid())
+  customerId     String
+  organizationId String
+  stage          OnboardingStageKey
+  status         OnboardingStageStatus @default(PENDING)
+  completedAt    DateTime?
+  note           String?
+  sortOrder      Int                   @default(0)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@unique([customerId, stage])
+  @@index([customerId])
+  @@index([organizationId])
+  @@map("ca_client_onboarding_stages")
 }

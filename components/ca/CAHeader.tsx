@@ -6,15 +6,15 @@ import { Bell, Search, ChevronRight, Menu } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const routeLabels: Record<string, string> = {
-  "/ca":              "Dashboard",
-  "/ca/clients":      "Clients",
-  "/ca/compliance":   "Compliance Center",
-  "/ca/verification": "Verification",
-  "/ca/filings":      "Filing Queue",
-  "/ca/deadlines":    "Deadlines",
-  "/ca/messages":     "Messages",
-  "/ca/notifications":"Notifications",
-  "/ca/settings":     "Settings",
+  "/ca":                "Dashboard",
+  "/ca/clients":        "My Clients",
+  "/ca/tasks":          "Tasks",
+  "/ca/virtual-access": "Virtual Access",
+  "/ca/documents":      "Documents",
+  "/ca/agreements":     "Agreements",
+  "/ca/workspace":      "Workspace",
+  "/ca/compliance":     "Compliance Center",
+  "/ca/profile":        "Profile",
 };
 
 interface CAHeaderProps {

@@ -17,16 +17,14 @@ import {
   firmRoleToUserRole,
   firmRoleToOrgRole,
   FIRM_MEMBER_ROLES,
+  FIRM_PERMISSIONS,
   SPECIALIZATIONS,
   FIRM_ROLE_LABELS,
   EMAIL_REGEX,
 } from "@/lib/team/constants";
 import { notifyTeamInvite } from "@/lib/notifications";
-import type { FirmMemberRole, Specialization } from "@prisma/client";
-
-function inviteBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://app.finrp.in";
-}
+import { trackedInviteUrl } from "@/lib/firm/onboarding";
+import type { FirmMemberRole, Specialization, FirmPermission } from "@prisma/client";
 
 export async function GET() {
   const admin = await getFirmAdminApi();
@@ -50,6 +48,12 @@ export async function POST(req: NextRequest) {
   const specialization = (body.specialization ?? null) as Specialization | null;
   const joiningDate = body.joiningDate ? new Date(body.joiningDate) : null;
   const sendInvite = body.sendInvite !== false; // default true
+  const firmPermissions: FirmPermission[] = Array.isArray(body.firmPermissions)
+    ? (body.firmPermissions as string[]).filter((p): p is FirmPermission =>
+        (FIRM_PERMISSIONS as string[]).includes(p)
+      )
+    : [];
+  const managerId = body.managerId ? String(body.managerId).trim() : null;
 
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
   if (!email || !EMAIL_REGEX.test(email))
@@ -60,6 +64,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid specialization" }, { status: 400 });
   if (joiningDate && isNaN(joiningDate.getTime()))
     return NextResponse.json({ error: "Invalid joining date" }, { status: 400 });
+
+  // Optional reporting manager must be a member of the same firm org.
+  if (managerId) {
+    const mgr = await prisma.user.findFirst({
+      where: { id: managerId, organizationId: admin.organizationId },
+      select: { id: true },
+    });
+    if (!mgr)
+      return NextResponse.json({ error: "Assigned manager must be a member of your firm" }, { status: 400 });
+  }
 
   // Duplicate detection — existing user or pending invite in this firm.
   const existingUser = await prisma.user.findFirst({
@@ -73,7 +87,7 @@ export async function POST(req: NextRequest) {
     where: {
       organizationId: admin.organizationId,
       email: { equals: email, mode: "insensitive" },
-      status: "PENDING",
+      status: { in: ["PENDING", "SENT"] },
     },
     select: { id: true },
   });
@@ -93,9 +107,13 @@ export async function POST(req: NextRequest) {
       name,
       phone,
       joiningDate,
+      firmPermissions,
+      managerId,
       firmId: admin.firmId,
       invitedBy: admin.id,
-      status: "PENDING",
+      // SENT once the email is dispatched below; PENDING when the admin
+      // chose to create the seat without emailing yet.
+      status: sendInvite ? "SENT" : "PENDING",
       expiresAt,
     },
   });
@@ -123,7 +141,7 @@ export async function POST(req: NextRequest) {
       firmName,
       inviterName: admin.name ?? admin.email,
       role: FIRM_ROLE_LABELS[firmRole],
-      inviteUrl: `${inviteBaseUrl()}/sign-up?email=${encodeURIComponent(email)}`,
+      inviteUrl: trackedInviteUrl(invite.token),
     }).catch(() => {});
   }
 

@@ -12,6 +12,8 @@ import {
   MessageSquare,
   CheckCircle2,
   Clock,
+  BadgeCheck,
+  Bell,
 } from "lucide-react";
 
 async function getCustomerPortalData(orgId: string, userEmail: string) {
@@ -290,6 +292,8 @@ export default async function CustomerPortalPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[
                 { label: "Upload Documents", href: "/customer/documents", icon: Upload, color: "#6366f1" },
+                { label: "Approvals", href: "/customer/approvals", icon: BadgeCheck, color: "#8b5cf6" },
+                { label: "Notifications", href: "/customer/notifications", icon: Bell, color: "#ec4899" },
                 { label: "View Tasks", href: "/customer/tasks", icon: ClipboardList, color: "#f59e0b" },
                 { label: "Send Message", href: "/customer/messages", icon: MessageSquare, color: "#0ea5e9" },
                 { label: "Compliance Timeline", href: "/customer/compliance", icon: ShieldCheck, color: "#10b981" },

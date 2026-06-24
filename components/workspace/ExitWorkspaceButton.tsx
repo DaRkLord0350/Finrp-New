@@ -19,7 +19,7 @@ export default function ExitWorkspaceButton() {
     try {
       const res = await fetch("/api/ca/workspace", { method: "DELETE" });
       const data = await res.json().catch(() => null);
-      window.location.assign(data?.redirect ?? "/ca/customers/assigned");
+      window.location.assign(data?.redirect ?? "/ca/virtual-access");
     } catch {
       setExiting(false);
     }
