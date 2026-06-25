@@ -18,6 +18,7 @@ import { getTenantId } from "@/lib/auth/tenant";
 import { readCurrentUser } from "@/lib/auth/session";
 import { canFromList } from "@/lib/auth/rbac";
 import { resolvePermissions } from "@/lib/auth/permission-resolver";
+import { getWorkspaceContext } from "@/lib/workspace/context";
 import {
   getOrgEntitlements,
   FeatureLockedError,
@@ -83,12 +84,19 @@ export async function requireTenant(
   if (!organizationId) throw new UnauthorizedError("Organization not found");
 
   if (opts?.permission) {
-    // Resolve against the user's HOME org so custom-role overrides apply.
-    const perms = await resolvePermissions(dbUser.organizationId, dbUser.role);
-    if (!canFromList(perms, opts.permission)) {
-      throw new ForbiddenError(
-        `Forbidden — requires permission: ${opts.permission}`
-      );
+    // A CA inside a Client Workspace is not a member of the client's
+    // org — the customer-team RBAC matrix doesn't apply to them. Their
+    // ClientAssignment (already enforced via getTenantId()'s route
+    // permission gate above) is the only relevant authorization.
+    const ws = await getWorkspaceContext();
+    if (!ws) {
+      // Resolve against the user's HOME org so custom-role overrides apply.
+      const perms = await resolvePermissions(dbUser.organizationId, dbUser.role);
+      if (!canFromList(perms, opts.permission)) {
+        throw new ForbiddenError(
+          `Forbidden — requires permission: ${opts.permission}`
+        );
+      }
     }
   }
 
