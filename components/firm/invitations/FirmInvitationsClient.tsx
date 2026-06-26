@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { Mail, UserPlus, RefreshCw, X, Send, CheckCircle2, Clock } from "lucide-react";
+import { Mail, UserPlus, RefreshCw, X, Send, CheckCircle2, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { INDUSTRIES } from "@/components/onboarding/CustomerOnboardingWizard";
 
 // ---------------------------------------------------------------------------
 // Types (serialized — no Date objects cross the server/client boundary)
@@ -82,14 +83,24 @@ export function FirmInvitationsClient({
   const [modalOpen, setModalOpen] = useState(false);
 
   // Invite form state
-  const [form, setForm] = useState({
+  const EMPTY_FORM = {
     email: "",
     name: "",
     company: "",
     assignedCaId: "",
     message: "",
-  });
+    gstin: "",
+    pan: "",
+    address: "",
+    city: "",
+    state: "",
+    country: "India",
+    pincode: "",
+    industry: "",
+  };
+  const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [showMoreDetails, setShowMoreDetails] = useState(false);
 
   const totalInvited = Object.values(customerFunnel).reduce((a, b) => a + b, 0);
   const awaiting = (customerFunnel.PENDING ?? 0) + (customerFunnel.SENT ?? 0);
@@ -128,12 +139,21 @@ export function FirmInvitationsClient({
           company: form.company.trim() || null,
           message: form.message.trim() || null,
           assignedCaId: form.assignedCaId || null,
+          gstin: form.gstin.trim() || null,
+          pan: form.pan.trim() || null,
+          address: form.address.trim() || null,
+          city: form.city.trim() || null,
+          state: form.state.trim() || null,
+          country: form.country.trim() || null,
+          pincode: form.pincode.trim() || null,
+          industry: form.industry || null,
         }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Failed to send invitation");
       setModalOpen(false);
-      setForm({ email: "", name: "", company: "", assignedCaId: "", message: "" });
+      setForm(EMPTY_FORM);
+      setShowMoreDetails(false);
       router.refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -311,6 +331,107 @@ export function FirmInvitationsClient({
               placeholder="Company / business name"
               style={{ marginBottom: 12 }}
             />
+
+            <button
+              type="button"
+              onClick={() => setShowMoreDetails((v) => !v)}
+              className="btn-ghost"
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", marginBottom: 12, fontSize: 12, fontWeight: 600 }}
+            >
+              {showMoreDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              Additional business details (optional)
+            </button>
+
+            {showMoreDetails && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 0, marginBottom: 4 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>GST Number</label>
+                    <input
+                      className="input"
+                      value={form.gstin}
+                      onChange={(e) => setForm({ ...form, gstin: e.target.value })}
+                      placeholder="22AAAAA0000A1Z5"
+                      style={{ marginBottom: 12, textTransform: "uppercase" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>PAN Number</label>
+                    <input
+                      className="input"
+                      value={form.pan}
+                      onChange={(e) => setForm({ ...form, pan: e.target.value })}
+                      placeholder="ABCDE1234F"
+                      style={{ marginBottom: 12, textTransform: "uppercase" }}
+                    />
+                  </div>
+                </div>
+
+                <label style={labelStyle}>Industry</label>
+                <select
+                  className="input"
+                  value={form.industry}
+                  onChange={(e) => setForm({ ...form, industry: e.target.value })}
+                  style={{ marginBottom: 12 }}
+                >
+                  <option value="">Select industry...</option>
+                  {INDUSTRIES.map((i) => (
+                    <option key={i} value={i}>{i}</option>
+                  ))}
+                </select>
+
+                <label style={labelStyle}>Address</label>
+                <input
+                  className="input"
+                  value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                  placeholder="Street address"
+                  style={{ marginBottom: 12 }}
+                />
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>City</label>
+                    <input
+                      className="input"
+                      value={form.city}
+                      onChange={(e) => setForm({ ...form, city: e.target.value })}
+                      style={{ marginBottom: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>State</label>
+                    <input
+                      className="input"
+                      value={form.state}
+                      onChange={(e) => setForm({ ...form, state: e.target.value })}
+                      style={{ marginBottom: 12 }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>Country</label>
+                    <input
+                      className="input"
+                      value={form.country}
+                      onChange={(e) => setForm({ ...form, country: e.target.value })}
+                      style={{ marginBottom: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>PIN Code</label>
+                    <input
+                      className="input"
+                      value={form.pincode}
+                      onChange={(e) => setForm({ ...form, pincode: e.target.value })}
+                      style={{ marginBottom: 12 }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <label style={labelStyle}>Assign to CA</label>
             <select

@@ -4,10 +4,12 @@
 // Two ways in:
 //   CUSTOMER             → their own organization (unchanged).
 //   CA / FIRM / ADMIN    → ONLY inside a validated Client
-//                          Workspace (impersonation). The same
-//                          pages/APIs then serve the client org
-//                          via the tenant override; the shell
-//                          adds the ClientBanner + workspace nav.
+//                          Workspace (impersonation). Renders the
+//                          EXACT SAME DashboardShell (sidebar, pages,
+//                          APIs) as a real customer session — the
+//                          only difference is the ClientBanner on top
+//                          ("Viewing Customer Workspace" + Exit) and
+//                          audit logging. See lib/workspace/context.ts.
 //
 // Guards:
 //   1. Unauthenticated → /sign-in (via getCurrentUser throw)
@@ -19,6 +21,7 @@
 // ============================================================
 
 import { getCurrentUser } from "@/lib/auth/session";
+import { resolveOnboardingEntry } from "@/lib/auth/onboarding-entry";
 import { resolvePermissions } from "@/lib/auth/permission-resolver";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -46,8 +49,9 @@ export default async function DashboardLayout({
     redirect("/sign-in");
   }
 
-  // New users haven't picked an entry path yet → welcome screen
-  if (!user.userRole) redirect("/onboarding/welcome");
+  // New users haven't picked a role yet → resolve their invitation
+  // automatically (or fall back to the self-signup picker).
+  if (!user.userRole) redirect((await resolveOnboardingEntry(user)).redirectTo);
 
   // ── CA / Firm Admin / Admin: workspace (impersonation) mode ──
   if (user.userRole !== "CUSTOMER") {
@@ -77,8 +81,21 @@ export default async function DashboardLayout({
     });
     if (!org) redirect("/ca");
 
+    // The CA isn't a member of the client's org, so there's no
+    // Owner/Staff/Viewer role to resolve — the firm assigning this CA
+    // to the client IS the authorization, scoped only by the
+    // ClientAssignment permission gate above. Render the SAME customer
+    // shell a real OWNER session would get (full RBAC + the client's
+    // own plan entitlements) so the workspace is indistinguishable
+    // from the customer's own dashboard apart from the banner.
+    const ent = toEntitlementsDTO(await getOrgEntitlements(ws.organizationId));
+
     return (
       <DashboardShell
+        role="OWNER"
+        permissions={["*"]}
+        entitlementFeatures={ent.features}
+        entitlementsLegacy={ent.isLegacy}
         workspace={{
           organizationId: ws.organizationId,
           organizationName: org.businessProfile?.businessName ?? org.name,

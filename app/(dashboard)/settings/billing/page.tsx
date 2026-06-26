@@ -3,6 +3,7 @@
 // ============================================================
 
 import { getCurrentUser } from "@/lib/auth/session";
+import { getOrganizationId } from "@/lib/auth/organization";
 import { redirect } from "next/navigation";
 import { getBillingSummary } from "@/lib/services/billing.service";
 import { BillingPanel } from "@/components/billing/BillingPanel";
@@ -13,7 +14,7 @@ export default async function BillingSettingsPage() {
   const user = await getCurrentUser().catch(() => null);
   if (!user) redirect("/sign-in");
 
-  const summary = await getBillingSummary(user.organizationId);
+  const summary = await getBillingSummary(await getOrganizationId());
 
   return (
     <div className="page-container animate-fade-in">

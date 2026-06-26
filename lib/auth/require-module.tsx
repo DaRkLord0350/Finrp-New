@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasModuleAccessFromList, type AppModule } from "@/lib/auth/rbac";
 import { resolvePermissions } from "@/lib/auth/permission-resolver";
+import { getWorkspaceContext } from "@/lib/workspace/context";
 import AccessDenied from "@/components/auth/AccessDenied";
 
 const MODULE_LABELS: Record<AppModule, string> = {
@@ -43,6 +44,13 @@ const MODULE_LABELS: Record<AppModule, string> = {
  *   if (denied) return denied;
  */
 export async function guardModule(module: AppModule): Promise<ReactNode | null> {
+  // A CA inside a Client Workspace is not a member of the client's org —
+  // the customer-team RBAC matrix (Owner/Staff/Viewer module access) has
+  // no meaning for them. The workspace's own ClientAssignment permission
+  // gate (lib/workspace/permissions.ts, enforced in the dashboard layout)
+  // is the only authorization that applies during impersonation.
+  if (await getWorkspaceContext()) return null;
+
   const user = await getCurrentUser();
   const perms = await resolvePermissions(user.organizationId, user.role);
   if (hasModuleAccessFromList(perms, module)) return null;
@@ -54,6 +62,8 @@ export async function guardModule(module: AppModule): Promise<ReactNode | null> 
  * Throws a plain Error tagged with status 403.
  */
 export async function requireModuleAccess(module: AppModule): Promise<void> {
+  if (await getWorkspaceContext()) return;
+
   const user = await getCurrentUser();
   const perms = await resolvePermissions(user.organizationId, user.role);
   if (!hasModuleAccessFromList(perms, module)) {

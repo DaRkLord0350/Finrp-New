@@ -40,19 +40,13 @@ export default function DashboardShell({
         style={{ display: "flex", minHeight: "100vh" }}
       >
         {workspace && <ClientBanner workspace={workspace} />}
+        {/* SAME Sidebar component for customers and CA workspace sessions —
+            no separate workspace nav. The banner above is the only visible
+            difference while impersonating. */}
         <Sidebar
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           permissions={permissions}
-          workspace={
-            workspace
-              ? {
-                  clientName: workspace.organizationName,
-                  permissions: workspace.permissions,
-                  isSuperAdmin: workspace.isSuperAdmin,
-                }
-              : undefined
-          }
         />
         <div className="main-content" style={{ flex: 1 }}>
           <Topbar onMenuClick={() => setSidebarOpen(true)} />

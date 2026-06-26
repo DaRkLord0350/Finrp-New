@@ -31,6 +31,14 @@ export interface CreateCustomerInvitationInput {
   assignedCaId: string | null;
   customerId: string | null;
   expiresAt: Date;
+  gstin?: string | null;
+  pan?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  pincode?: string | null;
+  industry?: string | null;
 }
 
 export const customerInvitationRepository = {
@@ -95,17 +103,27 @@ export const customerInvitationRepository = {
     });
   },
 
-  markSent(id: string, isResend: boolean) {
+  markSent(id: string, isResend: boolean, messageId?: string | null) {
     const now = new Date();
     return prisma.customerInvitation.update({
       where: { id },
       data: {
         status: "SENT",
         lastSentAt: now,
+        emailMessageId: messageId ?? null,
+        emailError: null,
         ...(isResend
           ? { resendCount: { increment: 1 } }
           : { sentAt: now }),
       },
+    });
+  },
+
+  /** Records a failed dispatch without flipping status — left PENDING/EXPIRED for retry. */
+  markFailed(id: string, error: string) {
+    return prisma.customerInvitation.update({
+      where: { id },
+      data: { emailError: error },
     });
   },
 

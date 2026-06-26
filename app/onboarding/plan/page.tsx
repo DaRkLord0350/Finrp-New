@@ -10,6 +10,7 @@
 import { redirect } from "next/navigation";
 import { Zap } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
+import { resolveOnboardingEntry } from "@/lib/auth/onboarding-entry";
 import { isOnboardingComplete } from "@/services/onboardingService";
 import { getOrgEntitlements } from "@/lib/billing/guards";
 import { getActivePlans } from "@/lib/billing/plans";
@@ -20,7 +21,7 @@ export const metadata = { title: "Choose your plan — FinRP" };
 export default async function OnboardingPlanPage() {
   const user = await getCurrentUser().catch(() => null);
   if (!user) redirect("/sign-in");
-  if (!user.userRole) redirect("/onboarding/welcome");
+  if (!user.userRole) redirect((await resolveOnboardingEntry(user)).redirectTo);
 
   // Only CA firms and businesses pick a plan here.
   if (user.userRole === "ADMIN") redirect("/admin");

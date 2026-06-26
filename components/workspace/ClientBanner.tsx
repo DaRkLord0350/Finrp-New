@@ -30,7 +30,7 @@ export default function ClientBanner({ workspace }: { workspace: WorkspaceBanner
     <div
       className="workspace-banner"
       role="status"
-      aria-label={`Viewing client workspace: ${workspace.organizationName}`}
+      aria-label={`Viewing Customer Workspace: ${workspace.organizationName}`}
       style={{
         background: "linear-gradient(90deg, #4f46e5, #7c3aed, #0ea5e9)",
         color: "#fff",
@@ -42,7 +42,7 @@ export default function ClientBanner({ workspace }: { workspace: WorkspaceBanner
           className="ws-hide-sm"
           style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}
         >
-          Client Workspace
+          Viewing Customer Workspace
         </span>
       </div>
 
@@ -61,7 +61,7 @@ export default function ClientBanner({ workspace }: { workspace: WorkspaceBanner
           textOverflow: "ellipsis",
         }}
       >
-        Acting as <strong>{workspace.caName}</strong>
+        Logged in as <strong>{workspace.caName}</strong>
         {workspace.isSuperAdmin ? " · Super Admin" : ` · ${workspace.role.replace(/_/g, " ")}`}
       </span>
 

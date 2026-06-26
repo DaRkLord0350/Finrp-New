@@ -12,6 +12,7 @@
 // ============================================================
 
 import { getCurrentUser } from "@/lib/auth/session";
+import { resolveOnboardingEntry } from "@/lib/auth/onboarding-entry";
 import { redirect } from "next/navigation";
 import CAHubShell from "./CAHubShell";
 
@@ -27,7 +28,7 @@ export default async function CAHubLayout({
     redirect("/sign-in");
   }
 
-  if (!user.userRole) redirect("/onboarding/welcome");
+  if (!user.userRole) redirect((await resolveOnboardingEntry(user)).redirectTo);
   if (user.userRole === "CUSTOMER") redirect("/dashboard");
 
   // CA, CA_FIRM_ADMIN, ADMIN → allowed into the practice OS

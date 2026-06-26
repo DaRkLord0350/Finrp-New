@@ -44,6 +44,15 @@ interface CreateInput {
   assignedCaId?: string | null;
   /** Link to a pre-existing CRM Customer record. */
   customerId?: string | null;
+  // ── Pre-filled business profile (passed through to onboarding) ──
+  gstin?: string | null;
+  pan?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  pincode?: string | null;
+  industry?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +128,14 @@ export async function createCustomerInvitation(
     assignedCaId,
     customerId,
     expiresAt: inviteExpiry(),
+    gstin: input.gstin ? String(input.gstin).trim().toUpperCase() : null,
+    pan: input.pan ? String(input.pan).trim().toUpperCase() : null,
+    address: input.address ? String(input.address).trim() : null,
+    city: input.city ? String(input.city).trim() : null,
+    state: input.state ? String(input.state).trim() : null,
+    country: input.country ? String(input.country).trim() : null,
+    pincode: input.pincode ? String(input.pincode).trim() : null,
+    industry: input.industry ? String(input.industry).trim() : null,
   });
 
   await createAuditLog({
@@ -231,13 +248,16 @@ async function dispatch(
     // failed send leaves the invite PENDING so it can be retried.
     if (!result.success) {
       console.error("[customer-invite] dispatch failed:", result.error);
+      await repo.markFailed(invite.id, result.error ?? "Unknown send failure").catch(() => {});
       return false;
     }
 
-    await repo.markSent(invite.id, isResend);
+    await repo.markSent(invite.id, isResend, result.id);
     return true;
   } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[customer-invite] dispatch failed:", err);
+    await repo.markFailed(invite.id, message).catch(() => {});
     return false;
   }
 }

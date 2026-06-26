@@ -78,8 +78,11 @@ export async function computeOnboardingStages(
   ]);
 
   // Resolve the completion timestamp for each stage (null = not done).
+  // INVITATION_SENT must reflect a CONFIRMED email dispatch (sentAt) —
+  // never the row's createdAt, otherwise a never-delivered invite (or
+  // a customer with no invitation at all) shows as falsely "sent".
   const completedAt: Record<OnboardingStageKey, Date | null> = {
-    INVITATION_SENT: invitation?.sentAt ?? invitation?.createdAt ?? null,
+    INVITATION_SENT: invitation?.sentAt ?? null,
     ACCEPTED: invitation?.acceptedAt ?? null,
     PROFILE_COMPLETED: businessProfile?.businessName ? (invitation?.acceptedAt ?? new Date()) : null,
     BANK_CONNECTED: invitation?.bankConnectedAt ?? (bankCount > 0 ? new Date() : null),

@@ -24,11 +24,14 @@ import {
   Mail,
   Phone,
   MapPin,
+  AlertTriangle,
 } from "lucide-react";
 import { isCustomerAssignedTo, resolveCustomerOrgId } from "@/lib/ca/portal";
 import { computeOnboardingStages } from "@/lib/ca/onboarding";
 import { ensureChecklist, reconcileChecklistStatuses, CHECKLIST_STATUS_META } from "@/lib/ca/checklist";
 import OpenWorkspaceButton from "@/components/workspace/OpenWorkspaceButton";
+import ResendInviteButton from "@/components/ca/ResendInviteButton";
+import type { CustomerInvitation } from "@prisma/client";
 
 const TABS = [
   { key: "overview", label: "Overview", icon: LayoutGrid },
@@ -73,6 +76,10 @@ export default async function ClientProfilePage({
 
   const orgId = await resolveCustomerOrgId(customerId);
   const onboarding = await computeOnboardingStages(customerId, customer.organizationId);
+  const invitation = await prisma.customerInvitation.findFirst({
+    where: { customerId },
+    orderBy: { createdAt: "desc" },
+  });
 
   const health = onboarding.ready ? "#10b981" : "#f59e0b";
 
@@ -134,8 +141,10 @@ export default async function ClientProfilePage({
             </div>
             {orgId ? (
               <OpenWorkspaceButton organizationId={orgId} compact />
-            ) : (
+            ) : invitation?.status === "ACCEPTED" ? (
               <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Not onboarded yet</span>
+            ) : (
+              <ResendInviteButton customerId={customerId} hasInvitation={Boolean(invitation)} />
             )}
           </div>
         </div>
@@ -165,7 +174,9 @@ export default async function ClientProfilePage({
       </div>
 
       {/* Tab content */}
-      {tab === "overview" && <OverviewTab customerId={customerId} onboarding={onboarding} customer={customer} />}
+      {tab === "overview" && (
+        <OverviewTab customerId={customerId} onboarding={onboarding} customer={customer} invitation={invitation} />
+      )}
       {tab === "documents" && <DocumentsTab customerId={customerId} organizationId={customer.organizationId} />}
       {tab === "compliance" && <ComplianceTab customerId={customerId} />}
       {tab === "tasks" && <TasksTab customerId={customerId} caUserId={user.id} />}
@@ -175,15 +186,128 @@ export default async function ClientProfilePage({
   );
 }
 
+// ── Invite status (delivery + CA/Admin debugging) ──────────────
+function InviteStatusCard({
+  customerId,
+  invitation,
+}: {
+  customerId: string;
+  invitation: CustomerInvitation | null;
+}) {
+  if (!invitation) {
+    return (
+      <div className="section-card">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Invitation Status</h3>
+        </div>
+        <p style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.6 }}>
+          No invitation has ever been sent to this client — they were added directly as a client record. Use{" "}
+          <strong>Send Invitation</strong> above to onboard them.
+        </p>
+      </div>
+    );
+  }
+
+  const sent = Boolean(invitation.sentAt);
+  const opened = Boolean(invitation.emailOpenedAt);
+  const accepted = invitation.status === "ACCEPTED";
+  const failed = Boolean(invitation.emailError) && !sent;
+  const expired = !accepted && invitation.expiresAt < new Date();
+
+  const rows: { label: string; done: boolean; warn?: boolean }[] = [
+    { label: "Sent", done: sent },
+    { label: "Delivered", done: sent }, // Resend "accepted" — no delivered webhook configured
+    { label: "Opened", done: opened },
+    { label: "Accepted", done: accepted },
+    { label: "Failed", done: failed, warn: failed },
+  ];
+
+  return (
+    <div className="section-card">
+      <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>Invitation Status</h3>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+        {rows.map((r) => (
+          <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {r.warn ? (
+              <AlertTriangle size={14} color="#ef4444" />
+            ) : r.done ? (
+              <CheckCircle2 size={14} color="#10b981" />
+            ) : (
+              <Circle size={14} color="var(--border)" />
+            )}
+            <span style={{ fontSize: 12.5, color: r.warn ? "#ef4444" : r.done ? "var(--text-primary)" : "var(--text-muted)" }}>
+              {r.label}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11.5, color: "var(--text-secondary)", borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <Row label="Sent At" value={invitation.sentAt ? format(invitation.sentAt, "dd MMM yyyy, HH:mm") : "—"} />
+        <Row label="Last Opened" value={invitation.emailOpenedAt ? format(invitation.emailOpenedAt, "dd MMM yyyy, HH:mm") : "—"} />
+        <Row
+          label="Expires At"
+          value={format(invitation.expiresAt, "dd MMM yyyy")}
+          valueColor={expired ? "#ef4444" : undefined}
+        />
+        <Row label="Resends" value={String(invitation.resendCount)} />
+      </div>
+
+      {/* CA/Admin-only debugging — this page is already gated to CA/CA_FIRM_ADMIN/ADMIN */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11.5, marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <p style={{ fontSize: 10.5, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+          Debug (CA/Admin)
+        </p>
+        <Row label="Email Sent" value={sent ? "Yes" : "No"} valueColor={sent ? "#10b981" : "#ef4444"} />
+        <Row label="Message ID" value={invitation.emailMessageId ?? "—"} mono />
+        <Row label="Last Error" value={invitation.emailError ?? "—"} valueColor={invitation.emailError ? "#ef4444" : undefined} />
+        <a
+          href={`/api/debug/customer-invite/${customerId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: 11, color: "#818cf8", textDecoration: "none", marginTop: 4 }}
+        >
+          View raw debug payload →
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value, valueColor, mono }: { label: string; value: string; valueColor?: string; mono?: boolean }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+      <span style={{ color: "var(--text-muted)" }}>{label}</span>
+      <span
+        style={{
+          color: valueColor ?? "var(--text-secondary)",
+          fontFamily: mono ? "monospace" : undefined,
+          fontSize: mono ? 11 : undefined,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          maxWidth: 160,
+        }}
+        title={value}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 // ── Overview ──────────────────────────────────────────────────
 async function OverviewTab({
   customerId,
   onboarding,
   customer,
+  invitation,
 }: {
   customerId: string;
   onboarding: Awaited<ReturnType<typeof computeOnboardingStages>>;
   customer: { notes: string | null; createdAt: Date };
+  invitation: CustomerInvitation | null;
 }) {
   const [taskAgg, compAgg, checklist] = await Promise.all([
     prisma.firmTask.groupBy({ by: ["status"], where: { customerId }, _count: true }),
@@ -234,6 +358,7 @@ async function OverviewTab({
 
       {/* Side summary */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <InviteStatusCard customerId={customerId} invitation={invitation} />
         <div className="section-card">
           <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 14 }}>At a Glance</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

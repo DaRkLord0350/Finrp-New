@@ -17,7 +17,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser, readCurrentUser } from "./session";
 import { canFromList } from "./rbac";
 import { resolvePermissions } from "./permission-resolver";
-import { resolveWorkspaceTenant } from "@/lib/workspace/context";
+import { resolveWorkspaceTenant, getWorkspaceContext } from "@/lib/workspace/context";
 import { Role } from "@prisma/client";
 
 // ---------------------------------------------------------------------------
@@ -63,6 +63,12 @@ export async function requireAuthReadOnly() {
 export async function requirePermission(permission: string) {
   const { user, organizationId } = await requireAuth();
 
+  // A CA inside a Client Workspace is not a member of the client's org —
+  // the customer-team RBAC matrix doesn't apply to them. Their
+  // ClientAssignment (enforced via resolveWorkspaceTenant()'s route
+  // permission gate) is the only relevant authorization.
+  if (await getWorkspaceContext()) return { user, organizationId };
+
   // Effective permissions: custom-role overrides for the user's home org,
   // falling back to the static matrix.
   const permissions = await resolvePermissions(user.organizationId, user.role);
@@ -83,6 +89,9 @@ export async function requirePermission(permission: string) {
 // ---------------------------------------------------------------------------
 export async function requireRole(roles: Role[]) {
   const { user, organizationId } = await requireAuth();
+
+  // Same impersonation bypass as requirePermission() — see comment above.
+  if (await getWorkspaceContext()) return { user, organizationId };
 
   if (!roles.includes(user.role)) {
     throw NextResponse.json(

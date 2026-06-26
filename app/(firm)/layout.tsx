@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth/session";
+import { resolveOnboardingEntry } from "@/lib/auth/onboarding-entry";
 import { redirect } from "next/navigation";
 import { isOnboardingComplete } from "@/services/onboardingService";
 import { isOrganizationActivated } from "@/lib/billing/guards";
@@ -16,8 +17,9 @@ export default async function FirmLayout({
     redirect("/sign-in");
   }
 
-  // New users haven't picked an entry path yet → welcome screen
-  if (!user.userRole) redirect("/onboarding/welcome");
+  // New users haven't picked a role yet → resolve their invitation
+  // automatically (or fall back to the self-signup picker).
+  if (!user.userRole) redirect((await resolveOnboardingEntry(user)).redirectTo);
 
   if (user.userRole !== "CA_FIRM_ADMIN") {
     if (user.userRole === "ADMIN") redirect("/admin");

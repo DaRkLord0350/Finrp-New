@@ -9,6 +9,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
+import { resolveOnboardingEntry } from "@/lib/auth/onboarding-entry";
 import { isOnboardingComplete } from "@/services/onboardingService";
 import { CAFirmOnboardingWizard } from "@/components/onboarding/CAFirmOnboardingWizard";
 
@@ -28,8 +29,8 @@ export default async function CAFirmOnboardingPage() {
     redirect("/sign-in");
   }
 
-  // Entry path not chosen → welcome screen
-  if (!user.userRole) redirect("/onboarding/welcome");
+  // No role yet → resolve any pending invitation automatically
+  if (!user.userRole) redirect((await resolveOnboardingEntry(user)).redirectTo);
 
   // Wrong role → correct portal
   if (user.userRole === "CUSTOMER") redirect("/onboarding/customer");
