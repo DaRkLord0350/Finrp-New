@@ -59,7 +59,7 @@ const MODULE_RESOURCES: Record<AppModule, string[]> = {
   payroll: ["payroll", "employees"],
   banking: ["banking"],
   reports: ["analytics"],
-  settings: ["settings"],
+  settings: ["settings", "organization"],
   users: ["users"],
 };
 

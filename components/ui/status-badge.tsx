@@ -29,6 +29,11 @@ const VARIANTS = {
   UNDER_REVIEW_2: { bg: "#f59e0b", text: "Under Review" },
   ACTIVE:         { bg: "#10b981", text: "Active" },
   DEFAULTED:      { bg: "#ef4444", text: "Defaulted" },
+
+  // KYC (Module 7)
+  VERIFICATION_PENDING: { bg: "#f59e0b", text: "Verification Pending" },
+  KYC_PENDING:           { bg: "#8b5cf6", text: "Awaiting Approval" },
+  SUSPENDED:             { bg: "#ef4444", text: "Suspended" },
 } as const;
 
 interface StatusBadgeProps {

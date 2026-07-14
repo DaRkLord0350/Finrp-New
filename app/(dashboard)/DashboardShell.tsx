@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { Role } from "@prisma/client";
+import type { KycStatus, Role } from "@prisma/client";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
 import { PermissionsProvider } from "@/components/auth/PermissionsProvider";
 import { EntitlementsProvider } from "@/components/billing/EntitlementsProvider";
+import { KycStatusProvider } from "@/components/kyc/KycStatusProvider";
+import KycReadOnlyBanner from "@/components/kyc/KycReadOnlyBanner";
 import ClientBanner, {
   type WorkspaceBannerData,
 } from "@/components/workspace/ClientBanner";
@@ -17,6 +19,8 @@ export default function DashboardShell({
   permissions = [],
   entitlementFeatures = [],
   entitlementsLegacy = true,
+  kycReadOnly = false,
+  kycStatus = null,
 }: {
   children: React.ReactNode;
   /** present only when a CA is impersonating a client (workspace mode) */
@@ -29,12 +33,16 @@ export default function DashboardShell({
   entitlementFeatures?: string[];
   /** legacy/grandfathered org → everything unlocked */
   entitlementsLegacy?: boolean;
+  /** Module 10 — true once KycProfile exists and status !== APPROVED (grandfathered orgs are always false) */
+  kycReadOnly?: boolean;
+  kycStatus?: KycStatus | null;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <PermissionsProvider role={role} permissions={permissions}>
       <EntitlementsProvider features={entitlementFeatures} isLegacy={entitlementsLegacy}>
+      <KycStatusProvider isReadOnly={kycReadOnly} status={kycStatus}>
       <div
         className={workspace ? "workspace-shell" : undefined}
         style={{ display: "flex", minHeight: "100vh" }}
@@ -49,10 +57,12 @@ export default function DashboardShell({
           permissions={permissions}
         />
         <div className="main-content" style={{ flex: 1 }}>
+          {kycReadOnly && <KycReadOnlyBanner status={kycStatus} />}
           <Topbar onMenuClick={() => setSidebarOpen(true)} />
           <main className="page-container animate-fade-in">{children}</main>
         </div>
       </div>
+      </KycStatusProvider>
       </EntitlementsProvider>
     </PermissionsProvider>
   );

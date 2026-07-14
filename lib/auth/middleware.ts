@@ -18,7 +18,34 @@ import { getCurrentUser, readCurrentUser } from "./session";
 import { canFromList } from "./rbac";
 import { resolvePermissions } from "./permission-resolver";
 import { resolveWorkspaceTenant, getWorkspaceContext } from "@/lib/workspace/context";
+import { assertWorkspaceWritable, KycRequiredError } from "@/lib/kyc/guards";
 import { Role } from "@prisma/client";
+
+export type AuthGuardOptions = {
+  /**
+   * Module 10 — throws a 403 (with kycStatus + readOnly) unless the org's
+   * KYC is APPROVED (grandfathered orgs with no KycProfile row always
+   * pass). Opt-in only, mirrors requireTenant()'s `requireKyc` option in
+   * lib/auth/require-tenant.ts — deliberately NOT applied to existing
+   * routes in Phase 1. See docs/TBX_FOUNDATION.md §13 Risk 5.
+   */
+  requireKyc?: boolean;
+};
+
+async function checkKyc(organizationId: string, opts?: AuthGuardOptions) {
+  if (!opts?.requireKyc) return;
+  try {
+    await assertWorkspaceWritable(organizationId);
+  } catch (err) {
+    if (err instanceof KycRequiredError) {
+      throw NextResponse.json(
+        { error: err.message, kycStatus: err.kycStatus, readOnly: true },
+        { status: err.status }
+      );
+    }
+    throw err;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // requireAuth
@@ -26,15 +53,19 @@ import { Role } from "@prisma/client";
 // Auto-provisions if the user is not yet in DB (race-safe).
 // Throws a 401 NextResponse if not authenticated.
 // ---------------------------------------------------------------------------
-export async function requireAuth() {
+export async function requireAuth(opts?: AuthGuardOptions) {
+  let user: Awaited<ReturnType<typeof getCurrentUser>>;
+  let organizationId: string;
   try {
-    const user = await getCurrentUser();
+    user = await getCurrentUser();
     // Client Workspace override — CA acting on behalf of an assigned client
     const workspaceOrgId = await resolveWorkspaceTenant();
-    return { user, organizationId: workspaceOrgId ?? user.organizationId };
+    organizationId = workspaceOrgId ?? user.organizationId;
   } catch {
     throw NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  await checkKyc(organizationId, opts);
+  return { user, organizationId };
 }
 
 // ---------------------------------------------------------------------------
@@ -60,8 +91,8 @@ export async function requireAuthReadOnly() {
 // requirePermission
 // Throws a 403 NextResponse if the current user lacks the permission.
 // ---------------------------------------------------------------------------
-export async function requirePermission(permission: string) {
-  const { user, organizationId } = await requireAuth();
+export async function requirePermission(permission: string, opts?: AuthGuardOptions) {
+  const { user, organizationId } = await requireAuth(opts);
 
   // A CA inside a Client Workspace is not a member of the client's org —
   // the customer-team RBAC matrix doesn't apply to them. Their

@@ -89,6 +89,9 @@ export const rolePermissions: Record<Role, string[]> = {
     "users.manage",
     "settings.read",
     "settings.write",
+    // Organization Master / KYC (TBX Foundation)
+    "organization.read",
+    "organization.write",
   ],
 
   // CRM, Billing, Finance, ERP, Compliance, Inventory.

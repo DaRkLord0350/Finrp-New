@@ -26,6 +26,7 @@ import {
 } from "@/lib/billing/guards";
 import { hasFeature } from "@/lib/billing/entitlements";
 import type { Feature } from "@/lib/billing/features";
+import { assertWorkspaceWritable, KycRequiredError } from "@/lib/kyc/guards";
 
 export type TenantContext = {
   userId: string;
@@ -39,6 +40,14 @@ export type RequireTenantOptions = {
   permission?: string;
   /** When set, throws FeatureLockedError (HTTP 402) unless the plan grants it. */
   feature?: Feature;
+  /**
+   * When set, throws KycRequiredError (HTTP 403) unless the org's KYC is
+   * APPROVED (grandfathered orgs with no KycProfile row always pass).
+   * Opt-in only — deliberately NOT applied to existing routes in Phase 1;
+   * new money-movement-adjacent modules (Payments/Collections/Loans) should
+   * set this explicitly. See docs/TBX_FOUNDATION.md §13 Risk 5.
+   */
+  requireKyc?: boolean;
 };
 
 export class UnauthorizedError extends Error {
@@ -109,6 +118,11 @@ export async function requireTenant(
     }
   }
 
+  if (opts?.requireKyc) {
+    // Enforced against the EFFECTIVE tenant, same as `feature` above.
+    await assertWorkspaceWritable(organizationId);
+  }
+
   return { userId, organizationId, role: dbUser.role };
 }
 
@@ -143,6 +157,12 @@ export function withTenant(
         return NextResponse.json(
           { error: err.message, feature: err.feature, upgradeRequired: true },
           { status: 402 }
+        );
+      }
+      if (err instanceof KycRequiredError) {
+        return NextResponse.json(
+          { error: err.message, kycStatus: err.kycStatus, readOnly: true },
+          { status: err.status }
         );
       }
       if (err instanceof PlanLimitError) {

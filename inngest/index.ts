@@ -13,6 +13,7 @@ import { bulkAccountUpdate } from "./functions/accounting";
 import { analyticsSnapshot } from "./functions/analytics";
 import { emailSend } from "./functions/email";
 import { invoicePdf } from "./functions/invoices";
+import { tbxVerification } from "./functions/tbx";
 import {
   bankAutoSync,
   recurringInvoiceScan,
@@ -36,6 +37,7 @@ export const functions = [
   analyticsSnapshot,
   emailSend,
   invoicePdf,
+  tbxVerification,
   // Scheduled (cron)
   bankAutoSync,
   recurringInvoiceScan,

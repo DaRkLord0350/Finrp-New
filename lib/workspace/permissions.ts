@@ -21,6 +21,7 @@ export const WORKSPACE_PERMISSIONS: ClientPermission[] = [
   "MANAGE_DOCUMENTS",
   "MANAGE_PAYROLL",
   "MANAGE_CONSENTS",
+  "MANAGE_KYC",
 ];
 
 export const PERMISSION_LABELS: Record<ClientPermission, string> = {
@@ -33,6 +34,9 @@ export const PERMISSION_LABELS: Record<ClientPermission, string> = {
   // Explicit grant only — never in ClientAssignment defaults. Lets a CA
   // create/revoke AA consents and disconnect bank accounts for the client.
   MANAGE_CONSENTS:  "Bank Consents",
+  // Explicit grant only — never in ClientAssignment defaults. Lets a CA
+  // complete/edit the client's TBX KYC onboarding wizard on their behalf.
+  MANAGE_KYC:       "KYC Onboarding",
 };
 
 // ---------------------------------------------------------------------------
@@ -49,6 +53,7 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{ prefix: string; permission: ClientPermi
   { prefix: "/erp/payroll",           permission: "MANAGE_PAYROLL" },
   { prefix: "/tds",                   permission: "MANAGE_TDS" },
   { prefix: "/customer/documents",    permission: "MANAGE_DOCUMENTS" },
+  { prefix: "/onboarding/kyc",        permission: "MANAGE_KYC" },
   { prefix: "/dashboard",             permission: "VIEW_DASHBOARD" },
 
   // ── APIs ───────────────────────────────────────────────────
@@ -58,6 +63,7 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{ prefix: string; permission: ClientPermi
   { prefix: "/api/transfers",         permission: "MANAGE_BANKING" },
   { prefix: "/api/erp/payroll",       permission: "MANAGE_PAYROLL" },
   { prefix: "/api/documents",         permission: "MANAGE_DOCUMENTS" },
+  { prefix: "/api/onboarding/kyc",    permission: "MANAGE_KYC" },
   { prefix: "/api/dashboard",         permission: "VIEW_DASHBOARD" },
 ];
 

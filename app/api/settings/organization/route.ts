@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
+import { orgBranchRepository, orgDepartmentRepository } from "@/lib/repositories/org-structure.repository";
 
 export async function GET() {
   try {
@@ -11,7 +12,7 @@ export async function GET() {
     const tenantId = await getTenantId();
     if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const [org, profile, settings] = await Promise.all([
+    const [org, profile, settings, branches, departments] = await Promise.all([
       prisma.organization.findUnique({
         where: { id: tenantId },
         select: {
@@ -46,6 +47,18 @@ export async function GET() {
           logoUrl: true,
           websiteUrl: true,
           phone: true,
+          // TBX Foundation (Phase 1) — Organization Master extensions
+          msmeRegistrationNo: true,
+          msmeCategory: true,
+          operationalAddress: true,
+          defaultBankAccountId: true,
+          panVerificationStatus: true,
+          gstVerificationStatus: true,
+          cinVerificationStatus: true,
+          tbxCustomerId: true,
+          tbxOrganizationId: true,
+          tbxStatus: true,
+          tbxLastSyncAt: true,
         },
       }),
       prisma.settings.findUnique({
@@ -65,11 +78,13 @@ export async function GET() {
           multiCurrencyEnabled: true,
         },
       }),
+      orgBranchRepository.list(tenantId),
+      orgDepartmentRepository.list(tenantId),
     ]);
 
     if (!org) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
 
-    return NextResponse.json({ org, profile, settings });
+    return NextResponse.json({ org, profile, settings, branches, departments });
   } catch (error) {
     console.error("[SETTINGS_ORG_GET]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

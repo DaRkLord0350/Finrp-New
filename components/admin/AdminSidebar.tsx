@@ -12,6 +12,9 @@ import {
   X,
   Shield,
   UserCog,
+  FileText,
+  Landmark,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +25,14 @@ const navItems = [
   { label: "Users",       href: "/admin/users",       icon: UserCog },
   { label: "Compliance",  href: "/admin/compliance",  icon: ShieldCheck },
   { label: "Analytics",   href: "/admin/analytics",   icon: BarChart3 },
+];
+
+// TBX Foundation (Phase 1) — Module 9 Admin Dashboard
+const kycNavItems = [
+  { label: "KYC Queue",          href: "/admin/kyc",              icon: ShieldCheck },
+  { label: "Documents",          href: "/admin/documents",        icon: FileText },
+  { label: "Bank Verification",  href: "/admin/bank-verification", icon: Landmark },
+  { label: "TBX Logs",           href: "/admin/tbx-logs",         icon: Activity },
 ];
 
 interface AdminSidebarProps {
@@ -96,6 +107,37 @@ export default function AdminSidebar({ open = false, onClose }: AdminSidebarProp
           </p>
 
           {navItems.map((item) => {
+            const active = isActive(item);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn("sidebar-nav-item", active && "active")}
+                onClick={onClose}
+              >
+                <Icon size={16} strokeWidth={1.75} />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+
+          <p
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--text-muted)",
+              padding: "0 12px",
+              marginTop: 16,
+              marginBottom: 6,
+            }}
+          >
+            KYC &amp; Verification
+          </p>
+
+          {kycNavItems.map((item) => {
             const active = isActive(item);
             const Icon = item.icon;
             return (

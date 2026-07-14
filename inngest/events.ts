@@ -15,6 +15,7 @@ import type { BankImportJobData } from "@/lib/banking/types";
 import type { TaxJobData } from "@/lib/tax/queue";
 import type { AnalyticsJobData } from "@/lib/workers/analytics-queue";
 import type { BulkAccountUpdateJobData } from "@/lib/accounting/workers/bulk-account-update.worker";
+import type { TbxJobData } from "@/lib/tbx/queue";
 
 // ---------------------------------------------------------------------------
 // Email — self-contained so the notification layer can depend on inngest
@@ -69,6 +70,7 @@ export const EVENTS = {
   ANALYTICS_SNAPSHOT_REQUESTED: "analytics/snapshot.requested",
   INVOICE_PDF_GENERATE: "invoice/pdf.generate",
   EMAIL_SEND: "email/send",
+  TBX_VERIFICATION_REQUESTED: "tbx/verification.requested",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -96,4 +98,5 @@ export type Events = {
   [EVENTS.ANALYTICS_SNAPSHOT_REQUESTED]: { data: AnalyticsJobData };
   [EVENTS.INVOICE_PDF_GENERATE]: { data: InvoicePdfGenerateEventData };
   [EVENTS.EMAIL_SEND]: { data: EmailSendEventData };
+  [EVENTS.TBX_VERIFICATION_REQUESTED]: { data: TbxJobData };
 };

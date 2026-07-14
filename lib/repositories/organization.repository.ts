@@ -34,6 +34,11 @@ export const organizationRepository = {
           companySize: true, country: true, state: true, city: true,
           address: true, pincode: true, currency: true, timezone: true,
           language: true, fiscalYearType: true, logoUrl: true, websiteUrl: true, phone: true,
+          // TBX Foundation (Phase 1) — Organization Master extensions
+          msmeRegistrationNo: true, msmeCategory: true, operationalAddress: true,
+          defaultBankAccountId: true, panVerificationStatus: true, gstVerificationStatus: true,
+          cinVerificationStatus: true, tbxCustomerId: true, tbxOrganizationId: true,
+          tbxStatus: true, tbxLastSyncAt: true,
         },
       }),
       prisma.settings.findUnique({

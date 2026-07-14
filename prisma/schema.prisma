@@ -171,6 +171,14 @@ model Organization {
   financialSnapshots    FinancialSnapshot[]   @relation("OrgFinancialSnapshots")
   branchConsolidations  BranchConsolidation[] @relation("BranchConsolidationParent")
 
+  // ── TBX Foundation (Phase 1) ─────────────────────────────────
+  orgBranches         OrgBranch[]
+  orgDepartments      OrgDepartment[]
+  kycProfile          KycProfile?
+  orgOnboardingStages OrgOnboardingStage[]
+  relatedParties      OrganizationRelatedParty[]
+  bankVerifications   OrgBankAccountVerification[]
+
   @@index([slug])
   @@index([billingCategory, planType])
   @@index([linkedCAOrganizationId])
@@ -289,6 +297,7 @@ model User {
   teamActivityLogs        TeamActivityLog[]    @relation("TeamActivityTarget")
   customerInvitesSent     CustomerInvitation[] @relation("CustomerInviteInvitedBy")
   customerInvitesAssigned CustomerInvitation[] @relation("CustomerInviteAssignedCa")
+  headOfDepartments       OrgDepartment[]      @relation("DepartmentHead")
 
   @@index([organizationId])
   @@index([userRole])
@@ -946,6 +955,21 @@ model BusinessProfile {
   onboardingComplete Boolean @default(false)
   onboardingStep     Int     @default(0)
 
+  // ── TBX Foundation (Phase 1) — Organization Master extensions ──
+  msmeRegistrationNo   String?
+  msmeCategory         String? // MICRO | SMALL | MEDIUM
+  operationalAddress   Json? // set only when it differs from the registered address fields above
+  defaultBankAccountId String? // FK -> BankAccount.id, no cascading relation needed
+
+  panVerificationStatus TbxVerificationStatus?
+  gstVerificationStatus TbxVerificationStatus?
+  cinVerificationStatus TbxVerificationStatus?
+
+  tbxCustomerId     String?   @unique
+  tbxOrganizationId String?   @unique
+  tbxStatus         String?
+  tbxLastSyncAt     DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1593,6 +1617,7 @@ model BankAccount {
   consents         BankConsent[]               @relation("BankAccountConsents")
   balances         BankBalance[]               @relation("BankAccountBalances")
   syncHistory      BankSyncHistory[]           @relation("BankAccountSyncHistory")
+  verifications    OrgBankAccountVerification[] @relation("BankAccountVerifications")
 
   @@index([organizationId])
   @@index([organizationId, isActive])
@@ -3268,7 +3293,7 @@ model ComplianceStatusHistory {
 model OrganizationDocument {
   id             String            @id @default(cuid())
   organizationId String
-  documentType   String // "PAN", "GST", "CIN", etc.
+  documentType   String // "PAN", "GST", "CIN", "AADHAAR", "MOA", "AOA", etc.
   displayName    String
   fileName       String
   mimeType       String
@@ -3286,17 +3311,54 @@ model OrganizationDocument {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
+  // ── Module 3: Document Vault extensions (Phase 1) ────────────
+  // currentVersion + versions[] mirror CustomerDocument's proven
+  // versioning shape. folder is free-text like documentType — the
+  // existing DocumentFolder enum is a semantic mismatch (CA
+  // tax-workflow folders, not KYC document categories).
+  currentVersion Int                           @default(1)
+  folder         String?
+  tags           String[]                      @default([])
+  deletedAt      DateTime?
+  versions       OrganizationDocumentVersion[]
+
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, documentType])
+  // Was @@unique — relaxed to @@index so a soft-deleted document
+  // doesn't permanently block re-upload of the same documentType.
+  // The service layer (lib/services/org-document.service.ts) still
+  // enforces "one active row per (org, documentType)" by archiving
+  // the current file into OrganizationDocumentVersion and updating
+  // in place, rather than the DB constraint doing it — this keeps
+  // the existing Compliance Doc Center UI's one-slot-per-type model
+  // working unchanged.
+  @@index([organizationId, documentType])
   @@index([organizationId])
   @@map("organization_documents")
+}
+
+model OrganizationDocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  versionNumber Int
+  fileUrl       String
+  fileName      String
+  fileSize      Int      @default(0)
+  uploadedById  String?
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  document OrganizationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("organization_document_versions")
 }
 
 enum OrgDocumentStatus {
   UPLOADED
   PENDING_VERIFICATION
   VERIFIED
+  OCR_READY
   REJECTED
   EXPIRED
   MISSING
@@ -5726,6 +5788,7 @@ enum ClientPermission {
   MANAGE_DOCUMENTS
   MANAGE_PAYROLL
   MANAGE_CONSENTS // explicit grant: CA may create/revoke consents + disconnect accounts
+  MANAGE_KYC // explicit grant: CA may complete/edit the client's TBX KYC wizard on their behalf
 }
 
 enum ClientActivityAction {
@@ -7514,4 +7577,285 @@ model BranchConsolidation {
   @@index([parentOrganizationId, statementType])
   @@index([parentOrganizationId, status])
   @@map("branch_consolidations")
+}
+
+// ============================================================
+// ============ TBX FOUNDATION (Phase 1) ======================
+// TransBnk (TBX) KYC / onboarding / verification backbone.
+// Module 8 — audit log of every outbound TBX API call.
+// Deliberately separate from AuditLog: needs duration/headers/
+// retry fields that AuditLog's CRUD-diff shape doesn't have.
+// requestPayload/responsePayload are redacted (see lib/tbx/
+// redaction.ts) before being written — never contains a full
+// Aadhaar number, OTP, or full bank account number.
+// ============================================================
+model TbxApiLog {
+  id             String  @id @default(cuid())
+  organizationId String?
+  userId         String?
+
+  apiName         String // catalog product name, e.g. "Pennydrop BAV"
+  endpoint        String?
+  httpMethod      String?
+  requestPayload  Json?
+  responsePayload Json?
+  responseHeaders Json?
+  statusCode      Int?
+  durationMs      Int?
+  retryCount      Int     @default(0)
+  success         Boolean @default(false)
+  errorMessage    String?
+
+  subjectType     String? // "organization" | "related_party" | "bank_account"
+  subjectId       String?
+  backgroundJobId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([apiName])
+  @@index([subjectType, subjectId])
+  @@map("tbx_api_logs")
+}
+
+// Shared verification-outcome vocabulary reused by BusinessProfile
+// (org PAN/GST/CIN), OrganizationRelatedParty (signatory/director PAN),
+// and OrgBankAccountVerification — one lifecycle enum instead of three
+// near-identical PENDING/VERIFIED/REJECTED vocabularies.
+enum TbxVerificationStatus {
+  NOT_STARTED
+  PENDING
+  IN_PROGRESS
+  VERIFIED
+  FAILED
+  EXPIRED
+}
+
+// ============================================================
+// Module 1 — Organization Master: Branches & Departments
+// ============================================================
+model OrgBranch {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  branchCode     String?
+  gstin          String?
+  address        String?
+  city           String?
+  state          String?
+  country        String?
+  pincode        String?
+  isHeadOffice   Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("org_branches")
+}
+
+model OrgDepartment {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  name               String
+  headUserId         String?
+  parentDepartmentId String?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization     Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  headUser         User?           @relation("DepartmentHead", fields: [headUserId], references: [id], onDelete: SetNull)
+  parentDepartment OrgDepartment?  @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id], onDelete: SetNull)
+  subDepartments   OrgDepartment[] @relation("DepartmentHierarchy")
+
+  @@index([organizationId])
+  @@map("org_departments")
+}
+
+// ============================================================
+// Module 7 — Master KYC Status Engine
+// Single authoritative status. Module 1's simpler "Active / Pending
+// / Rejected / Archived" display status is a pure mapping function
+// over `status` below (see lib/services/kyc-status.service.ts),
+// NOT a second stored field — avoids dual-status drift.
+// ============================================================
+enum KycStatus {
+  DRAFT
+  SUBMITTED
+  VERIFICATION_PENDING
+  KYC_PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+  EXPIRED
+}
+
+model KycProfile {
+  id             String @id @default(cuid())
+  organizationId String @unique
+
+  status KycStatus @default(DRAFT)
+
+  orgIdentityVerified Boolean @default(false) // org PAN + GST + CIN
+  primaryBankVerified Boolean @default(false)
+  signatoryVerified   Boolean @default(false)
+  documentsComplete   Boolean @default(false)
+  tbxCustomerCreated  Boolean @default(false)
+
+  rejectionReason String?
+  lastEvaluatedAt DateTime?
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("kyc_profiles")
+}
+
+// Sibling of the existing ClientOnboardingStage (same shape: stage/
+// status/completedAt/note/sortOrder) but keyed by organizationId —
+// the KYC wizard tracks the ORG's own onboarding, not a firm's
+// CRM-customer row, so the existing customerId-keyed table isn't
+// reusable as-is. Reuses the existing OnboardingStageStatus enum.
+enum OrgOnboardingStageKey {
+  ACCOUNT_CREATED
+  BUSINESS_INFO_COMPLETED
+  GST_VERIFIED
+  PAN_VERIFIED
+  SIGNATORY_ADDED
+  DIRECTORS_ADDED
+  ADDRESS_COMPLETED
+  DOCUMENTS_UPLOADED
+  TBX_CUSTOMER_CREATED
+  KYC_SUBMITTED
+  WORKSPACE_ACTIVATED
+}
+
+model OrgOnboardingStage {
+  id             String                @id @default(cuid())
+  organizationId String
+  stage          OrgOnboardingStageKey
+  status         OnboardingStageStatus @default(PENDING)
+  completedAt    DateTime?
+  note           String?
+  sortOrder      Int                   @default(0)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, stage])
+  @@index([organizationId])
+  @@map("org_onboarding_stages")
+}
+
+// ============================================================
+// Modules 4 + 5 + part of 1 — unified related-person registry.
+// Unifies "Authorized Signatories" (Module 4) + "Directors /
+// Partners / Proprietors / LLP Members / Beneficial Owners"
+// (Module 5) + "Authorized Contacts" (Module 1) into ONE table
+// instead of three near-duplicate ones — a real person is very
+// often more than one of these at once, and the fields overlap
+// heavily (name/PAN/verification status). See docs/TBX_FOUNDATION
+// .md §15 #1.
+//
+// No point-in-time history on `roles` — overwriting it loses "who
+// was a director as of date X." Accepted for Phase 1: reconstruction
+// relies on AuditLog old/new-value diffs on every roles[] change,
+// not a dedicated history table. Deliberate limitation, not an
+// oversight — see §13 Risk 4.
+// ============================================================
+enum PartyRole {
+  DIRECTOR
+  PARTNER
+  PROPRIETOR
+  LLP_MEMBER
+  BENEFICIAL_OWNER
+  AUTHORIZED_SIGNATORY
+  AUTHORIZED_CONTACT
+}
+
+model OrganizationRelatedParty {
+  id             String      @id @default(cuid())
+  organizationId String
+  roles          PartyRole[]
+
+  name  String
+  email String?
+  phone String?
+
+  pan                   String?
+  panVerificationStatus TbxVerificationStatus @default(NOT_STARTED)
+  aadhaarLast4          String? // last 4 digits only — full number is never persisted
+  aadhaarHash           String? // salted hash, dedupe-matching only
+
+  din                 String? // director-only (MCA Director Identification Number)
+  shareholdingPercent Decimal? @db.Decimal(5, 2) // director / beneficial-owner
+  designation         String?
+  isPrimarySignatory  Boolean  @default(false) // true = Primary, false = Secondary (signatory roles only)
+
+  addressLine String?
+  city        String?
+  state       String?
+  country     String?
+  pincode     String?
+
+  verificationStatus TbxVerificationStatus @default(NOT_STARTED)
+  tbxVerificationRef String?
+  notes              String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, pan])
+  @@map("organization_related_parties")
+}
+
+// ============================================================
+// Module 6 — Bank Account Linking. Satellite off the EXISTING
+// BankAccount (Banking OS), mirroring the BankConsent /
+// BankSyncHistory / BankBalance satellite pattern already used
+// there. Does NOT duplicate BankAccount — Setu AA (BankConsent) is
+// a consent-based ongoing data-fetch flow, architecturally unrelated
+// to this one-off identity/ownership verification. Carries
+// organizationId directly (not just via the bankAccountId join) so
+// it can be tenant-filtered without a join, matching its siblings.
+// ============================================================
+enum BankVerificationMethod {
+  PENNY_DROP
+  PENNILESS_BAV
+}
+
+model OrgBankAccountVerification {
+  id             String @id @default(cuid())
+  organizationId String
+  bankAccountId  String
+
+  verificationMethod         BankVerificationMethod
+  verificationStatus         TbxVerificationStatus  @default(NOT_STARTED)
+  verifiedAccountHolderName  String?
+  nameMatchScore             Int? // 0-100
+  tbxReferenceId             String?
+  failureReason              String?
+  verifiedAt                 DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankAccount  BankAccount  @relation("BankAccountVerifications", fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([bankAccountId])
+  @@map("org_bank_account_verifications")
 }

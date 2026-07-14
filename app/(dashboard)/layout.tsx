@@ -29,6 +29,7 @@ import { prisma } from "@/lib/prisma";
 import { isOnboardingComplete } from "@/services/onboardingService";
 import { isOrganizationActivated, getOrgEntitlements } from "@/lib/billing/guards";
 import { toEntitlementsDTO } from "@/lib/billing/entitlements";
+import { getKycReadOnlyState } from "@/lib/kyc/guards";
 import { getWorkspaceContext } from "@/lib/workspace/context";
 import {
   requiredPermissionForPath,
@@ -89,6 +90,11 @@ export default async function DashboardLayout({
     // own plan entitlements) so the workspace is indistinguishable
     // from the customer's own dashboard apart from the banner.
     const ent = toEntitlementsDTO(await getOrgEntitlements(ws.organizationId));
+    // Module 10: a CA is subject to the client org's read-only KYC state
+    // for general mutations too (impersonation must not bypass a client's
+    // incomplete KYC) — the KYC wizard's own routes are separately gated
+    // by the MANAGE_KYC workspace permission so a CA can still help.
+    const kyc = await getKycReadOnlyState(ws.organizationId);
 
     return (
       <DashboardShell
@@ -96,6 +102,8 @@ export default async function DashboardLayout({
         permissions={["*"]}
         entitlementFeatures={ent.features}
         entitlementsLegacy={ent.isLegacy}
+        kycReadOnly={kyc.readOnly}
+        kycStatus={kyc.status}
         workspace={{
           organizationId: ws.organizationId,
           organizationName: org.businessProfile?.businessName ?? org.name,
@@ -130,12 +138,20 @@ export default async function DashboardLayout({
   // features (Integrations, AI, …) in the sidebar + settings nav.
   const ent = toEntitlementsDTO(await getOrgEntitlements(user.organizationId));
 
+  // Module 10 — read-only (not blocked) until KYC is APPROVED. Orgs with
+  // no KycProfile row are grandfathered (readOnly: false) by
+  // getKycReadOnlyState itself — they predate this feature and must never
+  // be locked out by its rollout.
+  const kyc = await getKycReadOnlyState(user.organizationId);
+
   return (
     <DashboardShell
       role={user.role}
       permissions={permissions}
       entitlementFeatures={ent.features}
       entitlementsLegacy={ent.isLegacy}
+      kycReadOnly={kyc.readOnly}
+      kycStatus={kyc.status}
     >
       {children}
     </DashboardShell>

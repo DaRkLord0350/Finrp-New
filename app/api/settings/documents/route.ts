@@ -2,16 +2,38 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/auth/tenant";
+import { orgDocumentService } from "@/lib/services/org-document.service";
+import { mapOrgDocumentError } from "@/lib/org-document/http";
 
+// Module 3 — Document Vault. The predefined slot list, extended with
+// the KYC document types from the Phase 1 spec. Each slot maps 1:1 to
+// an `organizationId + documentType` OrganizationDocument row — upload
+// replaces the slot's file (versioned underneath, see
+// lib/services/org-document.service.ts), it does not create a second
+// visible row. Uploading a documentType NOT in this list is still
+// allowed (it shows up in `extraDocs`), matching the existing behavior.
 const DOCUMENT_TYPES = [
   { key: "PAN", label: "PAN Card" },
   { key: "GST_CERTIFICATE", label: "GST Certificate" },
-  { key: "INCORPORATION", label: "Incorporation Certificate" },
+  { key: "INCORPORATION", label: "Certificate of Incorporation" },
   { key: "BANK_STATEMENT", label: "Bank Statement" },
-  { key: "MSME", label: "MSME Certificate" },
+  { key: "MSME", label: "MSME / Udyam Certificate" },
   { key: "TAN", label: "TAN Certificate" },
   { key: "ADDRESS_PROOF", label: "Address Proof" },
   { key: "FINANCIAL_STATEMENTS", label: "Financial Statements" },
+  // ── Module 3 (Phase 1) additions ──
+  { key: "AADHAAR", label: "Aadhaar" },
+  { key: "BOARD_RESOLUTION", label: "Board Resolution" },
+  { key: "CANCELLED_CHEQUE", label: "Cancelled Cheque" },
+  { key: "ELECTRICITY_BILL", label: "Electricity Bill" },
+  { key: "MOA", label: "Memorandum of Association (MOA)" },
+  { key: "AOA", label: "Articles of Association (AOA)" },
+  { key: "FSSAI", label: "FSSAI License" },
+  { key: "IEC", label: "Import Export Code (IEC)" },
+  { key: "SHOP_LICENSE", label: "Shop & Establishment License" },
+  { key: "PARTNERSHIP_DEED", label: "Partnership Deed" },
+  { key: "LLP_AGREEMENT", label: "LLP Agreement" },
+  { key: "OTHER", label: "Other Documents" },
 ];
 
 export async function GET() {
@@ -22,10 +44,7 @@ export async function GET() {
     const tenantId = await getTenantId();
     if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const uploaded = await prisma.organizationDocument.findMany({
-      where: { organizationId: tenantId },
-      orderBy: { uploadedAt: "desc" },
-    });
+    const uploaded = await orgDocumentService.list(tenantId);
 
     // Merge uploaded docs with the required document types list
     const documents = DOCUMENT_TYPES.map((type) => {
@@ -62,53 +81,32 @@ export async function POST(req: Request) {
     if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const body = await req.json();
-    const { documentType, displayName, fileName, mimeType, fileSize, fileUrl, expiryDate, notes } = body;
+    const { documentType, displayName, fileName, mimeType, fileSize, fileUrl, expiryDate, notes, folder, tags } = body;
 
     if (!documentType || !fileName || !fileUrl) {
       return NextResponse.json({ error: "documentType, fileName, fileUrl required" }, { status: 400 });
     }
 
-    const document = await prisma.organizationDocument.upsert({
-      where: {
-        organizationId_documentType: {
-          organizationId: tenantId,
-          documentType,
-        },
-      },
-      create: {
-        organizationId: tenantId,
+    const document = await orgDocumentService.upload(
+      tenantId,
+      { userId: dbUser.id },
+      {
         documentType,
         displayName: displayName || fileName,
         fileName,
         mimeType: mimeType || "application/octet-stream",
         fileSize: fileSize || 0,
         fileUrl,
-        uploadedById: dbUser.id,
         expiryDate: expiryDate ? new Date(expiryDate) : null,
         notes: notes || null,
-        status: "UPLOADED",
-      },
-      update: {
-        displayName: displayName || fileName,
-        fileName,
-        mimeType: mimeType || "application/octet-stream",
-        fileSize: fileSize || 0,
-        fileUrl,
-        uploadedById: dbUser.id,
-        uploadedAt: new Date(),
-        expiryDate: expiryDate ? new Date(expiryDate) : null,
-        notes: notes || null,
-        status: "UPLOADED",
-        isVerified: false,
-        verifiedBy: null,
-        verifiedAt: null,
-      },
-    });
+        folder: folder || null,
+        tags: Array.isArray(tags) ? tags : [],
+      }
+    );
 
     return NextResponse.json(document, { status: 201 });
   } catch (error) {
-    console.error("[SETTINGS_DOCUMENTS_POST]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return mapOrgDocumentError(error, "SETTINGS_DOCUMENTS_POST");
   }
 }
 
@@ -129,16 +127,10 @@ export async function DELETE(req: Request) {
     const docId = searchParams.get("id");
     if (!docId) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-    const doc = await prisma.organizationDocument.findFirst({
-      where: { id: docId, organizationId: tenantId },
-    });
-    if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
-
-    await prisma.organizationDocument.delete({ where: { id: docId } });
+    await orgDocumentService.remove(tenantId, { userId: dbUser.id }, docId);
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[SETTINGS_DOCUMENTS_DELETE]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return mapOrgDocumentError(error, "SETTINGS_DOCUMENTS_DELETE");
   }
 }

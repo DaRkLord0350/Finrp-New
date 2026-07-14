@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Building2,
@@ -10,8 +10,20 @@ import {
   Save,
   FileText,
   Receipt,
+  Landmark,
 } from "lucide-react";
 import { toast } from "sonner";
+import BranchesSection, { type OrgBranch } from "@/components/settings/organization/BranchesSection";
+import DepartmentsSection, { type OrgDepartment } from "@/components/settings/organization/DepartmentsSection";
+import RelatedPartiesSection, { type RelatedParty } from "@/components/settings/organization/RelatedPartiesSection";
+
+interface OperationalAddress {
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+}
 
 interface OrgData {
   org: {
@@ -43,6 +55,16 @@ interface OrgData {
     pan?: string;
     cin?: string;
     gstin?: string;
+    // TBX Foundation (Phase 1) — Organization Master extensions
+    msmeRegistrationNo?: string | null;
+    msmeCategory?: string | null;
+    operationalAddress?: OperationalAddress | null;
+    defaultBankAccountId?: string | null;
+    panVerificationStatus?: string | null;
+    gstVerificationStatus?: string | null;
+    cinVerificationStatus?: string | null;
+    tbxCustomerId?: string | null;
+    tbxStatus?: string | null;
   } | null;
   settings: {
     defaultTaxRate?: number;
@@ -58,6 +80,16 @@ interface OrgData {
     loanModuleEnabled?: boolean;
     multiCurrencyEnabled?: boolean;
   } | null;
+  branches: OrgBranch[];
+  departments: OrgDepartment[];
+  relatedParties: RelatedParty[];
+}
+
+interface BankAccountOption {
+  id: string;
+  accountName: string;
+  bankName: string;
+  isPrimary: boolean;
 }
 
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD"];
@@ -83,6 +115,20 @@ export default function OrganizationSettingsClient({ initialData }: { initialDat
   const [orgName, setOrgName] = useState(initialData.org.name);
   const [profile, setProfile] = useState<OrgData["profile"]>(initialData.profile ?? {});
   const [settings, setSettings] = useState<OrgData["settings"]>(initialData.settings ?? {});
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([]);
+  const [hasOperationalAddress, setHasOperationalAddress] = useState(
+    Boolean(initialData.profile?.operationalAddress)
+  );
+
+  useEffect(() => {
+    fetch("/api/banking/accounts")
+      .then((r) => (r.ok ? r.json() : { accounts: [] }))
+      .then((d) => setBankAccounts(d.accounts ?? []))
+      .catch(() => setBankAccounts([]));
+  }, []);
+
+  const updateOperationalAddress = (key: keyof OperationalAddress, value: string) =>
+    setProfile((p) => ({ ...p, operationalAddress: { ...(p?.operationalAddress ?? {}), [key]: value } }));
 
   async function handleSave() {
     if (!orgName.trim()) {
@@ -256,6 +302,13 @@ export default function OrganizationSettingsClient({ initialData }: { initialDat
 
       {/* Tax & Legal */}
       <Section title="Tax & Legal Identifiers" icon={<Receipt size={16} />} delay={0.1}>
+        {(profile?.panVerificationStatus || profile?.gstVerificationStatus || profile?.cinVerificationStatus) && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+            <VerificationBadge label="PAN" status={profile?.panVerificationStatus} />
+            <VerificationBadge label="GST" status={profile?.gstVerificationStatus} />
+            <VerificationBadge label="CIN" status={profile?.cinVerificationStatus} />
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <Field label="GSTIN">
             <input
@@ -291,6 +344,26 @@ export default function OrganizationSettingsClient({ initialData }: { initialDat
               style={inputStyle}
             />
           </Field>
+          <Field label="MSME / Udyam Registration No">
+            <input
+              value={profile?.msmeRegistrationNo ?? ""}
+              onChange={(e) => updateProfile("msmeRegistrationNo", e.target.value.toUpperCase())}
+              placeholder="UDYAM-XX-00-0000000"
+              style={inputStyle}
+            />
+          </Field>
+          <Field label="MSME Category">
+            <select
+              value={profile?.msmeCategory ?? ""}
+              onChange={(e) => updateProfile("msmeCategory", e.target.value || null)}
+              style={inputStyle}
+            >
+              <option value="">Not applicable</option>
+              <option value="MICRO">Micro</option>
+              <option value="SMALL">Small</option>
+              <option value="MEDIUM">Medium</option>
+            </select>
+          </Field>
         </div>
         <div style={{ marginTop: 12 }}>
           <ToggleRow
@@ -304,6 +377,9 @@ export default function OrganizationSettingsClient({ initialData }: { initialDat
 
       {/* Address */}
       <Section title="Address" icon={<MapPin size={16} />} delay={0.15}>
+        <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.4 }}>
+          Registered Address
+        </p>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <Field label="Address" style={{ gridColumn: "1 / -1" }}>
             <textarea
@@ -327,6 +403,43 @@ export default function OrganizationSettingsClient({ initialData }: { initialDat
             <input value={profile?.country ?? ""} onChange={(e) => updateProfile("country", e.target.value)} placeholder="India" style={inputStyle} />
           </Field>
         </div>
+
+        <div style={{ marginTop: 16 }}>
+          <ToggleRow
+            label="Operational address differs from registered address"
+            description="Track a separate correspondence / operating location"
+            checked={hasOperationalAddress}
+            onChange={(v) => {
+              setHasOperationalAddress(v);
+              if (!v) updateProfile("operationalAddress", null);
+            }}
+          />
+        </div>
+        {hasOperationalAddress && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+            <Field label="Operational Address" style={{ gridColumn: "1 / -1" }}>
+              <textarea
+                value={profile?.operationalAddress?.address ?? ""}
+                onChange={(e) => updateOperationalAddress("address", e.target.value)}
+                placeholder="Street address"
+                rows={2}
+                style={{ ...inputStyle, resize: "vertical" }}
+              />
+            </Field>
+            <Field label="City">
+              <input value={profile?.operationalAddress?.city ?? ""} onChange={(e) => updateOperationalAddress("city", e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label="State">
+              <input value={profile?.operationalAddress?.state ?? ""} onChange={(e) => updateOperationalAddress("state", e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label="Pincode">
+              <input value={profile?.operationalAddress?.pincode ?? ""} onChange={(e) => updateOperationalAddress("pincode", e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label="Country">
+              <input value={profile?.operationalAddress?.country ?? ""} onChange={(e) => updateOperationalAddress("country", e.target.value)} style={inputStyle} />
+            </Field>
+          </div>
+        )}
       </Section>
 
       {/* Financial Preferences */}
@@ -350,6 +463,20 @@ export default function OrganizationSettingsClient({ initialData }: { initialDat
           <Field label="Date Format">
             <select value={settings?.dateFormat ?? "DD/MM/YYYY"} onChange={(e) => updateSettings("dateFormat", e.target.value)} style={inputStyle}>
               {DATE_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </Field>
+          <Field label="Preferred Bank Account">
+            <select
+              value={profile?.defaultBankAccountId ?? ""}
+              onChange={(e) => updateProfile("defaultBankAccountId", e.target.value || null)}
+              style={inputStyle}
+            >
+              <option value="">No default set</option>
+              {bankAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.accountName} — {a.bankName}{a.isPrimary ? " (Primary)" : ""}
+                </option>
+              ))}
             </select>
           </Field>
           <Field label="Default Tax Rate (%)">
@@ -416,6 +543,10 @@ export default function OrganizationSettingsClient({ initialData }: { initialDat
           ))}
         </div>
       </Section>
+
+      <BranchesSection initialBranches={data.branches} />
+      <DepartmentsSection initialDepartments={data.departments} />
+      <RelatedPartiesSection initialParties={data.relatedParties} />
 
       {/* Save */}
       <motion.div
@@ -591,6 +722,37 @@ function ToggleRow({
         />
       </button>
     </div>
+  );
+}
+
+const VERIFICATION_STYLES: Record<string, { bg: string; color: string; text: string }> = {
+  VERIFIED: { bg: "#10b98120", color: "#10b981", text: "Verified" },
+  FAILED: { bg: "#ef444420", color: "#ef4444", text: "Failed" },
+  PENDING: { bg: "#f59e0b20", color: "#f59e0b", text: "Pending" },
+  IN_PROGRESS: { bg: "#f59e0b20", color: "#f59e0b", text: "In Progress" },
+  EXPIRED: { bg: "#6b728020", color: "#6b7280", text: "Expired" },
+  NOT_STARTED: { bg: "#6b728020", color: "#6b7280", text: "Not Verified" },
+};
+
+function VerificationBadge({ label, status }: { label: string; status?: string | null }) {
+  const style = VERIFICATION_STYLES[status ?? "NOT_STARTED"] ?? VERIFICATION_STYLES.NOT_STARTED;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 11,
+        fontWeight: 600,
+        padding: "4px 10px",
+        borderRadius: 20,
+        background: style.bg,
+        color: style.color,
+      }}
+    >
+      <Landmark size={11} />
+      {label}: {style.text}
+    </span>
   );
 }
 
