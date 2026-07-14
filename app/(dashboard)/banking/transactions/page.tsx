@@ -39,12 +39,14 @@ function formatINR(n: number) {
   if (n >= 1000) return `₹${(n / 1000).toFixed(0)}K`;
   return `₹${n.toLocaleString("en-IN")}`;
 }
+type SortableColumn = "transactionDate" | "credit" | "debit" | "balance" | "createdAt";
+
 type SortHeaderProps = {
   label: string;
-  col: string;
+  col: SortableColumn;
   sortBy: string;
   sortDir: "asc" | "desc";
-  onSort: (col: any) => void;
+  onSort: (col: SortableColumn) => void;
   align?: "left" | "right" | "center";
 };
 
@@ -128,7 +130,7 @@ export default function TransactionsPage() {
 
   const sortBy = filters.sortBy ?? "transactionDate";
   const sortDir = filters.sortDir ?? "desc";
-  const toggleSort = useCallback((col: NonNullable<typeof filters.sortBy>) => {
+  const toggleSort = useCallback((col: SortableColumn) => {
     updateFilters({ sortBy: col, sortDir: sortBy === col && sortDir === "desc" ? "asc" : "desc" });
   }, [sortBy, sortDir, updateFilters]);
 

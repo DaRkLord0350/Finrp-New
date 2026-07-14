@@ -160,6 +160,17 @@ model Organization {
   caRelationshipsAsBusiness CARelationship[] @relation("CARelationshipBusiness")
   billingPayments           BillingPayment[]
 
+  // ── Financial Reporting Engine ──────────────────────────────
+  accountScheduleMaps   AccountScheduleMap[]  @relation("OrgAccountScheduleMaps")
+  financialReports      FinancialReport[]     @relation("OrgFinancialReports")
+  statementTemplates    StatementTemplate[]   @relation("OrgStatementTemplates")
+  statementNotes        StatementNote[]       @relation("OrgStatementNotes")
+  accountingPolicies    AccountingPolicy[]    @relation("OrgAccountingPolicies")
+  adjustmentJournals    AdjustmentJournal[]   @relation("OrgAdjustmentJournals")
+  statementExports      StatementExport[]     @relation("OrgStatementExports")
+  financialSnapshots    FinancialSnapshot[]   @relation("OrgFinancialSnapshots")
+  branchConsolidations  BranchConsolidation[] @relation("BranchConsolidationParent")
+
   @@index([slug])
   @@index([billingCategory, planType])
   @@index([linkedCAOrganizationId])
@@ -1129,7 +1140,8 @@ model Account {
   purchaseExpenseLinks     Purchase[]     @relation("PurchaseExpenseAccount")
   purchaseItemExpenseLinks PurchaseItem[] @relation("PurchaseItemExpenseAccount")
   vendorPayableLinks       Vendor[]       @relation("VendorPayableAccount")
-  creditNoteLinks          CreditNote[]   @relation("CreditNoteAccount")
+  creditNoteLinks          CreditNote[]        @relation("CreditNoteAccount")
+  accountScheduleMaps      AccountScheduleMap[] @relation("AccountScheduleMaps")
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -1288,10 +1300,11 @@ model FiscalYear {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  periods      FiscalPeriod[]
-  journals     JournalEntry[]
-  budgets      Budget[]
+  organization       Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  periods            FiscalPeriod[]
+  journals           JournalEntry[]
+  budgets            Budget[]
+  financialReports   FinancialReport[] @relation("FiscalYearReports")
 
   @@unique([organizationId, name])
   @@index([organizationId, status])
@@ -7121,4 +7134,384 @@ model ClientOnboardingStage {
   @@index([customerId])
   @@index([organizationId])
   @@map("ca_client_onboarding_stages")
+}
+
+// ============================================================
+// FINANCIAL REPORTING ENGINE
+// Schedule III-compliant financial statements module.
+// All models are tenant-scoped by organizationId.
+// ============================================================
+
+enum StatementType {
+  BALANCE_SHEET
+  PROFIT_LOSS
+  CASH_FLOW
+  TRIAL_BALANCE
+  NOTES
+}
+
+enum StatementStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  LOCKED
+  PUBLISHED
+}
+
+enum TemplateCategory {
+  CORPORATE
+  NON_CORPORATE
+}
+
+enum MappingSource {
+  AI_AUTO
+  AI_CONFIRMED
+  MANUAL
+  INHERITED
+}
+
+enum AdjJournalStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum ExportFormat {
+  PDF
+  EXCEL
+  BOTH
+}
+
+enum ExportStatus {
+  PENDING
+  GENERATING
+  READY
+  FAILED
+}
+
+enum ConsolidationStatus {
+  DRAFT
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// Maps a GL Account to a Schedule III line item with AI confidence scoring.
+// Manual overrides persist and win over AI suggestions.
+model AccountScheduleMap {
+  id             String        @id @default(cuid())
+  organizationId String
+
+  accountId      String
+  templateId     String
+  scheduleKey    String
+  scheduleName   String
+
+  source         MappingSource @default(AI_AUTO)
+  confidence     Decimal       @default(0) @db.Decimal(4, 3)
+  aiRationale    String?
+
+  overriddenBy   String?
+  overriddenAt   DateTime?
+
+  isActive       Boolean       @default(true)
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization      @relation("OrgAccountScheduleMaps", fields: [organizationId], references: [id], onDelete: Cascade)
+  account      Account           @relation("AccountScheduleMaps", fields: [accountId], references: [id])
+  template     StatementTemplate @relation(fields: [templateId], references: [id])
+
+  @@unique([organizationId, accountId, templateId])
+  @@index([organizationId, scheduleKey])
+  @@index([organizationId, source])
+  @@map("account_schedule_maps")
+}
+
+// JSON-configurable Schedule III skeleton.
+// Built-in global templates have organizationId=null.
+model StatementTemplate {
+  id             String           @id @default(cuid())
+  organizationId String?
+
+  name           String
+  category       TemplateCategory @default(CORPORATE)
+  description    String?
+  isBuiltIn      Boolean          @default(false)
+  isDefault      Boolean          @default(false)
+
+  structure      Json
+
+  version        Int              @default(1)
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization?         @relation("OrgStatementTemplates", fields: [organizationId], references: [id], onDelete: Cascade)
+  mappings     AccountScheduleMap[]
+  statements   FinancialReport[]
+
+  @@index([organizationId])
+  @@index([category, isBuiltIn])
+  @@map("statement_templates")
+}
+
+// One workflow statement record per org+period (BS / P&L / CF).
+// Raw GL data is never duplicated — computed at render from JournalLine + AccountScheduleMap.
+model FinancialReport {
+  id             String          @id @default(cuid())
+  organizationId String
+
+  statementType  StatementType
+  status         StatementStatus @default(DRAFT)
+  fiscalYearId   String
+  periodStart    DateTime
+  periodEnd      DateTime
+
+  templateId     String
+
+  comparativeStart DateTime?
+  comparativeEnd   DateTime?
+
+  lockedAt       DateTime?
+  lockedById     String?
+  lockReason     String?
+
+  reviewedById   String?
+  reviewedAt     DateTime?
+  approvedById   String?
+  approvedAt     DateTime?
+
+  notes          String?
+  preparedBy     String?
+  signatoryName  String?
+  signatoryDesig String?
+  signatoryDate  DateTime?
+
+  createdById    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization       Organization             @relation("OrgFinancialReports", fields: [organizationId], references: [id], onDelete: Cascade)
+  fiscalYear         FiscalYear               @relation("FiscalYearReports", fields: [fiscalYearId], references: [id])
+  template           StatementTemplate        @relation(fields: [templateId], references: [id])
+  versions           FinancialReportVersion[]
+  reportNotes        StatementNote[]
+  adjustmentJournals AdjustmentJournal[]
+  exports            StatementExport[]
+  snapshots          FinancialSnapshot[]
+
+  @@index([organizationId, statementType, status])
+  @@index([organizationId, fiscalYearId])
+  @@index([organizationId, periodStart, periodEnd])
+  @@map("financial_reports")
+}
+
+// Immutable signed snapshot created on APPROVED/LOCKED transition.
+model FinancialReportVersion {
+  id               String   @id @default(cuid())
+  financialReportId String
+  organizationId   String
+
+  version          Int
+  versionLabel     String?
+
+  snapshot         Json
+
+  signatoryName    String?
+  signatoryDesig   String?
+  signedAt         DateTime?
+
+  changedById      String?
+  changeSummary    String?
+  isLocked         Boolean  @default(false)
+
+  createdAt        DateTime @default(now())
+
+  report FinancialReport @relation(fields: [financialReportId], references: [id], onDelete: Cascade)
+
+  @@unique([financialReportId, version])
+  @@index([financialReportId])
+  @@index([organizationId])
+  @@map("financial_report_versions")
+}
+
+// Notes to Accounts (Schedule III mandatory).
+model StatementNote {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  financialStatementId String
+
+  noteNumber     Int
+  scheduleKey    String
+  title          String
+  content        Json
+  isAiGenerated  Boolean     @default(false)
+  aiPrompt       String?
+
+  sortOrder      Int         @default(0)
+  isPublished    Boolean     @default(true)
+
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization Organization    @relation("OrgStatementNotes", fields: [organizationId], references: [id], onDelete: Cascade)
+  report       FinancialReport @relation(fields: [financialStatementId], references: [id], onDelete: Cascade)
+
+  @@unique([financialStatementId, noteNumber])
+  @@index([organizationId])
+  @@index([financialStatementId])
+  @@map("statement_notes")
+}
+
+// Declared significant accounting policies.
+model AccountingPolicy {
+  id             String   @id @default(cuid())
+  organizationId String
+
+  policyKey      String
+  title          String
+  content        String
+  isAiGenerated  Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation("OrgAccountingPolicies", fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, policyKey])
+  @@index([organizationId])
+  @@map("accounting_policies")
+}
+
+// Auditor / CA adjustments - modify statement view without touching source GL.
+model AdjustmentJournal {
+  id                   String           @id @default(cuid())
+  organizationId       String
+  financialStatementId String
+
+  journalNumber        String?
+  description          String
+  entryDate            DateTime
+  status               AdjJournalStatus @default(DRAFT)
+  source               String           @default("AUDITOR")
+
+  postedById           String?
+  postedAt             DateTime?
+  reversedById         String?
+  reversedAt           DateTime?
+  reversalNote         String?
+
+  createdById          String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  organization Organization    @relation("OrgAdjustmentJournals", fields: [organizationId], references: [id], onDelete: Cascade)
+  report       FinancialReport @relation(fields: [financialStatementId], references: [id], onDelete: Cascade)
+  entries      AdjustmentEntry[]
+
+  @@index([organizationId, financialStatementId])
+  @@index([organizationId, status])
+  @@map("adjustment_journals")
+}
+
+// Individual lines of an adjustment journal.
+model AdjustmentEntry {
+  id                  String    @id @default(cuid())
+  adjustmentJournalId String
+
+  accountId           String
+  scheduleKey         String
+  type                EntryType
+  amount              Decimal   @db.Decimal(16, 2)
+  description         String?
+  lineOrder           Int       @default(0)
+
+  adjustmentJournal AdjustmentJournal @relation(fields: [adjustmentJournalId], references: [id], onDelete: Cascade)
+
+  @@index([adjustmentJournalId])
+  @@map("adjustment_entries")
+}
+
+// Tracks PDF / Excel export jobs.
+model StatementExport {
+  id                   String       @id @default(cuid())
+  organizationId       String
+  financialStatementId String
+
+  format               ExportFormat
+  status               ExportStatus @default(PENDING)
+
+  fileUrl              String?
+  fileName             String?
+  fileSize             Int?
+
+  signaturePlaceholder Boolean      @default(false)
+  signatureImageUrl    String?
+
+  requestedById        String?
+  completedAt          DateTime?
+  error                String?
+
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  organization Organization    @relation("OrgStatementExports", fields: [organizationId], references: [id], onDelete: Cascade)
+  report       FinancialReport @relation(fields: [financialStatementId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, financialStatementId])
+  @@index([status])
+  @@map("statement_exports")
+}
+
+// Cached computed statement output.
+model FinancialSnapshot {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  financialStatementId String
+
+  periodStart          DateTime
+  periodEnd            DateTime
+  data                 Json
+  includesAdjustments  Boolean  @default(true)
+  isStale              Boolean  @default(false)
+  computedAt           DateTime @default(now())
+
+  organization Organization    @relation("OrgFinancialSnapshots", fields: [organizationId], references: [id], onDelete: Cascade)
+  report       FinancialReport @relation(fields: [financialStatementId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, financialStatementId])
+  @@index([organizationId, computedAt])
+  @@map("financial_snapshots")
+}
+
+// Multi-entity / branch consolidation.
+model BranchConsolidation {
+  id                   String              @id @default(cuid())
+  parentOrganizationId String
+
+  statementType        StatementType
+  periodStart          DateTime
+  periodEnd            DateTime
+  status               ConsolidationStatus @default(DRAFT)
+
+  childOrganizationIds String[]
+  eliminationEntries   Json?
+  consolidatedData     Json?
+
+  createdById          String?
+  completedAt          DateTime?
+  error                String?
+
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  parentOrg Organization @relation("BranchConsolidationParent", fields: [parentOrganizationId], references: [id], onDelete: Cascade)
+
+  @@index([parentOrganizationId, statementType])
+  @@index([parentOrganizationId, status])
+  @@map("branch_consolidations")
 }

@@ -103,7 +103,7 @@ function AddAccountModal({ onClose, onConnectSetu, onManualAdd }: {
                 <Plug2 size={20} color="#6366f1" />
               </div>
               <div>
-                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Connect via Setu AA</p>
+                {/* <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Connect via Setu AA</p> */}
                 <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>RBI-regulated Account Aggregator — fastest, most secure</p>
               </div>
             </button>
@@ -114,7 +114,7 @@ function AddAccountModal({ onClose, onConnectSetu, onManualAdd }: {
                 <Building2 size={20} color="#10b981" />
               </div>
               <div>
-                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Add Manually</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: " " }}>Add Manually</p>
                 <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>Enter account details manually, then import statements</p>
               </div>
             </button>
