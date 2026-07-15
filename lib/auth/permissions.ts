@@ -92,6 +92,11 @@ export const rolePermissions: Record<Role, string[]> = {
     // Organization Master / KYC (TBX Foundation)
     "organization.read",
     "organization.write",
+    // TBX Banking — Balance/Statement/Beneficiary/Payments (Phase 2)
+    "banking.read",
+    "banking.write",
+    "banking.manage",
+    "banking.approve",
   ],
 
   // CRM, Billing, Finance, ERP, Compliance, Inventory.
@@ -133,6 +138,10 @@ export const rolePermissions: Record<Role, string[]> = {
     "tax.write",
     "tax.file",
     "tax.approve",
+    // TBX Banking (prepare + approve — checker role, same tier as tax.approve)
+    "banking.read",
+    "banking.write",
+    "banking.approve",
     // Reporting
     "analytics.read",
   ],
@@ -163,6 +172,9 @@ export const rolePermissions: Record<Role, string[]> = {
     "tax.read",
     "tax.write",
     "tax.file",
+    // TBX Banking (maker role only — approval reserved for ADMIN/MANAGER)
+    "banking.read",
+    "banking.write",
     // Payroll (if enabled for the org)
     "payroll.read",
     "payroll.write",
@@ -200,5 +212,6 @@ export const rolePermissions: Record<Role, string[]> = {
     "accounting.read",
     "analytics.read",
     "tax.read",
+    "banking.read",
   ],
 };

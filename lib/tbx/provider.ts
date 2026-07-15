@@ -11,10 +11,9 @@
 // need to change when that happens — only `request()`'s paths and
 // each method's request/response mapping do.
 //
-// Hardening mirrors lib/banking/providers/setu.provider.ts:
-// AbortController timeouts, bounded retries with exponential
-// backoff + jitter on 429/5xx/network errors, Retry-After support,
-// structured logging, x-request-id propagation.
+// Hardening: AbortController timeouts, bounded retries with
+// exponential backoff + jitter on 429/5xx/network errors,
+// Retry-After support, structured logging, x-request-id propagation.
 // ============================================================
 
 import { randomUUID } from "crypto";
@@ -59,7 +58,7 @@ export class TbxHttpProvider implements TbxProvider {
   readonly name = "TBX_HTTP" as const;
 
   // -------------------------------------------------------------------------
-  // HTTP core — mirrors SetuProvider.request() exactly
+  // HTTP core
   // -------------------------------------------------------------------------
   private async request<T = JsonRecord>(
     method: "GET" | "POST",

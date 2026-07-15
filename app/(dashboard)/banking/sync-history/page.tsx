@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   History, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, RefreshCw,
 } from "lucide-react";
-import { useBankSyncHistory } from "@/hooks/useBankConsents";
+import { useBankSyncHistory } from "@/hooks/useBankSyncHistory";
 
 const STATUS_CONFIG: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
   SUCCESS: { bg: "rgba(16,185,129,0.1)",  text: "#10b981", icon: <CheckCircle2 size={11} /> },

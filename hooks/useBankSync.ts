@@ -75,42 +75,6 @@ export function useBankSync() {
     }
   }, [data, syncingIds, syncAccount]);
 
-  const connectSetu = useCallback(async (opts?: { bankAccountId?: string; vua?: string }) => {
-    const res = await fetch("/api/banking/setu/connect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bankAccountId: opts?.bankAccountId, vua: opts?.vua }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error ?? "Failed to initiate Setu connection");
-    }
-    const { redirectUrl } = await res.json();
-    window.location.href = redirectUrl;
-  }, []);
-
-  const createPlaidLinkToken = useCallback(async (): Promise<string> => {
-    const res = await fetch("/api/banking/plaid/create-link-token", { method: "POST" });
-    if (!res.ok) throw new Error("Failed to create Plaid link token");
-    const { linkToken } = await res.json();
-    return linkToken;
-  }, []);
-
-  const exchangePlaidToken = useCallback(async (
-    publicToken: string,
-    institutionName?: string,
-    institutionId?: string
-  ) => {
-    const res = await fetch("/api/banking/plaid/exchange-token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ publicToken, institutionName, institutionId }),
-    });
-    if (!res.ok) throw new Error("Failed to connect bank");
-    qc.invalidate(["banking", "accounts"]);
-    return res.json();
-  }, [qc]);
-
   return {
     syncStatuses: data ?? [],
     isLoading,
@@ -118,9 +82,6 @@ export function useBankSync() {
     errors,
     syncAccount,
     syncAll,
-    connectSetu,
-    createPlaidLinkToken,
-    exchangePlaidToken,
     isSyncing: (id: string) => syncingIds.has(id),
   };
 }

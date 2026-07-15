@@ -14,7 +14,6 @@ export async function GET(req: NextRequest) {
     where: { organizationId: orgId, deletedAt: null },
     orderBy: [{ isPrimary: "desc" }, { bankName: "asc" }],
     include: {
-      consents: { orderBy: { createdAt: "desc" }, select: { id: true, status: true, endDate: true, provider: true, frequency: true, fiTypes: true } },
       connection: { select: { provider: true, status: true } },
       _count: { select: { bankTransactions: true } },
     },

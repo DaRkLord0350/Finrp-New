@@ -10,12 +10,16 @@
 // ============================================================
 
 import type { ImportJobData, SyncJobData, WebhookJobData } from "@/lib/jobs/queues";
-import type { BankSyncQueueJobData } from "@/lib/banking/queue";
-import type { BankImportJobData } from "@/lib/banking/types";
 import type { TaxJobData } from "@/lib/tax/queue";
 import type { AnalyticsJobData } from "@/lib/workers/analytics-queue";
 import type { BulkAccountUpdateJobData } from "@/lib/accounting/workers/bulk-account-update.worker";
 import type { TbxJobData } from "@/lib/tbx/queue";
+import type {
+  TbxBalanceSyncJobData,
+  TbxStatementSyncJobData,
+  TbxBeneficiarySyncJobData,
+  TbxPaymentSyncJobData,
+} from "@/inngest/functions/tbx-banking";
 
 // ---------------------------------------------------------------------------
 // Email — self-contained so the notification layer can depend on inngest
@@ -63,14 +67,16 @@ export const EVENTS = {
   CSV_IMPORT_COMPLETED: "csv/import.completed",
   INTEGRATION_SYNC_REQUESTED: "integration/sync.requested",
   WEBHOOK_ZOHO_RECEIVED: "webhook/zoho.received",
-  BANK_SYNC_REQUESTED: "bank/sync.requested",
-  BANK_IMPORT_REQUESTED: "bank/import.requested",
   TAX_JOB_REQUESTED: "tax/job.requested",
   ACCOUNTING_BULK_UPDATE_REQUESTED: "accounting/bulk-update.requested",
   ANALYTICS_SNAPSHOT_REQUESTED: "analytics/snapshot.requested",
   INVOICE_PDF_GENERATE: "invoice/pdf.generate",
   EMAIL_SEND: "email/send",
   TBX_VERIFICATION_REQUESTED: "tbx/verification.requested",
+  TBX_BALANCE_SYNC_REQUESTED: "tbx/balance-sync.requested",
+  TBX_STATEMENT_SYNC_REQUESTED: "tbx/statement-sync.requested",
+  TBX_BENEFICIARY_SYNC_REQUESTED: "tbx/beneficiary-sync.requested",
+  TBX_PAYMENT_SYNC_REQUESTED: "tbx/payment-sync.requested",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -91,12 +97,14 @@ export type Events = {
   };
   [EVENTS.INTEGRATION_SYNC_REQUESTED]: { data: SyncJobData };
   [EVENTS.WEBHOOK_ZOHO_RECEIVED]: { data: WebhookJobData };
-  [EVENTS.BANK_SYNC_REQUESTED]: { data: BankSyncQueueJobData };
-  [EVENTS.BANK_IMPORT_REQUESTED]: { data: BankImportJobData };
   [EVENTS.TAX_JOB_REQUESTED]: { data: TaxJobData };
   [EVENTS.ACCOUNTING_BULK_UPDATE_REQUESTED]: { data: BulkAccountUpdateJobData };
   [EVENTS.ANALYTICS_SNAPSHOT_REQUESTED]: { data: AnalyticsJobData };
   [EVENTS.INVOICE_PDF_GENERATE]: { data: InvoicePdfGenerateEventData };
   [EVENTS.EMAIL_SEND]: { data: EmailSendEventData };
   [EVENTS.TBX_VERIFICATION_REQUESTED]: { data: TbxJobData };
+  [EVENTS.TBX_BALANCE_SYNC_REQUESTED]: { data: TbxBalanceSyncJobData };
+  [EVENTS.TBX_STATEMENT_SYNC_REQUESTED]: { data: TbxStatementSyncJobData };
+  [EVENTS.TBX_BENEFICIARY_SYNC_REQUESTED]: { data: TbxBeneficiarySyncJobData };
+  [EVENTS.TBX_PAYMENT_SYNC_REQUESTED]: { data: TbxPaymentSyncJobData };
 };

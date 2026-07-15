@@ -12,19 +12,26 @@ import {
   Receipt,
   BrainCircuit,
   ShieldAlert,
-  KeyRound,
   Plug2,
-  Upload,
   Download,
   Settings2,
   ChevronRight,
   History,
+  Link2,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// TBX-specific nav: Beneficiaries live on the Vendor page (Vendor is the
+// source of truth — see prisma/schema.prisma Vendor.tbxBeneficiaryId);
+// Payments is the Maker-Checker queue (Phase 2C/2D). Setu's Consent
+// Manager and the manual CSV/PDF import page were removed — statements
+// now come exclusively from TBX.
 const bankingNav = [
   { label: "Dashboard",         href: "/banking/dashboard",     icon: LayoutDashboard },
   { label: "Bank Accounts",     href: "/banking/accounts",      icon: Building2 },
+  { label: "Beneficiaries",     href: "/erp/vendors",           icon: Link2 },
+  { label: "Payments",          href: "/banking/payments",      icon: CreditCard },
   { label: "Transactions",      href: "/banking/transactions",  icon: ArrowLeftRight },
   { label: "Reconciliation",    href: "/banking/reconciliation",icon: GitMerge },
   { label: "Rules Engine",      href: "/banking/rules",         icon: Wand2 },
@@ -32,10 +39,8 @@ const bankingNav = [
   { label: "GST Match Center",  href: "/banking/gst-match",     icon: Receipt },
   { label: "AI Insights",       href: "/banking/ai-insights",   icon: BrainCircuit, badge: "AI" },
   { label: "Risk Center",       href: "/banking/risk-center",   icon: ShieldAlert },
-  { label: "Consent Manager",   href: "/banking/consent",       icon: KeyRound },
   { label: "Sync History",      href: "/banking/sync-history",  icon: History },
   { label: "Bank Connections",  href: "/banking/connections",   icon: Plug2 },
-  { label: "Import Statements", href: "/banking/import",        icon: Upload },
   { label: "Export Center",     href: "/banking/export",        icon: Download },
   { label: "Settings",          href: "/banking/settings",      icon: Settings2 },
 ];

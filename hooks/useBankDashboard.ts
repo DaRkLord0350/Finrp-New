@@ -7,6 +7,8 @@ export interface BankDashboardData {
   kpis: {
     totalBalance: number;
     availableBalance: number;
+    ledgerBalance: number;
+    lastUpdated: string | null;
     monthlyInflow: number;
     monthlyOutflow: number;
     netCashFlow: number;
@@ -22,7 +24,6 @@ export interface BankDashboardData {
     availableBalance: number;
     lastSyncAt: string | null;
     healthScore: number | null;
-    consentStatus: string | null;
   }>;
   insights: Array<{
     id: string;
@@ -36,6 +37,31 @@ export interface BankDashboardData {
     totalTxns: number;
     matchedTxns: number;
     unmatchedTxns: number;
+  };
+  beneficiaries: {
+    active: number;
+    pending: number;
+    failed: number;
+    inactive: number;
+    total: number;
+  };
+  payments: {
+    checkerPending: number;
+    inFlight: number;
+    succeeded: number;
+    failed: number;
+    settledThisMonth: number;
+    settledCountThisMonth: number;
+    scheduled: number;
+    bulk: number;
+    recent: Array<{
+      id: string;
+      amount: number;
+      paymentType: string;
+      status: string;
+      createdAt: string;
+      purchase: { purchaseNumber: string; vendorName: string | null; vendor: { name: string } | null };
+    }>;
   };
 }
 
@@ -63,6 +89,8 @@ export function useBankDashboard(period: string = "this_month") {
     accounts: data?.accounts ?? [],
     insights: data?.insights ?? [],
     reconProgress: data?.reconProgress ?? null,
+    beneficiaries: data?.beneficiaries ?? null,
+    payments: data?.payments ?? null,
     isLoading,
     error,
     refresh,

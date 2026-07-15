@@ -6,6 +6,7 @@
 // ============================================================
 
 import { format } from "date-fns";
+import Link from "next/link";
 import ErpModulePage, { inr, type ErpStat } from "@/components/erp/ErpModulePage";
 
 interface PurchaseRow {
@@ -60,12 +61,12 @@ export default function PurchasesPage() {
         {
           header: "Purchase",
           render: (r) => (
-            <div>
+            <Link href={`/erp/purchases/${r.id}`} style={{ textDecoration: "none" }}>
               <p style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-primary)" }}>{r.purchaseNumber}</p>
               <p style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
                 {format(new Date(r.purchaseDate), "dd MMM yyyy")}
               </p>
-            </div>
+            </Link>
           ),
         },
         {

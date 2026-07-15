@@ -7,7 +7,6 @@
 import { csvImport } from "./functions/import";
 import { integrationSync } from "./functions/sync";
 import { webhookZoho } from "./functions/webhook";
-import { bankSync, bankImport } from "./functions/bank";
 import { taxJob } from "./functions/tax";
 import { bulkAccountUpdate } from "./functions/accounting";
 import { analyticsSnapshot } from "./functions/analytics";
@@ -15,7 +14,17 @@ import { emailSend } from "./functions/email";
 import { invoicePdf } from "./functions/invoices";
 import { tbxVerification } from "./functions/tbx";
 import {
-  bankAutoSync,
+  tbxBalanceSync,
+  tbxBalanceAutoSync,
+  tbxStatementSync,
+  tbxStatementAutoSync,
+  tbxBeneficiarySync,
+  tbxBeneficiaryVerificationPoll,
+  tbxBeneficiaryRetryFailedSyncs,
+  tbxPaymentSync,
+  tbxPaymentAutoPoll,
+} from "./functions/tbx-banking";
+import {
   recurringInvoiceScan,
   integrationScheduledSync,
   complianceReminders,
@@ -30,19 +39,25 @@ export const functions = [
   csvImport,
   integrationSync,
   webhookZoho,
-  bankSync,
-  bankImport,
   taxJob,
   bulkAccountUpdate,
   analyticsSnapshot,
   emailSend,
   invoicePdf,
   tbxVerification,
+  tbxBalanceSync,
+  tbxStatementSync,
+  tbxBeneficiarySync,
+  tbxPaymentSync,
   // Scheduled (cron)
-  bankAutoSync,
   recurringInvoiceScan,
   integrationScheduledSync,
   complianceReminders,
   analyticsNightly,
   stuckJobChecker,
+  tbxBalanceAutoSync,
+  tbxStatementAutoSync,
+  tbxBeneficiaryVerificationPoll,
+  tbxBeneficiaryRetryFailedSyncs,
+  tbxPaymentAutoPoll,
 ];

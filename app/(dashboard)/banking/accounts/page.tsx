@@ -4,10 +4,9 @@ import { useState } from "react";
 import {
   Plus, Search, RefreshCw, MoreHorizontal, Eye, Download, Plug2,
   Wifi, WifiOff, Clock, TrendingUp, TrendingDown, CheckCircle2,
-  XCircle, AlertTriangle, Building2, KeyRound, Loader2, X,
+  XCircle, AlertTriangle, Building2, Loader2, X,
 } from "lucide-react";
 import { useBankAccounts, type BankAccount } from "@/hooks/useBankAccounts";
-import { useBankSync } from "@/hooks/useBankSync";
 
 function formatINR(n: number) {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;
@@ -25,18 +24,6 @@ function formatTimeAgo(dateStr: string | null) {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function ConsentBadge({ status }: { status: string | null }) {
-  const styles: Record<string, { bg: string; text: string; label: string }> = {
-    ACTIVE:   { bg: "rgba(16,185,129,0.12)",  text: "#10b981", label: "Active" },
-    EXPIRED:  { bg: "rgba(239,68,68,0.12)",   text: "#ef4444", label: "Expired" },
-    EXPIRING: { bg: "rgba(245,158,11,0.12)",  text: "#f59e0b", label: "Expiring" },
-    REVOKED:  { bg: "rgba(239,68,68,0.12)",   text: "#ef4444", label: "Revoked" },
-    NONE:     { bg: "rgba(100,116,139,0.12)", text: "#64748b", label: "None" },
-  };
-  const s = styles[status ?? "NONE"] ?? styles.NONE;
-  return <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: s.bg, color: s.text }}>{s.label}</span>;
 }
 
 function SyncBadge({ status }: { status: string | null }) {
@@ -63,12 +50,10 @@ function HealthBar({ score }: { score: number | null }) {
   );
 }
 
-function AddAccountModal({ onClose, onConnectSetu, onManualAdd }: {
+function AddAccountModal({ onClose, onManualAdd }: {
   onClose: () => void;
-  onConnectSetu: () => void;
   onManualAdd: (data: { accountName: string; bankName: string; accountNumber: string; ifscCode: string; accountType: string; openingBalance: number }) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<"choose" | "manual">("choose");
   const [form, setForm] = useState({ accountName: "", bankName: "", accountNumber: "", ifscCode: "", accountType: "CURRENT", openingBalance: "" });
   const [saving, setSaving] = useState(false);
 
@@ -88,38 +73,11 @@ function AddAccountModal({ onClose, onConnectSetu, onManualAdd }: {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, width: 440, maxWidth: "calc(100vw - 32px)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>
-            {mode === "choose" ? "Add Bank Account" : "Add Manually"}
-          </h3>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>Add Bank Account</h3>
           <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><X size={16} color="var(--text-muted)" /></button>
         </div>
 
-        {mode === "choose" ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <button onClick={onConnectSetu} style={{ display: "flex", alignItems: "center", gap: 14, padding: 16, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-hover)", cursor: "pointer", textAlign: "left" }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = "#6366f1")}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(99,102,241,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Plug2 size={20} color="#6366f1" />
-              </div>
-              <div>
-                {/* <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Connect via Setu AA</p> */}
-                <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>RBI-regulated Account Aggregator — fastest, most secure</p>
-              </div>
-            </button>
-            <button onClick={() => setMode("manual")} style={{ display: "flex", alignItems: "center", gap: 14, padding: 16, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-hover)", cursor: "pointer", textAlign: "left" }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = "#6366f1")}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(16,185,129,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Building2 size={20} color="#10b981" />
-              </div>
-              <div>
-                <p style={{ fontSize: 13, fontWeight: 600, color: " " }}>Add Manually</p>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>Enter account details manually, then import statements</p>
-              </div>
-            </button>
-          </div>
-        ) : (
+        {
           <form onSubmit={handleManualSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {[
               { label: "Account Name", key: "accountName", placeholder: "e.g. Primary Current Account" },
@@ -148,13 +106,13 @@ function AddAccountModal({ onClose, onConnectSetu, onManualAdd }: {
               <input type="number" value={form.openingBalance} onChange={e => setForm(f => ({ ...f, openingBalance: e.target.value }))} placeholder="0" style={{ width: "100%", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", outline: "none", boxSizing: "border-box" }} />
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <button type="button" onClick={() => setMode("choose")} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 13, color: "var(--text-secondary)", cursor: "pointer" }}>Back</button>
+              <button type="button" onClick={onClose} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 13, color: "var(--text-secondary)", cursor: "pointer" }}>Cancel</button>
               <button type="submit" disabled={saving} style={{ flex: 2, padding: "9px 0", borderRadius: 8, border: "none", background: "#6366f1", fontSize: 13, fontWeight: 600, color: "white", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1 }}>
                 {saving ? "Saving…" : "Add Account"}
               </button>
             </div>
           </form>
-        )}
+        }
       </div>
     </div>
   );
@@ -168,7 +126,6 @@ export default function BankAccountsPage() {
   const [syncingId, setSyncingId] = useState<string | null>(null);
 
   const { accounts, isLoading, totalBalance, refresh, triggerSync, deleteAccount } = useBankAccounts();
-  const { connectSetu } = useBankSync();
 
   const activeAccounts = accounts.filter(a => a.isActive);
 
@@ -177,7 +134,6 @@ export default function BankAccountsPage() {
     if (q && !a.bankName.toLowerCase().includes(q) && !a.accountName.toLowerCase().includes(q)) return false;
     if (filter === "active" && !a.isActive) return false;
     if (filter === "inactive" && a.isActive) return false;
-    if (filter === "expiring" && a.consentStatus !== "EXPIRING" && a.consentStatus !== "EXPIRED") return false;
     return true;
   });
 
@@ -215,7 +171,6 @@ export default function BankAccountsPage() {
         {showAddModal && (
           <AddAccountModal
             onClose={() => setShowAddModal(false)}
-            onConnectSetu={() => { setShowAddModal(false); connectSetu(); }}
             onManualAdd={handleManualAdd}
           />
         )}
@@ -250,7 +205,7 @@ export default function BankAccountsPage() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search accounts…" style={{ border: "none", outline: "none", fontSize: 13, background: "transparent", color: "var(--text-primary)", flex: 1 }} />
         </div>
         <div style={{ display: "flex", gap: 4 }}>
-          {[["all", "All"], ["active", "Active"], ["inactive", "Inactive"], ["expiring", "Consent Issues"]].map(([f, l]) => (
+          {[["all", "All"], ["active", "Active"], ["inactive", "Inactive"]].map(([f, l]) => (
             <button key={f} onClick={() => setFilter(f)} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 6, border: "1px solid var(--border)", background: filter === f ? "#6366f1" : "var(--bg-card)", color: filter === f ? "white" : "var(--text-secondary)", cursor: "pointer", fontWeight: filter === f ? 600 : 400 }}>{l}</button>
           ))}
         </div>
@@ -282,7 +237,7 @@ export default function BankAccountsPage() {
                   <Plus size={20} color="#6366f1" />
                 </div>
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>Add Bank Account</p>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>Connect via AA or add manually</p>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>Add manually, then sync via TBX</p>
               </button>
             </div>
           )}
@@ -293,7 +248,7 @@ export default function BankAccountsPage() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "var(--bg-hover)", borderBottom: "1px solid var(--border)" }}>
-                    {["Bank / Account", "Type", "Balance", "Transactions", "Last Sync", "Health", "Consent", "Actions"].map(h => (
+                    {["Bank / Account", "Type", "Balance", "Transactions", "Last Sync", "Health", "Actions"].map(h => (
                       <th key={h} style={{ padding: "10px 14px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -321,7 +276,6 @@ export default function BankAccountsPage() {
                         <SyncBadge status={a.lastSyncStatus} />
                       </td>
                       <td style={{ padding: "12px 14px" }}><HealthBar score={a.healthScore} /></td>
-                      <td style={{ padding: "12px 14px" }}><ConsentBadge status={a.consentStatus} /></td>
                       <td style={{ padding: "12px 14px" }}>
                         <div style={{ display: "flex", gap: 4 }}>
                           <a href={`/banking/transactions?bankAccountId=${a.id}`} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)", cursor: "pointer", textDecoration: "none" }}>View</a>
@@ -342,7 +296,6 @@ export default function BankAccountsPage() {
       {showAddModal && (
         <AddAccountModal
           onClose={() => setShowAddModal(false)}
-          onConnectSetu={() => { setShowAddModal(false); connectSetu(); }}
           onManualAdd={handleManualAdd}
         />
       )}
@@ -383,7 +336,6 @@ function AccountCard({ account, bankCode, syncingId, onSync, onDelete }: {
               {[
                 [<Eye size={12} key="e" />, "View Transactions", () => { setMenuOpen(false); window.location.href = `/banking/transactions?bankAccountId=${account.id}`; }],
                 [<RefreshCw size={12} key="r" />, "Sync Now", () => { setMenuOpen(false); onSync(account.id); }],
-                [<KeyRound size={12} key="k" />, "Manage Consent", () => { setMenuOpen(false); window.location.href = "/banking/consent"; }],
                 [<Download size={12} key="d" />, "Export", () => { setMenuOpen(false); window.location.href = "/banking/export"; }],
                 [<Plug2 size={12} key="p" />, "Disconnect", () => { setMenuOpen(false); if (confirm("Remove this account?")) onDelete(account.id); }],
               ].map(([icon, label, onClick]) => (
@@ -426,7 +378,6 @@ function AccountCard({ account, bankCode, syncingId, onSync, onDelete }: {
       {/* Footer */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 10, borderTop: "1px solid var(--border)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <ConsentBadge status={account.consentStatus} />
           <span style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 3 }}>
             <Clock size={9} /> {formatTimeAgo(account.lastSyncAt)}
           </span>

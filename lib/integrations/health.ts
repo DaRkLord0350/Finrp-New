@@ -6,10 +6,13 @@
 // shape for the /integrations/health page. Each provider is sourced
 // from whatever model actually backs it today:
 //   • Zoho CRM/Books/Inventory → Integration rows (OAuth connectors)
-//   • Setu / Plaid             → BankConnection + linked BankAccount rows
 //   • Resend                   → emailConfigStatus() (API-key based, no OAuth)
 //   • Clerk                    → env-var presence (platform auth layer)
-//   • Supabase Storage, Dwolla → not wired; static rows, no manage action
+//   • Supabase Storage         → not wired; static row, no manage action
+//
+// Banking (TBX) has no row yet — it comes back once BankConnection.provider
+// gains a TBX value and the Balance API integration (Phase 2A) lands. Setu
+// and Plaid were removed along with their rows here.
 // ============================================================
 
 import { prisma } from "@/lib/prisma";
@@ -60,61 +63,6 @@ async function getZohoRows(organizationId: string): Promise<IntegrationHealthRow
   });
 }
 
-async function getBankProviderRow(
-  organizationId: string,
-  opts: { key: string; name: string; provider: "SETU_AA" | "MANUAL"; requirePlaid?: boolean; manageHref: string }
-): Promise<IntegrationHealthRow> {
-  const connection = await prisma.bankConnection.findFirst({
-    where: {
-      organizationId,
-      provider: opts.provider,
-      ...(opts.requirePlaid ? { metadata: { path: ["plaidProvider"], equals: true } } : {}),
-    },
-  });
-
-  if (!connection) {
-    return {
-      key: opts.key,
-      name: opts.name,
-      category: "Banking",
-      connected: false,
-      status: "not_configured",
-      lastSyncAt: null,
-      errorDetails: null,
-      manageHref: opts.manageHref,
-    };
-  }
-
-  const accounts = await prisma.bankAccount.findMany({
-    where: { connectionId: connection.id },
-    select: { lastSyncAt: true, lastSyncError: true, lastSyncStatus: true },
-  });
-
-  const lastSyncAt = accounts.reduce<Date | null>((latest, acc) => {
-    if (!acc.lastSyncAt) return latest;
-    if (!latest || acc.lastSyncAt > latest) return acc.lastSyncAt;
-    return latest;
-  }, connection.lastSyncAt ?? null);
-
-  const errorDetails = accounts.find((a) => a.lastSyncStatus === "FAILED")?.lastSyncError ?? null;
-
-  return {
-    key: opts.key,
-    name: opts.name,
-    category: "Banking",
-    connected: connection.status === "CONNECTED",
-    status:
-      connection.status === "ERROR" || errorDetails
-        ? "error"
-        : connection.status === "CONNECTED"
-          ? "healthy"
-          : "not_configured",
-    lastSyncAt,
-    errorDetails,
-    manageHref: opts.manageHref,
-  };
-}
-
 function getResendRow(): IntegrationHealthRow {
   const cfg = emailConfigStatus();
   return {
@@ -156,36 +104,7 @@ function getSupabaseStorageRow(): IntegrationHealthRow {
   };
 }
 
-function getDwollaRow(): IntegrationHealthRow {
-  return {
-    key: "dwolla",
-    name: "Dwolla",
-    category: "Payments",
-    connected: false,
-    status: "unavailable",
-    lastSyncAt: null,
-    errorDetails: "Not yet available.",
-    manageHref: null,
-  };
-}
-
 export async function getIntegrationHealthSnapshot(organizationId: string): Promise<IntegrationHealthRow[]> {
-  const [zoho, setu, plaid] = await Promise.all([
-    getZohoRows(organizationId),
-    getBankProviderRow(organizationId, {
-      key: "setu",
-      name: "Setu (Account Aggregator)",
-      provider: "SETU_AA",
-      manageHref: "/banking/consent",
-    }),
-    getBankProviderRow(organizationId, {
-      key: "plaid",
-      name: "Plaid",
-      provider: "MANUAL",
-      requirePlaid: true,
-      manageHref: "/banking/connections",
-    }),
-  ]);
-
-  return [...zoho, setu, plaid, getResendRow(), getClerkRow(), getSupabaseStorageRow(), getDwollaRow()];
+  const zoho = await getZohoRows(organizationId);
+  return [...zoho, getResendRow(), getClerkRow(), getSupabaseStorageRow()];
 }

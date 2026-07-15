@@ -4,9 +4,9 @@
 // provider calls, webhook processing, and sync runs are greppable
 // by scope in production log aggregation.
 //
-//   const log = createBankingLogger("setu.provider");
-//   log.info("consent created", { consentId, organizationId });
-//   → [banking:setu.provider] consent created {"consentId":...}
+//   const log = createBankingLogger("ledger-integration");
+//   log.info("journal posted", { bankAccountId, organizationId });
+//   → [banking:ledger-integration] journal posted {"bankAccountId":...}
 // ============================================================
 
 type LogContext = Record<string, unknown>;

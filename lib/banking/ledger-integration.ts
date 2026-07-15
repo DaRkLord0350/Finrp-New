@@ -12,9 +12,12 @@
 //    failed ledger write cannot be mistaken for success. Pass a
 //    transaction client to make the posting atomic with the source rows.
 //  - All money math uses Prisma.Decimal (never JS floating point).
+//  - Each bank account gets its own ledger Account (`BA-<id suffix>`),
+//    never a shared hardcoded code — otherwise multiple bank accounts
+//    would collapse onto the same ledger cash account.
 // ============================================================
 
-import { Prisma, type AccountType } from "@prisma/client";
+import { Prisma, type AccountType, type BankTxnType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { recomputeAccountBalances } from "@/lib/accounting/balances";
 
@@ -48,24 +51,74 @@ async function resolveAccount(
   return account.id;
 }
 
+/** Per-account-safe ledger code — never a hardcoded shared code (see file header). */
+function bankAccountLedgerCode(bankAccountId: string): string {
+  return `BA-${bankAccountId.slice(-8)}`;
+}
+
 // ---------------------------------------------------------------------------
-// Idempotency guard — true when a posting with this reference already exists
+// Idempotency guard — returns the existing journal id when a posting with
+// this reference already exists, so callers can still link back to it.
 // ---------------------------------------------------------------------------
-async function alreadyPosted(
+async function findExistingPosting(
   client: LedgerClient,
   organizationId: string,
   reference: string
-): Promise<boolean> {
+): Promise<string | null> {
   const existing = await client.journalEntry.findFirst({
     where: { organizationId, reference, deletedAt: null },
     select: { id: true },
   });
-  return existing !== null;
+  return existing?.id ?? null;
+}
+
+export interface PostingOutcome {
+  journalId: string;
+  alreadyPosted: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Map a bank transaction's category → chart of accounts, by direction.
+// Covers the brief's examples: Salary→Salary Expense, GST→GST Ledger,
+// Vendor→Accounts Payable, Customer→Accounts Receivable, Interest→Interest
+// Income, Charges→Bank Charges.
+// ---------------------------------------------------------------------------
+interface LedgerAccountInfo {
+  code: string;
+  name: string;
+  type: AccountType;
+}
+
+const CREDIT_ACCOUNT_BY_TXN_TYPE: Partial<Record<BankTxnType, LedgerAccountInfo>> = {
+  CUSTOMER_RECEIPT: { code: "1200", name: "Accounts Receivable", type: "ASSET" },
+  INTEREST: { code: "4900", name: "Interest Income", type: "INCOME" },
+  DIVIDEND: { code: "4910", name: "Dividend Income", type: "INCOME" },
+  REFUND: { code: "1200", name: "Accounts Receivable", type: "ASSET" },
+  REVERSAL: { code: "1200", name: "Accounts Receivable", type: "ASSET" },
+};
+const CREDIT_FALLBACK: LedgerAccountInfo = { code: "4990", name: "Other Income", type: "INCOME" };
+
+const DEBIT_ACCOUNT_BY_TXN_TYPE: Partial<Record<BankTxnType, LedgerAccountInfo>> = {
+  SALARY: { code: "5100", name: "Salaries & Wages", type: "EXPENSE" },
+  GST_PAYMENT: { code: "2300", name: "GST Payable", type: "LIABILITY" },
+  TDS_PAYMENT: { code: "2310", name: "TDS Payable", type: "LIABILITY" },
+  VENDOR_PAYMENT: { code: "2000", name: "Accounts Payable", type: "LIABILITY" },
+  BANK_CHARGE: { code: "5900", name: "Bank Charges", type: "EXPENSE" },
+  LOAN_EMI: { code: "2500", name: "Loan Repayment", type: "LIABILITY" },
+};
+const DEBIT_FALLBACK: LedgerAccountInfo = { code: "5000", name: "General Expenses", type: "EXPENSE" };
+
+function resolveCreditAccount(txnType?: BankTxnType | null): LedgerAccountInfo {
+  return (txnType && CREDIT_ACCOUNT_BY_TXN_TYPE[txnType]) ?? CREDIT_FALLBACK;
+}
+
+function resolveDebitAccount(txnType?: BankTxnType | null): LedgerAccountInfo {
+  return (txnType && DEBIT_ACCOUNT_BY_TXN_TYPE[txnType]) ?? DEBIT_FALLBACK;
 }
 
 // ---------------------------------------------------------------------------
 // Create journal entry for a bank credit (money received)
-// Dr: Bank Account   Cr: Accounts Receivable
+// Dr: Bank Account   Cr: category-mapped account (default Accounts Receivable)
 // ---------------------------------------------------------------------------
 export async function createCreditJournalEntry(
   organizationId: string,
@@ -73,8 +126,8 @@ export async function createCreditJournalEntry(
   amount: Prisma.Decimal.Value,
   narration: string,
   transactionDate: Date,
-  opts: { reference?: string; entityType?: string; entityId?: string; client?: LedgerClient } = {}
-): Promise<void> {
+  opts: { txnType?: BankTxnType | null; reference?: string; entityType?: string; entityId?: string; client?: LedgerClient } = {}
+): Promise<PostingOutcome> {
   const client = opts.client ?? prisma;
   const value = new Prisma.Decimal(amount);
 
@@ -88,14 +141,16 @@ export async function createCreditJournalEntry(
     opts.reference ??
     (opts.entityId ? `BANK-CR-${opts.entityType ?? "TXN"}-${opts.entityId}` : `BANK-CR-${bankAccountId}-${transactionDate.getTime()}`);
 
-  if (await alreadyPosted(client, organizationId, reference)) return;
+  const existingId = await findExistingPosting(client, organizationId, reference);
+  if (existingId) return { journalId: existingId, alreadyPosted: true };
 
-  const [bankAccId, arAccId] = await Promise.all([
-    resolveAccount(client, organizationId, "1010", bankAccount.accountName, "ASSET" as AccountType),
-    resolveAccount(client, organizationId, "1200", "Accounts Receivable", "ASSET" as AccountType),
+  const creditInfo = resolveCreditAccount(opts.txnType);
+  const [bankAccId, creditAccId] = await Promise.all([
+    resolveAccount(client, organizationId, bankAccountLedgerCode(bankAccountId), bankAccount.accountName, "ASSET" as AccountType),
+    resolveAccount(client, organizationId, creditInfo.code, creditInfo.name, creditInfo.type),
   ]);
 
-  await client.journalEntry.create({
+  const je = await client.journalEntry.create({
     data: {
       organizationId,
       status: "POSTED",
@@ -111,18 +166,20 @@ export async function createCreditJournalEntry(
       lines: {
         create: [
           { accountId: bankAccId, type: "DEBIT", amount: value, description: narration.slice(0, 255) },
-          { accountId: arAccId, type: "CREDIT", amount: value, description: narration.slice(0, 255) },
+          { accountId: creditAccId, type: "CREDIT", amount: value, description: narration.slice(0, 255) },
         ],
       },
     },
+    select: { id: true },
   });
 
-  await recomputeAccountBalances(client, organizationId, [bankAccId, arAccId]);
+  await recomputeAccountBalances(client, organizationId, [bankAccId, creditAccId]);
+  return { journalId: je.id, alreadyPosted: false };
 }
 
 // ---------------------------------------------------------------------------
 // Create journal entry for a bank debit (money paid)
-// Dr: Expense Account   Cr: Bank Account
+// Dr: category-mapped account (default General Expenses)   Cr: Bank Account
 // ---------------------------------------------------------------------------
 export async function createDebitJournalEntry(
   organizationId: string,
@@ -130,8 +187,8 @@ export async function createDebitJournalEntry(
   amount: Prisma.Decimal.Value,
   narration: string,
   transactionDate: Date,
-  opts: { category?: string; reference?: string; entityType?: string; entityId?: string; client?: LedgerClient } = {}
-): Promise<void> {
+  opts: { txnType?: BankTxnType | null; reference?: string; entityType?: string; entityId?: string; client?: LedgerClient } = {}
+): Promise<PostingOutcome> {
   const client = opts.client ?? prisma;
   const value = new Prisma.Decimal(amount);
 
@@ -145,16 +202,16 @@ export async function createDebitJournalEntry(
     opts.reference ??
     (opts.entityId ? `BANK-DR-${opts.entityType ?? "TXN"}-${opts.entityId}` : `BANK-DR-${bankAccountId}-${transactionDate.getTime()}`);
 
-  if (await alreadyPosted(client, organizationId, reference)) return;
+  const existingId = await findExistingPosting(client, organizationId, reference);
+  if (existingId) return { journalId: existingId, alreadyPosted: true };
 
-  const expenseInfo = resolveExpenseAccount(opts.category);
-
-  const [expAccId, bankAccId] = await Promise.all([
-    resolveAccount(client, organizationId, expenseInfo.code, expenseInfo.name, expenseInfo.type as AccountType),
-    resolveAccount(client, organizationId, "1010", bankAccount.accountName, "ASSET" as AccountType),
+  const debitInfo = resolveDebitAccount(opts.txnType);
+  const [debitAccId, bankAccId] = await Promise.all([
+    resolveAccount(client, organizationId, debitInfo.code, debitInfo.name, debitInfo.type),
+    resolveAccount(client, organizationId, bankAccountLedgerCode(bankAccountId), bankAccount.accountName, "ASSET" as AccountType),
   ]);
 
-  await client.journalEntry.create({
+  const je = await client.journalEntry.create({
     data: {
       organizationId,
       status: "POSTED",
@@ -169,14 +226,16 @@ export async function createDebitJournalEntry(
       totalCredit: value,
       lines: {
         create: [
-          { accountId: expAccId, type: "DEBIT", amount: value, description: narration.slice(0, 255) },
+          { accountId: debitAccId, type: "DEBIT", amount: value, description: narration.slice(0, 255) },
           { accountId: bankAccId, type: "CREDIT", amount: value, description: narration.slice(0, 255) },
         ],
       },
     },
+    select: { id: true },
   });
 
-  await recomputeAccountBalances(client, organizationId, [expAccId, bankAccId]);
+  await recomputeAccountBalances(client, organizationId, [debitAccId, bankAccId]);
+  return { journalId: je.id, alreadyPosted: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -204,15 +263,11 @@ export async function createTransferJournalEntry(
 
   // Stable, caller-supplied reference makes the posting idempotent.
   const reference = opts.reference ?? `BANK-TRF-${fromAccountId}-${toAccountId}-${transferDate.getTime()}`;
-  if (await alreadyPosted(client, organizationId, reference)) return;
-
-  // Use unique codes to avoid collision between bank accounts
-  const fromCode = `BA-${fromAccountId.slice(-8)}`;
-  const toCode = `BA-${toAccountId.slice(-8)}`;
+  if (await findExistingPosting(client, organizationId, reference)) return;
 
   const [fromAccId, toAccId] = await Promise.all([
-    resolveAccount(client, organizationId, fromCode, fromAccount.accountName, "ASSET" as AccountType),
-    resolveAccount(client, organizationId, toCode, toAccount.accountName, "ASSET" as AccountType),
+    resolveAccount(client, organizationId, bankAccountLedgerCode(fromAccountId), fromAccount.accountName, "ASSET" as AccountType),
+    resolveAccount(client, organizationId, bankAccountLedgerCode(toAccountId), toAccount.accountName, "ASSET" as AccountType),
   ]);
 
   await client.journalEntry.create({
@@ -269,25 +324,4 @@ export async function updateAccountBalance(
     where: { id: bankAccountId },
     data: { currentBalance: computed, availableBalance: computed },
   });
-}
-
-// ---------------------------------------------------------------------------
-// Map category → chart of accounts
-// ---------------------------------------------------------------------------
-function resolveExpenseAccount(category?: string | null): {
-  code: string;
-  name: string;
-  type: string;
-} {
-  const map: Record<string, { code: string; name: string; type: string }> = {
-    "Salary":          { code: "5100", name: "Salaries & Wages",    type: "EXPENSE" },
-    "Vendor Payment":  { code: "2000", name: "Accounts Payable",    type: "LIABILITY" },
-    "GST Payment":     { code: "2300", name: "GST Payable",          type: "LIABILITY" },
-    "TDS Payment":     { code: "2310", name: "TDS Payable",          type: "LIABILITY" },
-    "Loan EMI":        { code: "2500", name: "Loan Repayment",       type: "LIABILITY" },
-    "Bank Charges":    { code: "5900", name: "Bank Charges",         type: "EXPENSE" },
-    "Refund":          { code: "1200", name: "Accounts Receivable",  type: "ASSET" },
-    "Internal Transfer": { code: "1010", name: "Bank Transfer",      type: "ASSET" },
-  };
-  return map[category ?? ""] ?? { code: "5000", name: "General Expenses", type: "EXPENSE" };
 }

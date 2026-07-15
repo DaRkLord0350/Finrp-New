@@ -24,6 +24,7 @@ import {
   Sparkles,
   FilePlus2,
   Lock,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SidebarNavGroup, type NavGroupConfig } from "@/components/SidebarNavGroup";
@@ -75,6 +76,7 @@ const navGroups: NavGroupConfig[] = [
     items: [
       { label: "Dashboard",      href: "/banking/dashboard",      icon: LayoutDashboard },
       { label: "Bank Accounts",  href: "/banking/accounts",       icon: Building2 },
+      { label: "Payments",       href: "/banking/payments",       icon: CreditCard },
       { label: "Transactions",   href: "/banking/transactions",   icon: Wallet },
       { label: "Reconciliation", href: "/banking/reconciliation", icon: Scale },
       { label: "Cash Flow",      href: "/banking/cash-flow",      icon: BarChart3 },

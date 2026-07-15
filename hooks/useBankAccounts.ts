@@ -19,9 +19,7 @@ export interface BankAccount {
   lastSyncAt: string | null;
   lastSyncStatus: string | null;
   autoSyncEnabled: boolean;
-  consentStatus: string | null;
   healthScore: number | null;
-  consents?: Array<{ id: string; status: string; endDate: string | null; provider: string; frequency: string | null; fiTypes: string[] }>;
   connection?: { provider: string; status: string } | null;
   _count?: { bankTransactions: number };
 }

@@ -93,41 +93,6 @@ export const manualMatchSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
-export const setuConsentSchema = z.object({
-  bankAccountId: z.string().cuid().optional(),
-  redirectUrl: z.string().url().optional(),
-  // Customer AA handle ("9999999999@onemoney") or bare mobile number.
-  // Optional — Setu's hosted consent page collects it when omitted.
-  vua: z.string().regex(/^\d{10}(@[\w-]+)?$/, "Expected 10-digit mobile, optionally @handle").optional(),
-  phoneNumber: z.string().regex(/^\d{10}$/, "Expected 10-digit mobile number").optional(),
-  dateRange: z.object({
-    from: z.string(),
-    to: z.string(),
-  }).optional(),
-  fiTypes: z.array(z.string()).optional(),
-  consentTypes: z.array(z.string()).optional(),
-});
-
-export const plaidExchangeSchema = z.object({
-  publicToken: z.string().min(1),
-  bankAccountId: z.string().cuid().optional(),
-  institutionId: z.string().optional(),
-  institutionName: z.string().optional(),
-  accountIds: z.array(z.string()).optional(),
-});
-
-// The statement file is uploaded as multipart/form-data and stored server-side
-// (see /api/banking/import), so there is no client-supplied fileUrl. fileType /
-// fileName / fileSize are derived from the uploaded File on the server; only the
-// optional bankAccountId + columnMapping arrive as form fields.
-export const importStatementSchema = z.object({
-  bankAccountId: z.string().cuid().optional(),
-  fileType: z.enum(["CSV", "EXCEL", "PDF", "OFX", "MT940"]),
-  fileName: z.string().min(1),
-  fileSize: z.number().int().positive().optional(),
-  columnMapping: z.record(z.string(), z.string()).optional(),
-});
-
 export const syncAccountSchema = z.object({
   bankAccountId: z.string().cuid(),
   force: z.boolean().default(false),

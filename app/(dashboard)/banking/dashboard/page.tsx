@@ -8,7 +8,8 @@ import {
 import {
   Wallet, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight,
   AlertTriangle, CheckCircle2, Clock, RefreshCw, BrainCircuit,
-  Activity, Building2, Plus, Loader2,
+  Activity, Building2, Plus, Loader2, Landmark, Layers,
+  Link2, CreditCard, CalendarClock, Layers3,
 } from "lucide-react";
 import { useBankDashboard } from "@/hooks/useBankDashboard";
 import { useBankSync } from "@/hooks/useBankSync";
@@ -98,8 +99,8 @@ export default function BankingDashboard() {
   const [period, setPeriod] = useState("this_month");
   const [syncingAll, setSyncingAll] = useState(false);
 
-  const { kpis, accounts, insights, reconProgress, isLoading, refresh } = useBankDashboard(period);
-  const { syncAll, connectSetu } = useBankSync();
+  const { kpis, accounts, insights, reconProgress, beneficiaries, payments, isLoading, refresh } = useBankDashboard(period);
+  const { syncAll } = useBankSync();
 
   const { data: cfData, isLoading: cfLoading } = useQuery(
     ["banking", "cf-trend", "MONTHLY", "6"],
@@ -144,15 +145,12 @@ export default function BankingDashboard() {
         <div style={{ textAlign: "center" }}>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Connect your first bank account</h2>
           <p style={{ fontSize: 14, color: "var(--text-muted)", maxWidth: 400, lineHeight: 1.6 }}>
-            Link your bank via Account Aggregator to unlock real-time cash flow, reconciliation, and AI-powered insights.
+            Add a bank account to unlock real-time cash flow, reconciliation, and AI-powered insights.
           </p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={() => connectSetu()} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, padding: "10px 20px", borderRadius: 8, border: "none", background: "#6366f1", color: "white", cursor: "pointer" }}>
-            <Plus size={14} /> Connect via Setu AA
-          </button>
-          <a href="/banking/accounts" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, padding: "10px 20px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", textDecoration: "none" }}>
-            Manage Accounts
+          <a href="/banking/accounts" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, padding: "10px 20px", borderRadius: 8, border: "none", background: "#6366f1", color: "white", textDecoration: "none" }}>
+            <Plus size={14} /> Manage Accounts
           </a>
         </div>
       </div>
@@ -166,8 +164,6 @@ export default function BankingDashboard() {
     else acc.push({ name: a.bankName, balance: a.currentBalance, color: BANK_COLORS[i % BANK_COLORS.length] });
     return acc;
   }, []).filter(b => b.balance > 0);
-
-  const consentAlerts = accounts.filter(a => a.consentStatus === "EXPIRING" || a.consentStatus === "EXPIRED");
 
   const total = reconProgress?.totalTxns ?? 0;
   const matched = reconProgress?.matchedTxns ?? 0;
@@ -209,24 +205,7 @@ export default function BankingDashboard() {
         </div>
       </div>
 
-      {/* Consent Alerts (real data only) */}
-      {consentAlerts.length > 0 && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {consentAlerts.map(a => (
-            <a key={a.id} href="/banking/consent" style={{ textDecoration: "none" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 8, border: `1px solid ${a.consentStatus === "EXPIRED" ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.3)"}`, background: a.consentStatus === "EXPIRED" ? "rgba(239,68,68,0.06)" : "rgba(245,158,11,0.06)", fontSize: 12, cursor: "pointer" }}>
-                <AlertTriangle size={12} color={a.consentStatus === "EXPIRED" ? "#ef4444" : "#f59e0b"} />
-                <span style={{ color: "var(--text-primary)" }}>
-                  <b>{a.bankName}</b> consent {a.consentStatus === "EXPIRED" ? "expired" : "expiring soon"}
-                </span>
-                <span style={{ fontSize: 11, color: "#6366f1", fontWeight: 600 }}>Renew →</span>
-              </div>
-            </a>
-          ))}
-        </div>
-      )}
-
-      {/* KPI Row 1 */}
+      {/* TBX Balances (Phase 2A) */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         {isLoading ? Array.from({ length: 4 }).map((_, i) => (
           <div key={i} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8, minHeight: 100 }}>
@@ -234,7 +213,22 @@ export default function BankingDashboard() {
           </div>
         )) : (
           <>
-            <KPICard label="Total Bank Balance" value={formatINR(kpis?.totalBalance ?? 0)} icon={Wallet} accent="#6366f1" sub={`Available: ${formatINR(kpis?.availableBalance ?? 0)}`} />
+            <KPICard label="Current Balance" value={formatINR(kpis?.totalBalance ?? 0)} icon={Wallet} accent="#6366f1" />
+            <KPICard label="Available Balance" value={formatINR(kpis?.availableBalance ?? 0)} icon={Landmark} accent="#10b981" />
+            <KPICard label="Ledger Balance" value={formatINR(kpis?.ledgerBalance ?? 0)} icon={Layers} accent="#8b5cf6" />
+            <KPICard label="Last Updated" value={formatTimeAgo(kpis?.lastUpdated ?? null)} icon={Clock} accent="#06b6d4" />
+          </>
+        )}
+      </div>
+
+      {/* KPI Row 1 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+        {isLoading ? Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8, minHeight: 100 }}>
+            <Skeleton h={11} w="55%" /><Skeleton h={22} w="45%" />
+          </div>
+        )) : (
+          <>
             <KPICard label="Monthly Inflow" value={formatINR(kpis?.monthlyInflow ?? 0)} icon={TrendingUp} accent="#10b981" />
             <KPICard label="Monthly Outflow" value={formatINR(kpis?.monthlyOutflow ?? 0)} icon={TrendingDown} accent="#ef4444" />
             <KPICard label="Net Cash Flow" value={formatINR(kpis?.netCashFlow ?? 0)} icon={Activity} accent={(kpis?.netCashFlow ?? 0) >= 0 ? "#10b981" : "#ef4444"} sub="This month" />
@@ -443,6 +437,101 @@ export default function BankingDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Beneficiaries + Payments (Phase 2C/2D) */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {/* Beneficiaries */}
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Link2 size={13} color="#818cf8" />
+              <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Beneficiaries</h3>
+            </div>
+            <a href="/erp/vendors" style={{ fontSize: 12, color: "#6366f1", textDecoration: "none" }}>Manage vendors →</a>
+          </div>
+          {isLoading ? (
+            <Skeleton h={60} />
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              {[
+                ["Active", beneficiaries?.active ?? 0, "#10b981"],
+                ["Pending", beneficiaries?.pending ?? 0, "#f59e0b"],
+                ["Failed", beneficiaries?.failed ?? 0, "#ef4444"],
+                ["Total Linked", beneficiaries?.total ?? 0, "#6366f1"],
+              ].map(([label, value, color]) => (
+                <div key={String(label)} style={{ padding: "10px 8px", borderRadius: 8, background: "var(--bg-hover)", textAlign: "center" }}>
+                  <p style={{ fontSize: 20, fontWeight: 700, color: String(color) }}>{value}</p>
+                  <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Payments */}
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <CreditCard size={13} color="#818cf8" />
+              <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Payments</h3>
+            </div>
+            <a href="/banking/payments" style={{ fontSize: 12, color: "#6366f1", textDecoration: "none" }}>View queue →</a>
+          </div>
+          {isLoading ? (
+            <Skeleton h={60} />
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              {[
+                ["Awaiting Approval", payments?.checkerPending ?? 0, "#f59e0b"],
+                ["In Flight", payments?.inFlight ?? 0, "#0ea5e9"],
+                ["Settled (MTD)", formatINR(payments?.settledThisMonth ?? 0), "#10b981"],
+                ["Failed", payments?.failed ?? 0, "#ef4444"],
+              ].map(([label, value, color]) => (
+                <div key={String(label)} style={{ padding: "10px 8px", borderRadius: 8, background: "var(--bg-hover)", textAlign: "center" }}>
+                  <p style={{ fontSize: 18, fontWeight: 700, color: String(color) }}>{value}</p>
+                  <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 16, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <CalendarClock size={12} color="var(--text-muted)" />
+              <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>{payments?.scheduled ?? 0} scheduled</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Layers3 size={12} color="var(--text-muted)" />
+              <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>{payments?.bulk ?? 0} bulk in progress</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Payments */}
+      {!isLoading && (payments?.recent?.length ?? 0) > 0 && (
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Recent Payments</h3>
+            <a href="/banking/payments" style={{ fontSize: 12, color: "#6366f1", textDecoration: "none" }}>View all →</a>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {payments!.recent.map((p, i) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: i < payments!.recent.length - 1 ? "1px solid var(--border)" : "none" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: "var(--text-primary)" }}>
+                    {p.purchase.vendor?.name ?? p.purchase.vendorName ?? "Vendor"} · {p.purchase.purchaseNumber}
+                  </p>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.paymentType} · {new Date(p.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</p>
+                </div>
+                <span className="badge" style={{ fontSize: 10, border: "none", background: p.status === "SUCCESS" ? "rgba(16,185,129,0.12)" : p.status === "FAILED" ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.12)", color: p.status === "SUCCESS" ? "#10b981" : p.status === "FAILED" ? "#ef4444" : "#f59e0b" }}>
+                  {p.status}
+                </span>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", minWidth: 80, textAlign: "right" }}>{formatINR(p.amount)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Bank Health */}
       {accounts.length > 0 && (

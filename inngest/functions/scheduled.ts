@@ -2,56 +2,22 @@
 // Inngest scheduled (cron) functions
 // Replace every BullMQ repeatable job and the setInterval-based
 // stuck-job checker:
-//   • bank-auto-sync         every 30 min — fan out due bank syncs
 //   • recurring-invoice-scan hourly       — generate due invoices
 //   • integration-scheduled-sync every 15 min — refresh due integrations
 //   • compliance-reminders   daily 08:00 IST — GST/TDS/IT/ROC reminders
 //   • analytics-nightly      daily 02:00 UTC — recompute every org
 //   • stuck-job-checker      every 5 min  — recover orphaned imports
+//
+// TBX balance/statement auto-sync crons land in inngest/functions/tbx-banking.ts
+// (Phase 2A/2B) — the Setu-era bank-auto-sync scan was removed with Setu.
 // ============================================================
 
 import { inngest } from "@/inngest/client";
 import { EVENTS } from "@/inngest/events";
 import { prisma } from "@/lib/prisma";
-import { enqueueBankSync } from "@/lib/banking/queue";
 import { enqueueImport, enqueueSync } from "@/lib/jobs/queues";
 import { processDueRecurringInvoices } from "@/lib/invoices/workers/recurring-invoice.worker";
 import { enqueueEmail, buildTaskDueEmail } from "@/lib/notifications/email";
-
-// ---------------------------------------------------------------------------
-// Bank auto-sync — find accounts due for refresh and fan out bank syncs.
-// (Was the BullMQ bank-auto-sync-scan repeatable job.)
-// ---------------------------------------------------------------------------
-export const bankAutoSync = inngest.createFunction(
-  { id: "bank-auto-sync", name: "Bank Auto-Sync Scan", triggers: [{ cron: "*/30 * * * *" }] },
-  async ({ step }) => {
-    const dueAccounts = await step.run("find-due-accounts", () =>
-      prisma.bankAccount.findMany({
-        where: {
-          deletedAt: null,
-          isActive: true,
-          autoSyncEnabled: true,
-          consentStatus: "ACTIVE",
-          OR: [{ nextSyncAt: null }, { nextSyncAt: { lte: new Date() } }],
-        },
-        select: { id: true, organizationId: true },
-        take: 200,
-      })
-    );
-
-    for (const account of dueAccounts) {
-      await enqueueBankSync({
-        organizationId: account.organizationId,
-        bankAccountId: account.id,
-        provider: "SETU_AA",
-        trigger: "SCHEDULED",
-        syncType: "INCREMENTAL",
-      }).catch(() => {});
-    }
-
-    return { dispatched: dueAccounts.length };
-  }
-);
 
 // ---------------------------------------------------------------------------
 // Recurring invoices — generate every schedule whose nextRunDate arrived.

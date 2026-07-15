@@ -21,7 +21,6 @@ export async function GET(
   const account = await prisma.bankAccount.findFirst({
     where: { id, organizationId: orgId, deletedAt: null },
     include: {
-      consents: { orderBy: { createdAt: "desc" }, take: 3 },
       connection: true,
       _count: { select: { bankTransactions: true } },
     },
