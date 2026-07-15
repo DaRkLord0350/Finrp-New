@@ -12,7 +12,6 @@
 // ============================================================
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -149,7 +148,6 @@ const navBtn: React.CSSProperties = {
 // Wizard component
 // ---------------------------------------------------------------------------
 export function CAFirmOnboardingWizard() {
-  const router = useRouter();
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -282,9 +280,9 @@ export function CAFirmOnboardingWizard() {
     try {
       const res = await actionCompleteFirmOnboarding();
       if (!res.success) throw new Error(res.error);
-      // Profile done → choose a plan + activate before entering the portal.
-      router.push("/onboarding/plan");
-      router.refresh();
+      // Hard nav — soft push+refresh races the wizard page guard, which would
+      // redirect to /firm (and can cancel /onboarding/plan entirely).
+      window.location.assign("/onboarding/plan");
     } catch (e) {
       setError((e as Error).message ?? "Failed to complete setup.");
       setIsLoading(false);

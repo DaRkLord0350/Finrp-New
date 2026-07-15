@@ -12,7 +12,6 @@
 // ============================================================
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -207,7 +206,6 @@ export function CustomerOnboardingWizard({
   missingBusinessFields = [],
   initialStep = 1,
 }: WizardProps) {
-  const router = useRouter();
   const [step, setStep] = useState(initialStep);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -344,9 +342,9 @@ export function CustomerOnboardingWizard({
     try {
       const res = await actionCompleteCustomerOnboarding();
       if (!res.success) throw new Error(res.error);
-      // Profile done → choose CA link / plan + activate before the dashboard.
-      router.push("/onboarding/plan");
-      router.refresh();
+      // Hard nav — soft push+refresh races the wizard page guard, which would
+      // redirect to /dashboard (and can cancel /onboarding/plan entirely).
+      window.location.assign("/onboarding/plan");
     } catch (e) {
       setError((e as Error).message ?? "Failed to complete setup.");
       setIsLoading(false);

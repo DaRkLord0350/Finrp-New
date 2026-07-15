@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { resolveOnboardingEntry } from "@/lib/auth/onboarding-entry";
 import { isOnboardingComplete } from "@/services/onboardingService";
+import { isOrganizationActivated } from "@/lib/billing/guards";
 import { CustomerOnboardingWizard } from "@/components/onboarding/CustomerOnboardingWizard";
 import { prisma } from "@/lib/prisma";
 
@@ -53,9 +54,14 @@ export default async function CustomerOnboardingPage() {
   if (user.userRole === "CA") redirect("/ca");
   if (user.userRole === "ADMIN") redirect("/admin");
 
-  // Already done → dashboard
+  // Already done → plan picker if needed, otherwise dashboard
   const done = await isOnboardingComplete(user.organizationId);
-  if (done) redirect("/dashboard");
+  if (done) {
+    if (!(await isOrganizationActivated(user.organizationId))) {
+      redirect("/onboarding/plan");
+    }
+    redirect("/dashboard");
+  }
 
   // ── Pre-fill from the firm's invitation + any already-saved profile ──
   const [invite, profile] = await Promise.all([

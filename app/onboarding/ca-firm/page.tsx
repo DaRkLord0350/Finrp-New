@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { resolveOnboardingEntry } from "@/lib/auth/onboarding-entry";
 import { isOnboardingComplete } from "@/services/onboardingService";
+import { isOrganizationActivated } from "@/lib/billing/guards";
 import { CAFirmOnboardingWizard } from "@/components/onboarding/CAFirmOnboardingWizard";
 
 export const metadata = {
@@ -37,9 +38,14 @@ export default async function CAFirmOnboardingPage() {
   if (user.userRole === "CA") redirect("/ca");
   if (user.userRole === "ADMIN") redirect("/admin");
 
-  // Already done → firm portal
+  // Already done → plan picker if needed, otherwise firm portal
   const done = await isOnboardingComplete(user.organizationId);
-  if (done) redirect("/firm");
+  if (done) {
+    if (!(await isOrganizationActivated(user.organizationId))) {
+      redirect("/onboarding/plan");
+    }
+    redirect("/firm");
+  }
 
   return <CAFirmOnboardingWizard />;
 }

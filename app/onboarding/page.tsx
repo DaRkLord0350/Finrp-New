@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { resolveOnboardingEntry } from "@/lib/auth/onboarding-entry";
 import { isOnboardingComplete } from "@/services/onboardingService";
+import { isOrganizationActivated } from "@/lib/billing/guards";
 
 export const metadata = {
   title: "Getting Started | FinRP",
@@ -34,13 +35,19 @@ export default async function OnboardingPage() {
   const done = await isOnboardingComplete(user.organizationId);
 
   if (user.userRole === "CA_FIRM_ADMIN") {
-    if (done) redirect("/firm");
-    redirect("/onboarding/ca-firm");
+    if (!done) redirect("/onboarding/ca-firm");
+    if (!(await isOrganizationActivated(user.organizationId))) {
+      redirect("/onboarding/plan");
+    }
+    redirect("/firm");
   }
 
   if (user.userRole === "CUSTOMER") {
-    if (done) redirect("/dashboard");
-    redirect("/onboarding/customer");
+    if (!done) redirect("/onboarding/customer");
+    if (!(await isOrganizationActivated(user.organizationId))) {
+      redirect("/onboarding/plan");
+    }
+    redirect("/dashboard");
   }
 
   // CA and ADMIN users shouldn't be in onboarding

@@ -10,6 +10,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isOnboardingComplete } from "@/services/onboardingService";
+import { isOrganizationActivated } from "@/lib/billing/guards";
 import { RoleSelection } from "@/components/onboarding/RoleSelection";
 
 export const metadata = {
@@ -33,10 +34,18 @@ export default async function RoleSelectionPage() {
     const done = await isOnboardingComplete(user.organizationId);
     switch (user.userRole) {
       case "CUSTOMER":
-        redirect(done ? "/dashboard" : "/onboarding/customer");
+        if (!done) redirect("/onboarding/customer");
+        if (!(await isOrganizationActivated(user.organizationId))) {
+          redirect("/onboarding/plan");
+        }
+        redirect("/dashboard");
         break;
       case "CA_FIRM_ADMIN":
-        redirect(done ? "/firm" : "/onboarding/ca-firm");
+        if (!done) redirect("/onboarding/ca-firm");
+        if (!(await isOrganizationActivated(user.organizationId))) {
+          redirect("/onboarding/plan");
+        }
+        redirect("/firm");
         break;
       case "CA":
         redirect("/ca");

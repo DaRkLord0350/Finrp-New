@@ -14,7 +14,6 @@
 // ============================================================
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Sparkles, ArrowRight } from "lucide-react";
 import type { PlanDefinition } from "@/lib/billing/plans";
 import { PlanCard, type PlanCardCta } from "@/components/pricing/PlanCard";
@@ -28,14 +27,13 @@ export function OnboardingPlanSelection({
   /** Where to land after activation ("/firm" or "/dashboard"). */
   portalPath: string;
 }) {
-  const router = useRouter();
   const { startCheckout, busyPlan } = useRazorpayCheckout();
   const [acting, setActing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function goToPortal() {
-    router.push(portalPath);
-    router.refresh();
+    // Hard nav so portal layouts see the freshly activated plan entitlements.
+    window.location.assign(portalPath);
   }
 
   async function activateFree(planType: string) {
