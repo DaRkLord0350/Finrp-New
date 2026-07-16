@@ -179,6 +179,37 @@ model Organization {
   relatedParties      OrganizationRelatedParty[]
   bankVerifications   OrgBankAccountVerification[]
 
+  // ── Lending Platform (Phase 3, Module 1) ────────────────────
+  loanProducts            LoanProduct[]
+  loanApplications        LoanApplication[]
+  loanApprovalMatrixRules LoanApprovalMatrixRule[]
+  loanAccounts            LoanAccount[]
+  riskAssessments         RiskAssessment[]
+
+  // ── Credit Bureau (Phase 3, Module 2) ───────────────────────
+  creditReports CreditReport[]
+  creditApiLogs CreditApiLog[]
+
+  // ── AML (Phase 3, Module 3) ──────────────────────────────────
+  amlScreenings AMLScreening[]
+  amlCases      AMLCase[]
+
+  // ── Fraud (Phase 3, Module 4) ────────────────────────────────
+  fraudIdentityFingerprints FraudIdentityFingerprint[]
+  fraudRules                FraudRule[]
+  fraudScores               FraudScore[]
+  fraudCases                FraudCase[]
+  fraudListEntries          FraudListEntry[]
+  fraudProviderChecks       FraudProviderCheck[]
+
+  // ── Background Verification (Phase 3, Module 5) ─────────────
+  verificationCases VerificationCase[]
+
+  // ── Continuous Monitoring (Phase 3, Module 6) ────────────────
+  monitoringRules  MonitoringRule[]
+  monitoringAlerts MonitoringAlert[]
+  monitoringCases  MonitoringCase[]
+
   @@index([slug])
   @@index([billingCategory, planType])
   @@index([linkedCAOrganizationId])
@@ -300,6 +331,49 @@ model User {
   customerInvitesSent     CustomerInvitation[] @relation("CustomerInviteInvitedBy")
   customerInvitesAssigned CustomerInvitation[] @relation("CustomerInviteAssignedCa")
   headOfDepartments       OrgDepartment[]      @relation("DepartmentHead")
+
+  // ── Lending Platform (Phase 3, Module 1) ────────────────────
+  underwrittenLoanApplications      LoanApplication[]          @relation("LoanApplicationUnderwriter")
+  createdLoanApplications           LoanApplication[]          @relation("LoanApplicationCreatedBy")
+  uploadedLoanDocuments             LoanDocument[]             @relation("LoanDocumentUploadedBy")
+  verifiedLoanDocuments             LoanDocument[]             @relation("LoanDocumentVerifiedBy")
+  loanApprovalStepsAsApprover       LoanApprovalStep[]         @relation("LoanApprovalStepApprover")
+  loanApprovalStepsDecided          LoanApprovalStep[]         @relation("LoanApprovalStepDecidedBy")
+  issuedLoanLetters                 LoanGeneratedLetter[]      @relation("LoanLetterIssuedBy")
+  assignedLoanCollectionCases       LoanCollectionCase[]       @relation("LoanCollectionCaseAssignedTo")
+  performedLoanCollectionActivities LoanCollectionActivity[]   @relation("LoanCollectionActivityPerformedBy")
+  loanUnderwritingDecisions         LoanUnderwritingDecision[] @relation("LoanUnderwritingDecidedBy")
+  approvedLoanForeclosures          LoanForeclosure[]          @relation("LoanForeclosureApprovedBy")
+  initiatedLoanDisbursements        LoanDisbursement[]         @relation("LoanDisbursementInitiatedBy")
+
+  // ── Credit Bureau (Phase 3, Module 2) ───────────────────────
+  creditReportsRequested CreditReport[] @relation("CreditReportRequestedBy")
+
+  // ── AML (Phase 3, Module 3) ──────────────────────────────────
+  amlScreeningsPerformed     AMLScreening[]    @relation("AMLScreeningScreenedBy")
+  amlCasesAssigned           AMLCase[]         @relation("AMLCaseAssignedTo")
+  amlAlertsReviewed          AMLAlert[]        @relation("AMLAlertReviewedBy")
+  amlCaseActivitiesPerformed AMLCaseActivity[] @relation("AMLCaseActivityPerformedBy")
+
+  // ── Fraud (Phase 3, Module 4) ────────────────────────────────
+  fraudCasesAssigned           FraudCase[]         @relation("FraudCaseAssignedTo")
+  fraudAlertsReviewed          FraudAlert[]        @relation("FraudAlertReviewedBy")
+  fraudCaseActivitiesPerformed FraudCaseActivity[] @relation("FraudCaseActivityPerformedBy")
+  fraudListEntriesAdded        FraudListEntry[]    @relation("FraudListEntryAddedBy")
+
+  // ── Background Verification (Phase 3, Module 5) ─────────────
+  verificationCasesAssigned     VerificationCase[]         @relation("VerificationCaseAssignedTo")
+  verificationChecksPerformed   VerificationCheck[]        @relation("VerificationCheckPerformedBy")
+  verificationDocumentsUploaded VerificationDocument[]     @relation("VerificationDocumentUploadedBy")
+  verificationDocumentsVerified VerificationDocument[]     @relation("VerificationDocumentVerifiedBy")
+  verificationCaseActivities    VerificationCaseActivity[] @relation("VerificationCaseActivityPerformedBy")
+
+  // ── Continuous Monitoring (Phase 3, Module 6) ────────────────
+  monitoringRulesCreated       MonitoringRule[]         @relation("MonitoringRuleCreatedBy")
+  monitoringAlertsAcknowledged MonitoringAlert[]        @relation("MonitoringAlertAcknowledgedBy")
+  monitoringAlertsResolved     MonitoringAlert[]        @relation("MonitoringAlertResolvedBy")
+  monitoringCasesAssigned      MonitoringCase[]         @relation("MonitoringCaseAssignedTo")
+  monitoringCaseActivities     MonitoringCaseActivity[] @relation("MonitoringCaseActivityPerformedBy")
 
   @@index([organizationId])
   @@index([userRole])
@@ -452,6 +526,11 @@ model Customer {
   documentUploads     DocumentUpload[]     @relation("CustomerDocumentUploads")
   filingApprovals     FilingApproval[]     @relation("CustomerFilingApprovals")
   conversations       Conversation[]       @relation("CustomerConversations")
+
+  // ── Lending Platform (Phase 3, Module 1) — Customer is the borrower ──
+  loanApplications     LoanApplication[]
+  loanCoApplicantLinks LoanCoApplicant[]
+  loanAccounts         LoanAccount[]
 
   @@unique([organizationId, customerCode])
   @@index([organizationId, customerType])
@@ -1634,16 +1713,17 @@ model BankAccount {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization     Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  payments         Payment[]                    @relation("BankAccountPayments")
-  connection       BankConnection?              @relation("BankConnectionAccounts", fields: [connectionId], references: [id])
-  bankTransactions BankTransaction[]            @relation("BankAccountTransactions")
-  reconciliations  BankReconciliationSession[]  @relation("BankAccountReconciliations")
-  balances         BankBalance[]                @relation("BankAccountBalances")
-  syncHistory      BankSyncHistory[]            @relation("BankAccountSyncHistory")
-  verifications    OrgBankAccountVerification[] @relation("BankAccountVerifications")
-  rawStatements    RawBankStatement[]           @relation("BankAccountRawStatements")
-  vendorPayments   VendorPayment[]              @relation("VendorPaymentBankAccount")
+  organization      Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments          Payment[]                    @relation("BankAccountPayments")
+  connection        BankConnection?              @relation("BankConnectionAccounts", fields: [connectionId], references: [id])
+  bankTransactions  BankTransaction[]            @relation("BankAccountTransactions")
+  reconciliations   BankReconciliationSession[]  @relation("BankAccountReconciliations")
+  balances          BankBalance[]                @relation("BankAccountBalances")
+  syncHistory       BankSyncHistory[]            @relation("BankAccountSyncHistory")
+  verifications     OrgBankAccountVerification[] @relation("BankAccountVerifications")
+  rawStatements     RawBankStatement[]           @relation("BankAccountRawStatements")
+  vendorPayments    VendorPayment[]              @relation("VendorPaymentBankAccount")
+  loanDisbursements LoanDisbursement[]           @relation("LoanDisbursementBankAccount")
 
   @@index([organizationId])
   @@index([organizationId, isActive])
@@ -1842,6 +1922,7 @@ enum NotificationType {
   ASSIGNMENT_CREATED
   TASK_DUE
   SYSTEM
+  MONITORING_ALERT
 }
 
 // ============================================================
@@ -4572,8 +4653,9 @@ model SignatureRequest {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  events       SignatureEvent[]
+  organization             Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  events                   SignatureEvent[]
+  loanAgreementSignatories LoanAgreementSignatory[]
 
   @@index([organizationId])
   @@index([status])
@@ -7927,4 +8009,2104 @@ model OrgBankAccountVerification {
   @@index([organizationId])
   @@index([bankAccountId])
   @@map("org_bank_account_verifications")
+}
+
+// ============================================================
+// PHASE 3 — MODULE 1: LENDING PLATFORM (Loan Origination System)
+//
+// Naming note: an existing `Loan` / `LoanPayment` model (see the LOAN
+// section above) already tracks an organization's OWN borrowings —
+// bank/NBFC lender, EMI bookkeeping for the org's own accounting. That
+// is a different domain and is untouched here. In THIS module the
+// Organization IS the lender, originating loans TO its own CRM
+// `Customer` records. To avoid colliding with the existing `Loan` /
+// `LoanStatus` names, the pre-disbursement workflow entity is
+// `LoanApplication` and the post-disbursement active loan is
+// `LoanAccount`.
+//
+// Workflow (LoanApplicationStage), matching the spec's pipeline:
+//   APPLICATION → DOCUMENT_COLLECTION → VERIFICATION → CREDIT_BUREAU →
+//   AML → FRAUD → RISK_SCORE → APPROVAL_MATRIX → SANCTION → AGREEMENT →
+//   DISBURSEMENT → REPAYMENT → MONITORING
+// Mirrors lib/tax/filing/service.ts's state-machine shape: current
+// stage/status live on LoanApplication, every transition is appended
+// as an immutable LoanApplicationLog row (payload-hashed, actor-
+// attributed) — no return/decision reaches disbursement without a
+// full audit trail.
+//
+// Reuse, not duplication:
+//   - KYC gate            → existing KycProfile / requireTenant({ requireKyc })
+//   - Identity/bank/AML-PEP verification → existing lib/tbx/service.ts
+//     (verifyPan, verifyGstin, verifyAadhaar, verifyBankAccount,
+//     fetchDirector, fetchCkyc, screenAmlPep)
+//   - eSign                → existing SignatureRequest / SignatureEvent
+//   - Disbursement / auto-debit collection → existing lib/tbx/payments/
+//   - Bank account linkage → existing BankAccount (Banking OS)
+//   - Audit trail          → existing lib/audit.ts createAuditLog
+// ============================================================
+
+enum LoanProductType {
+  PERSONAL_LOAN
+  BUSINESS_LOAN
+  MSME_LOAN
+  WORKING_CAPITAL
+  INVOICE_FINANCING
+  SUPPLY_CHAIN_FINANCE
+  OVERDRAFT
+  LINE_OF_CREDIT
+  MERCHANT_CASH_ADVANCE
+  EQUIPMENT_LOAN
+}
+
+enum InterestRateType {
+  FIXED
+  FLOATING
+  REDUCING_BALANCE
+  FLAT
+}
+
+enum LoanApplicationStage {
+  APPLICATION
+  DOCUMENT_COLLECTION
+  VERIFICATION
+  CREDIT_BUREAU
+  AML
+  FRAUD
+  RISK_SCORE
+  APPROVAL_MATRIX
+  SANCTION
+  AGREEMENT
+  DISBURSEMENT
+  REPAYMENT
+  MONITORING
+}
+
+enum LoanApplicationStatus {
+  DRAFT
+  IN_PROGRESS
+  ON_HOLD
+  APPROVED
+  CONDITIONALLY_APPROVED
+  REJECTED
+  WITHDRAWN
+  SANCTIONED
+  DISBURSED
+  ACTIVE
+  CLOSED
+  FORECLOSED
+  DEFAULTED
+}
+
+enum LoanApplicationEvent {
+  CREATED
+  SUBMITTED
+  DOCUMENT_UPLOADED
+  DOCUMENTS_COMPLETED
+  VERIFICATION_STARTED
+  VERIFICATION_COMPLETED
+  CREDIT_PULL_STARTED
+  CREDIT_PULL_COMPLETED
+  AML_SCREEN_STARTED
+  AML_SCREEN_COMPLETED
+  FRAUD_CHECK_STARTED
+  FRAUD_CHECK_COMPLETED
+  RISK_SCORED
+  SUBMITTED_FOR_APPROVAL
+  APPROVAL_STEP_DECIDED
+  APPROVED
+  CONDITIONALLY_APPROVED
+  REJECTED
+  WITHDRAWN
+  SANCTION_ISSUED
+  OFFER_ACCEPTED
+  AGREEMENT_SENT
+  AGREEMENT_SIGNED
+  DISBURSED
+  ACTIVATED
+  CLOSED
+  FORECLOSED
+  DEFAULTED
+  REOPENED
+  HOLD_PLACED
+  HOLD_RELEASED
+}
+
+enum LoanPartyType {
+  CO_APPLICANT
+  GUARANTOR
+}
+
+enum LoanDocumentType {
+  PAN_CARD
+  AADHAAR
+  GST_CERTIFICATE
+  CIN_CERTIFICATE
+  BANK_STATEMENT
+  ITR
+  FORM_16
+  FINANCIAL_STATEMENT
+  BUSINESS_PROOF
+  ADDRESS_PROOF
+  IDENTITY_PROOF
+  PHOTO
+  COLLATERAL_PROOF
+  INVOICE
+  PURCHASE_ORDER
+  OTHER
+}
+
+enum LoanDocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum CollateralType {
+  PROPERTY
+  VEHICLE
+  GOLD
+  FIXED_DEPOSIT
+  INVENTORY
+  RECEIVABLES
+  EQUIPMENT
+  SECURITIES
+  OTHER
+}
+
+enum CollateralStatus {
+  PENDING_VALUATION
+  VALUED
+  LIEN_MARKED
+  RELEASED
+  REJECTED
+}
+
+enum LoanApprovalStepStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SKIPPED
+}
+
+enum LoanLetterType {
+  SANCTION_LETTER
+  OFFER_LETTER
+}
+
+enum LoanLetterStatus {
+  DRAFT
+  ISSUED
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  SUPERSEDED
+}
+
+enum LoanAgreementStatus {
+  DRAFT
+  SENT_FOR_SIGNATURE
+  PARTIALLY_SIGNED
+  FULLY_SIGNED
+  EXECUTED
+  EXPIRED
+  VOIDED
+}
+
+enum LoanSignatoryRole {
+  BORROWER
+  CO_APPLICANT
+  GUARANTOR
+  LENDER_AUTHORIZED_SIGNATORY
+}
+
+enum LoanAgreementSignatoryStatus {
+  PENDING
+  SENT
+  VIEWED
+  SIGNED
+  DECLINED
+}
+
+enum LoanAccountStatus {
+  ACTIVE
+  CLOSED
+  FORECLOSED
+  WRITTEN_OFF
+  NPA_SUBSTANDARD
+  NPA_DOUBTFUL
+  NPA_LOSS
+  DEFAULTED
+}
+
+enum LoanClosureType {
+  NATURAL
+  FORECLOSURE
+  WRITE_OFF
+  PART_SETTLEMENT
+}
+
+enum EMIScheduleStatus {
+  UPCOMING
+  DUE
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  WAIVED
+}
+
+enum LoanRepaymentMethod {
+  NACH
+  UPI_AUTOPAY
+  MANUAL
+  BANK_TRANSFER
+  CASH
+  CHEQUE
+}
+
+enum LoanRepaymentStatus {
+  INITIATED
+  SUCCESS
+  FAILED
+  BOUNCED
+  REVERSED
+}
+
+enum LoanDisbursementMode {
+  NEFT
+  RTGS
+  IMPS
+  UPI
+  CHEQUE
+}
+
+enum LoanDisbursementStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum LoanForeclosureStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum CollectionBucket {
+  CURRENT
+  DPD_1_30
+  DPD_31_60
+  DPD_61_90
+  DPD_90_PLUS
+  NPA
+}
+
+enum CollectionCaseStatus {
+  OPEN
+  IN_PROGRESS
+  PROMISE_TO_PAY
+  RESOLVED
+  ESCALATED
+  WRITTEN_OFF
+}
+
+enum CollectionActivityType {
+  CALL
+  SMS
+  EMAIL
+  VISIT
+  LEGAL_NOTICE
+  PAYMENT_PROMISE
+  NOTE
+}
+
+enum UnderwritingDecisionType {
+  APPROVE
+  REJECT
+  REFER
+  CONDITIONAL_APPROVE
+}
+
+enum RiskSubjectType {
+  LOAN_APPLICATION
+  LOAN_ACCOUNT
+  CUSTOMER
+  AML_CASE
+  FRAUD_CASE
+}
+
+enum RiskCategory {
+  CREDIT_RISK
+  AML_RISK
+  FRAUD_RISK
+  OPERATIONAL_RISK
+  CONCENTRATION_RISK
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskComputedBy {
+  RULE_ENGINE
+  AI
+  MANUAL
+}
+
+// ---------------------------------------------------------------------------
+// Loan Product catalog (per-lender-organization)
+// ---------------------------------------------------------------------------
+model LoanProduct {
+  id             String          @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  type           LoanProductType
+  description    String?
+
+  minAmount Decimal @db.Decimal(16, 2)
+  maxAmount Decimal @db.Decimal(16, 2)
+
+  minTenureMonths Int
+  maxTenureMonths Int
+
+  interestRateType InterestRateType @default(REDUCING_BALANCE)
+  minInterestRate  Decimal          @db.Decimal(5, 2)
+  maxInterestRate  Decimal          @db.Decimal(5, 2)
+
+  processingFeePercent      Decimal @default(0) @db.Decimal(5, 2)
+  processingFeeFlat         Decimal @default(0) @db.Decimal(12, 2)
+  latePaymentPenaltyPercent Decimal @default(0) @db.Decimal(5, 2)
+
+  foreclosureAllowed       Boolean @default(true)
+  foreclosureChargePercent Decimal @default(0) @db.Decimal(5, 2)
+  partPaymentAllowed       Boolean @default(true)
+  partPaymentChargePercent Decimal @default(0) @db.Decimal(5, 2)
+
+  collateralRequired Boolean @default(false)
+  eligibilityRules   Json // engine-readable rule set: min income, min credit score, min vintage, max DTI, ...
+
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization        Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  applications        LoanApplication[]
+  approvalMatrixRules LoanApprovalMatrixRule[]
+  accounts            LoanAccount[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([organizationId, type])
+  @@map("loan_products")
+}
+
+// ---------------------------------------------------------------------------
+// Loan Application — the LOS workflow entity (pre-disbursement)
+// ---------------------------------------------------------------------------
+model LoanApplication {
+  id                String @id @default(cuid())
+  organizationId    String
+  customerId        String
+  productId         String
+  applicationNumber String
+
+  requestedAmount       Decimal  @db.Decimal(16, 2)
+  approvedAmount        Decimal? @db.Decimal(16, 2)
+  requestedTenureMonths Int
+  approvedTenureMonths  Int?
+  purpose               String?
+
+  stage  LoanApplicationStage  @default(APPLICATION)
+  status LoanApplicationStatus @default(DRAFT)
+
+  payloadHash String? // SHA-256 of the application snapshot at last stage-affecting change
+
+  riskScore    Int?
+  riskCategory RiskLevel?
+
+  interestRateOffered Decimal? @db.Decimal(5, 2)
+  emiAmount           Decimal? @db.Decimal(12, 2)
+
+  assignedUnderwriterId String?
+
+  submittedAt     DateTime?
+  sanctionedAt    DateTime?
+  disbursedAt     DateTime?
+  closedAt        DateTime?
+  rejectionReason String?
+  holdReason      String?
+
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer            Customer     @relation(fields: [customerId], references: [id])
+  product             LoanProduct  @relation(fields: [productId], references: [id])
+  assignedUnderwriter User?        @relation("LoanApplicationUnderwriter", fields: [assignedUnderwriterId], references: [id])
+  createdBy           User?        @relation("LoanApplicationCreatedBy", fields: [createdById], references: [id])
+
+  coApplicants              LoanCoApplicant[]
+  documents                 LoanDocument[]
+  eligibilityChecks         LoanEligibilityCheck[]
+  collaterals               LoanCollateral[]
+  approvalSteps             LoanApprovalStep[]
+  generatedLetters          LoanGeneratedLetter[]
+  agreements                LoanAgreement[]
+  underwritingDecisions     LoanUnderwritingDecision[]
+  logs                      LoanApplicationLog[]
+  account                   LoanAccount?
+  disbursements             LoanDisbursement[]
+  creditReports             CreditReport[]
+  amlScreenings             AMLScreening[]
+  amlCases                  AMLCase[]
+  fraudIdentityFingerprints FraudIdentityFingerprint[]
+  fraudScores               FraudScore[]
+  fraudCases                FraudCase[]
+  fraudProviderChecks       FraudProviderCheck[]
+  verificationCases         VerificationCase[]
+
+  @@unique([organizationId, applicationNumber])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, stage])
+  @@index([customerId])
+  @@index([productId])
+  @@map("loan_applications")
+}
+
+// Immutable, append-only. Mirrors TaxFilingLog's shape exactly.
+model LoanApplicationLog {
+  id             String                 @id @default(cuid())
+  applicationId  String
+  organizationId String
+  event          LoanApplicationEvent
+  fromStage      LoanApplicationStage?
+  toStage        LoanApplicationStage?
+  fromStatus     LoanApplicationStatus?
+  toStatus       LoanApplicationStatus?
+  actorId        String?
+  actorRole      String?
+  payloadHash    String?
+  detail         String?
+  metadata       Json?
+  createdAt      DateTime               @default(now())
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([organizationId, createdAt])
+  @@map("loan_application_logs")
+}
+
+model LoanCoApplicant {
+  id            String        @id @default(cuid())
+  applicationId String
+  role          LoanPartyType
+
+  name          String
+  relationship  String?
+  pan           String?
+  email         String?
+  phone         String?
+  incomeMonthly Decimal? @db.Decimal(14, 2)
+
+  existingCustomerId String?
+
+  verificationStatus TbxVerificationStatus @default(NOT_STARTED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application      LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  existingCustomer Customer?       @relation(fields: [existingCustomerId], references: [id])
+
+  @@index([applicationId])
+  @@map("loan_co_applicants")
+}
+
+model LoanDocument {
+  id              String             @id @default(cuid())
+  applicationId   String
+  organizationId  String
+  docType         LoanDocumentType
+  fileName        String
+  fileUrl         String
+  fileSize        Int
+  mimeType        String
+  uploadedById    String?
+  status          LoanDocumentStatus @default(PENDING)
+  verifiedById    String?
+  verifiedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  deletedAt       DateTime?
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  uploadedBy  User?           @relation("LoanDocumentUploadedBy", fields: [uploadedById], references: [id])
+  verifiedBy  User?           @relation("LoanDocumentVerifiedBy", fields: [verifiedById], references: [id])
+
+  @@index([applicationId])
+  @@index([organizationId])
+  @@map("loan_documents")
+}
+
+model LoanEligibilityCheck {
+  id            String   @id @default(cuid())
+  applicationId String
+  ruleName      String
+  passed        Boolean
+  expectedValue String?
+  actualValue   String?
+  message       String?
+  checkedAt     DateTime @default(now())
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("loan_eligibility_checks")
+}
+
+model LoanCollateral {
+  id                  String           @id @default(cuid())
+  applicationId       String
+  organizationId      String
+  type                CollateralType
+  description         String
+  estimatedValue      Decimal          @db.Decimal(16, 2)
+  valuationDate       DateTime?
+  valuedBy            String?
+  ownershipDocRef     String?
+  lienMarked          Boolean          @default(false)
+  lienReferenceNumber String?
+  status              CollateralStatus @default(PENDING_VALUATION)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([organizationId])
+  @@map("loan_collaterals")
+}
+
+model LoanApprovalMatrixRule {
+  id             String   @id @default(cuid())
+  organizationId String
+  productId      String?
+  minAmount      Decimal  @db.Decimal(16, 2)
+  maxAmount      Decimal  @db.Decimal(16, 2)
+  requiredLevels Int
+  level1Role     Role
+  level2Role     Role?
+  level3Role     Role?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      LoanProduct? @relation(fields: [productId], references: [id])
+
+  @@index([organizationId])
+  @@map("loan_approval_matrix_rules")
+}
+
+model LoanApprovalStep {
+  id             String                 @id @default(cuid())
+  applicationId  String
+  organizationId String
+  level          Int
+  approverRole   Role
+  approverId     String?
+  status         LoanApprovalStepStatus @default(PENDING)
+  decidedById    String?
+  decidedAt      DateTime?
+  comments       String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  approver    User?           @relation("LoanApprovalStepApprover", fields: [approverId], references: [id])
+  decidedBy   User?           @relation("LoanApprovalStepDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([applicationId])
+  @@index([organizationId, status])
+  @@map("loan_approval_steps")
+}
+
+model LoanGeneratedLetter {
+  id                 String           @id @default(cuid())
+  applicationId      String
+  organizationId     String
+  type               LoanLetterType
+  version            Int              @default(1)
+  fileUrl            String
+  contentHash        String
+  status             LoanLetterStatus @default(DRAFT)
+  issuedAt           DateTime?
+  issuedById         String?
+  acceptedAt         DateTime?
+  acceptedByCustomer Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  issuedBy    User?           @relation("LoanLetterIssuedBy", fields: [issuedById], references: [id])
+
+  @@index([applicationId])
+  @@map("loan_generated_letters")
+}
+
+model LoanAgreement {
+  id             String              @id @default(cuid())
+  applicationId  String
+  organizationId String
+  version        Int                 @default(1)
+  fileUrl        String
+  contentHash    String
+  status         LoanAgreementStatus @default(DRAFT)
+  sentAt         DateTime?
+  fullySignedAt  DateTime?
+  executedAt     DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  application LoanApplication          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  signatories LoanAgreementSignatory[]
+
+  @@index([applicationId])
+  @@map("loan_agreements")
+}
+
+model LoanAgreementSignatory {
+  id                 String                       @id @default(cuid())
+  agreementId        String
+  role               LoanSignatoryRole
+  name               String
+  email              String
+  phone              String?
+  order              Int                          @default(1)
+  signatureRequestId String?
+  status             LoanAgreementSignatoryStatus @default(PENDING)
+  signedAt           DateTime?
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+
+  agreement        LoanAgreement     @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  signatureRequest SignatureRequest? @relation(fields: [signatureRequestId], references: [id])
+
+  @@index([agreementId])
+  @@map("loan_agreement_signatories")
+}
+
+// ---------------------------------------------------------------------------
+// Loan Account — disbursed, active loan (named to avoid colliding with the
+// existing `Loan` model, which tracks the org's OWN borrowings)
+// ---------------------------------------------------------------------------
+model LoanAccount {
+  id             String @id @default(cuid())
+  organizationId String
+  applicationId  String @unique
+  customerId     String
+  productId      String
+  accountNumber  String
+
+  principalDisbursed Decimal @db.Decimal(16, 2)
+  interestRate       Decimal @db.Decimal(5, 2)
+  tenureMonths       Int
+
+  disbursedAt  DateTime
+  maturityDate DateTime
+
+  currentOutstandingPrincipal Decimal @db.Decimal(16, 2)
+
+  status       LoanAccountStatus @default(ACTIVE)
+  npaFlaggedAt DateTime?
+  npaDays      Int               @default(0)
+
+  lastPaymentDate DateTime?
+  nextDueDate     DateTime?
+  nextDueAmount   Decimal?  @db.Decimal(12, 2)
+
+  // Auto-debit mandate — a loan account has at most one ACTIVE mandate
+  // at a time; switching rails (e.g. NACH bounce -> UPI AutoPay) simply
+  // overwrites these rather than keeping mandate history, which isn't
+  // needed for repayment collection to function correctly.
+  mandateReferenceId String?
+  mandateType        LoanRepaymentMethod?
+  mandateStatus      String?
+
+  closedAt    DateTime?
+  closureType LoanClosureType?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  application  LoanApplication @relation(fields: [applicationId], references: [id])
+  customer     Customer        @relation(fields: [customerId], references: [id])
+  product      LoanProduct     @relation(fields: [productId], references: [id])
+
+  emiSchedules    EMISchedule[]
+  repayments      LoanRepayment[]
+  disbursements   LoanDisbursement[]
+  foreclosures    LoanForeclosure[]
+  partPayments    LoanPartPayment[]
+  collectionCases LoanCollectionCase[]
+
+  @@unique([organizationId, accountNumber])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([customerId])
+  @@map("loan_accounts")
+}
+
+model EMISchedule {
+  id                String   @id @default(cuid())
+  loanAccountId     String
+  installmentNumber Int
+  dueDate           DateTime
+
+  principalDue Decimal @db.Decimal(12, 2)
+  interestDue  Decimal @db.Decimal(12, 2)
+  totalDue     Decimal @db.Decimal(12, 2)
+
+  principalPaid Decimal @default(0) @db.Decimal(12, 2)
+  interestPaid  Decimal @default(0) @db.Decimal(12, 2)
+  totalPaid     Decimal @default(0) @db.Decimal(12, 2)
+
+  outstandingPrincipal Decimal @db.Decimal(16, 2)
+
+  status   EMIScheduleStatus @default(UPCOMING)
+  paidDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loanAccount LoanAccount     @relation(fields: [loanAccountId], references: [id], onDelete: Cascade)
+  repayments  LoanRepayment[]
+
+  @@unique([loanAccountId, installmentNumber])
+  @@index([loanAccountId])
+  @@index([loanAccountId, status])
+  @@index([dueDate])
+  @@map("emi_schedules")
+}
+
+model LoanRepayment {
+  id             String  @id @default(cuid())
+  loanAccountId  String
+  emiScheduleId  String?
+  organizationId String
+
+  amount      Decimal  @db.Decimal(12, 2)
+  paymentDate DateTime
+
+  method LoanRepaymentMethod
+  status LoanRepaymentStatus @default(INITIATED)
+
+  principalComponent Decimal @default(0) @db.Decimal(12, 2)
+  interestComponent  Decimal @default(0) @db.Decimal(12, 2)
+  penaltyComponent   Decimal @default(0) @db.Decimal(12, 2)
+
+  paymentReferenceId String?
+  bounceReason       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loanAccount LoanAccount  @relation(fields: [loanAccountId], references: [id], onDelete: Cascade)
+  emiSchedule EMISchedule? @relation(fields: [emiScheduleId], references: [id])
+
+  @@index([loanAccountId])
+  @@index([organizationId])
+  @@index([emiScheduleId])
+  @@map("loan_repayments")
+}
+
+model LoanDisbursement {
+  id             String  @id @default(cuid())
+  applicationId  String
+  loanAccountId  String?
+  organizationId String
+
+  amount        Decimal              @db.Decimal(16, 2)
+  disbursedAt   DateTime?
+  mode          LoanDisbursementMode
+  bankAccountId String?
+
+  paymentReferenceId String?
+  utrNumber          String?
+  status             LoanDisbursementStatus @default(PENDING)
+  initiatedById      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id])
+  loanAccount LoanAccount?    @relation(fields: [loanAccountId], references: [id])
+  bankAccount BankAccount?    @relation("LoanDisbursementBankAccount", fields: [bankAccountId], references: [id])
+  initiatedBy User?           @relation("LoanDisbursementInitiatedBy", fields: [initiatedById], references: [id])
+
+  @@index([applicationId])
+  @@index([organizationId])
+  @@map("loan_disbursements")
+}
+
+model LoanForeclosure {
+  id             String @id @default(cuid())
+  loanAccountId  String
+  organizationId String
+
+  requestedAt          DateTime @default(now())
+  foreclosureAmount    Decimal  @db.Decimal(16, 2)
+  principalOutstanding Decimal  @db.Decimal(16, 2)
+  chargesApplied       Decimal  @default(0) @db.Decimal(12, 2)
+  waived               Boolean  @default(false)
+
+  approvedById String?
+  status       LoanForeclosureStatus @default(REQUESTED)
+  completedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loanAccount LoanAccount @relation(fields: [loanAccountId], references: [id], onDelete: Cascade)
+  approvedBy  User?       @relation("LoanForeclosureApprovedBy", fields: [approvedById], references: [id])
+
+  @@index([loanAccountId])
+  @@map("loan_foreclosures")
+}
+
+model LoanPartPayment {
+  id             String @id @default(cuid())
+  loanAccountId  String
+  organizationId String
+
+  amount                  Decimal  @db.Decimal(14, 2)
+  paymentDate             DateTime @default(now())
+  chargesApplied          Decimal  @default(0) @db.Decimal(12, 2)
+  newOutstandingPrincipal Decimal  @db.Decimal(16, 2)
+  scheduleRegenerated     Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+
+  loanAccount LoanAccount @relation(fields: [loanAccountId], references: [id], onDelete: Cascade)
+
+  @@index([loanAccountId])
+  @@map("loan_part_payments")
+}
+
+model LoanCollectionCase {
+  id             String @id @default(cuid())
+  loanAccountId  String
+  organizationId String
+
+  bucket        CollectionBucket
+  overdueAmount Decimal          @db.Decimal(14, 2)
+  overdueDays   Int
+
+  assignedToId String?
+  status       CollectionCaseStatus @default(OPEN)
+
+  lastContactedAt DateTime?
+  nextActionDate  DateTime?
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loanAccount LoanAccount              @relation(fields: [loanAccountId], references: [id], onDelete: Cascade)
+  assignedTo  User?                    @relation("LoanCollectionCaseAssignedTo", fields: [assignedToId], references: [id])
+  activities  LoanCollectionActivity[]
+
+  @@index([loanAccountId])
+  @@index([organizationId, status])
+  @@map("loan_collection_cases")
+}
+
+model LoanCollectionActivity {
+  id     String @id @default(cuid())
+  caseId String
+
+  activityType  CollectionActivityType
+  notes         String?
+  performedById String?
+  performedAt   DateTime               @default(now())
+  outcome       String?
+
+  case        LoanCollectionCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  performedBy User?              @relation("LoanCollectionActivityPerformedBy", fields: [performedById], references: [id])
+
+  @@index([caseId])
+  @@map("loan_collection_activities")
+}
+
+model LoanUnderwritingDecision {
+  id             String @id @default(cuid())
+  applicationId  String
+  organizationId String
+
+  decision      UnderwritingDecisionType
+  decidedById   String?
+  decidedByRole String?
+
+  riskScoreAtDecision   Int?
+  creditScoreAtDecision Int?
+  amlStatusAtDecision   String?
+  fraudScoreAtDecision  Int?
+
+  conditions  Json?
+  reasoning   String
+  aiGenerated Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  decidedBy   User?           @relation("LoanUnderwritingDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([applicationId])
+  @@map("loan_underwriting_decisions")
+}
+
+// Shared risk-score ledger — Lending uses it today; AML/Fraud (later
+// Phase 3 modules) reuse it instead of each maintaining its own score
+// table (RiskSubjectType already reserves AML_CASE / FRAUD_CASE).
+model RiskAssessment {
+  id             String @id @default(cuid())
+  organizationId String
+
+  subjectType RiskSubjectType
+  subjectId   String
+
+  category RiskCategory
+  score    Int // 0-100
+  level    RiskLevel
+
+  factors Json // breakdown of contributing factors + weights
+
+  computedAt DateTime       @default(now())
+  computedBy RiskComputedBy
+  expiresAt  DateTime?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([subjectType, subjectId])
+  @@index([organizationId, category])
+  @@map("risk_assessments")
+}
+
+// ============================================================
+// PHASE 3 — MODULE 2: CREDIT BUREAU
+//
+// Provider Pattern (CreditProvider interface, one adapter per bureau —
+// Experian/CIBIL/CRIF/Equifax) lives in lib/credit/, mirroring
+// lib/tbx/'s shape exactly: real HTTP client + separate deterministic
+// mock + fail-fast config, selected per-bureau via env.
+//
+// CreditReport rows are immutable once COMPLETED — a re-fetch creates
+// a NEW row rather than overwriting, so "comparison history" and
+// "credit trend" (spec requirements) are just queries over multiple
+// rows for the same subject ordered by pulledAt. subjectId is
+// polymorphic (Customer.id or LoanCoApplicant.id), matching the same
+// non-FK'd pattern already used by RiskAssessment.subjectId above —
+// one precedent, not a new one.
+//
+// riskGrade reuses the existing RiskLevel enum (LOW/MEDIUM/HIGH/
+// CRITICAL) rather than a duplicate — same enum Lending's own risk
+// engine uses, so a pulled score can feed straight into
+// lib/lending/core/risk.ts's computeRiskScore().
+// ============================================================
+
+enum CreditBureauProvider {
+  EXPERIAN
+  CIBIL
+  CRIF
+  EQUIFAX
+}
+
+enum CreditPullType {
+  SOFT
+  HARD
+}
+
+enum CreditReportStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum CreditSubjectType {
+  CUSTOMER
+  CO_APPLICANT
+  ORGANIZATION
+}
+
+enum TradelineAccountStatus {
+  ACTIVE
+  CLOSED
+  DEFAULT
+  WRITTEN_OFF
+  SETTLED
+  RESTRUCTURED
+}
+
+enum TradelineOwnership {
+  INDIVIDUAL
+  JOINT
+  GUARANTOR
+  AUTHORIZED_USER
+}
+
+model CreditReport {
+  id             String @id @default(cuid())
+  organizationId String
+
+  subjectType   CreditSubjectType
+  subjectId     String
+  applicationId String?
+
+  provider CreditBureauProvider
+  pullType CreditPullType
+  status   CreditReportStatus   @default(PENDING)
+
+  referenceId  String?
+  rawReportUrl String?
+  rawPayload   Json?
+
+  requestedById String?
+  pulledAt      DateTime?
+  failureReason String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  application  LoanApplication? @relation(fields: [applicationId], references: [id])
+  requestedBy  User?            @relation("CreditReportRequestedBy", fields: [requestedById], references: [id])
+
+  scores     CreditScore[]
+  tradelines CreditTradeline[]
+  enquiries  CreditEnquiry[]
+
+  @@index([organizationId, subjectType, subjectId])
+  @@index([applicationId])
+  @@index([organizationId, provider])
+  @@map("credit_reports")
+}
+
+model CreditScore {
+  id       String @id @default(cuid())
+  reportId String
+
+  score      Int
+  scoreModel String
+  scoreDate  DateTime
+  riskGrade  RiskLevel
+
+  createdAt DateTime @default(now())
+
+  report CreditReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@map("credit_scores")
+}
+
+model CreditTradeline {
+  id       String @id @default(cuid())
+  reportId String
+
+  lenderName    String
+  accountType   String
+  accountNumber String?
+  ownership     TradelineOwnership     @default(INDIVIDUAL)
+  status        TradelineAccountStatus
+
+  sanctionedAmount Decimal? @db.Decimal(16, 2)
+  currentBalance   Decimal? @db.Decimal(16, 2)
+  overdueAmount    Decimal? @db.Decimal(14, 2)
+  dpd              Int      @default(0)
+
+  openedDate       DateTime?
+  closedDate       DateTime?
+  lastReportedDate DateTime?
+
+  createdAt DateTime @default(now())
+
+  report CreditReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@map("credit_tradelines")
+}
+
+model CreditEnquiry {
+  id       String @id @default(cuid())
+  reportId String
+
+  enquiringInstitution String
+  enquiryPurpose       String?
+  enquiryDate          DateTime
+  amount               Decimal? @db.Decimal(16, 2)
+
+  createdAt DateTime @default(now())
+
+  report CreditReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@map("credit_enquiries")
+}
+
+model CreditApiLog {
+  id             String  @id @default(cuid())
+  organizationId String
+  reportId       String?
+
+  provider     CreditBureauProvider
+  endpoint     String
+  httpMethod   String
+  statusCode   Int?
+  durationMs   Int?
+  retryCount   Int                  @default(0)
+  success      Boolean
+  errorMessage String?
+  requestId    String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, provider])
+  @@map("credit_api_logs")
+}
+
+// ============================================================
+// PHASE 3 — MODULE 3: AML (Anti-Money Laundering)
+//
+// Two data tiers, deliberately different scoping:
+//   - AMLWatchlistEntry / AMLWatchlistSyncLog / AMLRiskFactorRating
+//     are GLOBAL reference data (no organizationId) — sanctions lists
+//     and country/occupation/industry risk ratings are the same for
+//     every tenant, ingested once by a platform cron, not duplicated
+//     per org. Mirrors how a tax-rate table would be modeled, not how
+//     tenant business data is modeled.
+//   - AMLScreening / AMLCase / AMLAlert / AMLCaseActivity are
+//     org-scoped, mirroring CreditReport (immutable per-screen) and
+//     LoanCollectionCase (case management) respectively — precedents
+//     already established in Modules 1-2, not new patterns.
+//
+// PEP screening reuses the EXISTING lib/tbx/service.ts screenAmlPep()
+// call rather than duplicating it. Sanctions screening is genuinely
+// real (not a placeholder): OFAC SDN + UN Consolidated List are
+// public data feeds fetched + parsed for real in lib/aml/sanctions/,
+// gated on the operator configuring the feed URL — no URL is
+// hardcoded/guessed here, consistent with never asserting an
+// unverified external endpoint as fact. Negative-media screening
+// (a paid-vendor-only capability, e.g. ComplyAdvantage/World-Check)
+// follows the same real-client + fail-loud-until-bound pattern as
+// TBX/Credit Bureau, since no vendor contract has been provided to
+// this codebase.
+// ============================================================
+
+enum AMLWatchlistSource {
+  OFAC_SDN
+  UN_CONSOLIDATED
+  SEBI_DEBARRED
+  RBI_DEFAULTER
+}
+
+enum AMLWatchlistEntityType {
+  INDIVIDUAL
+  ORGANIZATION
+  VESSEL
+  OTHER
+}
+
+enum AMLScreeningType {
+  PEP
+  SANCTIONS
+  NEGATIVE_MEDIA
+}
+
+enum AMLScreeningSource {
+  TBX_PEP
+  OFAC_SDN
+  UN_CONSOLIDATED
+  SEBI_DEBARRED
+  RBI_DEFAULTER
+  NEGATIVE_MEDIA_PROVIDER
+}
+
+enum AMLMatchStatus {
+  NO_MATCH
+  POTENTIAL_MATCH
+  CONFIRMED_MATCH
+  FALSE_POSITIVE
+}
+
+enum AMLSubjectType {
+  CUSTOMER
+  CO_APPLICANT
+  ORGANIZATION
+}
+
+enum AMLCaseStatus {
+  OPEN
+  UNDER_REVIEW
+  ESCALATED
+  CLEARED
+  CONFIRMED_SAR
+  CLOSED
+}
+
+enum AMLCaseResolution {
+  CLEARED
+  FALSE_POSITIVE
+  CONFIRMED_SAR
+}
+
+enum AMLAlertType {
+  PEP_MATCH
+  SANCTIONS_MATCH
+  NEGATIVE_MEDIA_MATCH
+  HIGH_RISK_COUNTRY
+  HIGH_RISK_OCCUPATION
+  HIGH_RISK_INDUSTRY
+  SUSPICIOUS_ACTIVITY
+  MANUAL_FLAG
+}
+
+enum AMLAlertStatus {
+  OPEN
+  REVIEWED
+  DISMISSED
+}
+
+enum AMLCaseActivityType {
+  NOTE
+  STATUS_CHANGE
+  ESCALATION
+  APPROVAL
+  SAR_FILED
+}
+
+enum AMLRiskFactorType {
+  COUNTRY
+  OCCUPATION
+  INDUSTRY
+}
+
+// ---------------------------------------------------------------------------
+// Global reference data
+// ---------------------------------------------------------------------------
+
+model AMLWatchlistEntry {
+  id     String             @id @default(cuid())
+  source AMLWatchlistSource
+
+  externalId  String
+  entityType  AMLWatchlistEntityType @default(INDIVIDUAL)
+  primaryName String
+  aliases     String[]               @default([])
+
+  nationality String?
+  dob         String?
+  program     String? // sanctions program / designation
+  listedDate  DateTime?
+
+  rawData    Json?
+  isActive   Boolean  @default(true)
+  ingestedAt DateTime @default(now())
+
+  @@unique([source, externalId])
+  @@index([source])
+  @@index([primaryName])
+  @@map("aml_watchlist_entries")
+}
+
+model AMLWatchlistSyncLog {
+  id     String             @id @default(cuid())
+  source AMLWatchlistSource
+
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+  recordsIngested Int       @default(0)
+  status          String // "RUNNING" | "SUCCESS" | "FAILED"
+  errorMessage    String?
+
+  @@index([source, startedAt])
+  @@map("aml_watchlist_sync_logs")
+}
+
+model AMLRiskFactorRating {
+  id         String            @id @default(cuid())
+  factorType AMLRiskFactorType
+  code       String
+  label      String
+  riskLevel  RiskLevel
+  source     String? // "FATF", "INTERNAL", ...
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([factorType, code])
+  @@map("aml_risk_factor_ratings")
+}
+
+// ---------------------------------------------------------------------------
+// Org-scoped screening + case management
+// ---------------------------------------------------------------------------
+
+model AMLScreening {
+  id             String @id @default(cuid())
+  organizationId String
+
+  subjectType   AMLSubjectType
+  subjectId     String
+  applicationId String?
+  subjectName   String
+
+  screeningType  AMLScreeningType
+  source         AMLScreeningSource
+  matchStatus    AMLMatchStatus     @default(NO_MATCH)
+  matchScore     Int? // 0-100 fuzzy-match confidence
+  matchedEntries Json? // watchlist entries / provider hits that matched
+
+  screenedAt   DateTime @default(now())
+  screenedById String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  application  LoanApplication? @relation(fields: [applicationId], references: [id])
+  screenedBy   User?            @relation("AMLScreeningScreenedBy", fields: [screenedById], references: [id])
+
+  @@index([organizationId, subjectType, subjectId])
+  @@index([applicationId])
+  @@map("aml_screenings")
+}
+
+model AMLCase {
+  id             String @id @default(cuid())
+  organizationId String
+
+  subjectType   AMLSubjectType
+  subjectId     String
+  subjectName   String
+  applicationId String?
+  caseNumber    String
+
+  status     AMLCaseStatus @default(OPEN)
+  riskRating RiskLevel
+
+  assignedToId       String?
+  openedAt           DateTime           @default(now())
+  closedAt           DateTime?
+  resolution         AMLCaseResolution?
+  resolutionNotes    String?
+  sarFiled           Boolean            @default(false)
+  sarReferenceNumber String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  application  LoanApplication? @relation(fields: [applicationId], references: [id])
+  assignedTo   User?            @relation("AMLCaseAssignedTo", fields: [assignedToId], references: [id])
+
+  alerts     AMLAlert[]
+  activities AMLCaseActivity[]
+
+  @@unique([organizationId, caseNumber])
+  @@index([organizationId, status])
+  @@index([applicationId])
+  @@map("aml_cases")
+}
+
+model AMLAlert {
+  id             String @id @default(cuid())
+  caseId         String
+  organizationId String
+
+  alertType   AMLAlertType
+  severity    RiskLevel
+  description String
+  triggeredBy String? // screeningId or rule name
+
+  status       AMLAlertStatus @default(OPEN)
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNotes  String?
+
+  createdAt DateTime @default(now())
+
+  case       AMLCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reviewedBy User?   @relation("AMLAlertReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([caseId])
+  @@index([organizationId, status])
+  @@map("aml_alerts")
+}
+
+model AMLCaseActivity {
+  id     String @id @default(cuid())
+  caseId String
+
+  activityType  AMLCaseActivityType
+  notes         String?
+  performedById String?
+  performedAt   DateTime            @default(now())
+
+  case        AMLCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  performedBy User?   @relation("AMLCaseActivityPerformedBy", fields: [performedById], references: [id])
+
+  @@index([caseId])
+  @@map("aml_case_activities")
+}
+
+// ============================================================
+// PHASE 3 — MODULE 4: FRAUD DETECTION
+//
+// FraudIdentityFingerprint is the append-only ledger every screening
+// writes to — duplicate-PAN / duplicate-Aadhaar / velocity checks are
+// all just queries over this table, not separate mechanisms. PAN is
+// stored in plain text (matching the existing convention already
+// established by OrganizationRelatedParty.pan elsewhere in this
+// schema — PAN is routinely displayed in Indian business documents,
+// unlike Aadhaar); Aadhaar is stored ONLY as a salted hash
+// (aadhaarHash), mirroring OrganizationRelatedParty.aadhaarHash's
+// exact "dedupe-matching only, full number never persisted" pattern.
+//
+// IP Intelligence and biometric (face match / liveness / document
+// forensics) checks require paid vendors this codebase has no
+// contract for — FraudProviderCheck logs the attempt the same way
+// CreditApiLog/TbxApiLog do, and the provider layers
+// (lib/fraud/ip-intelligence/, lib/fraud/biometric/) follow the
+// established real-client-until-bound honesty pattern. Device
+// fingerprinting, by contrast, IS built for real client-side (no
+// vendor needed — the same open technique commercial products like
+// FingerprintJS are built on).
+// ============================================================
+
+enum FraudSubjectType {
+  CUSTOMER
+  CO_APPLICANT
+  ORGANIZATION
+}
+
+enum FraudCaseStatus {
+  OPEN
+  UNDER_REVIEW
+  ESCALATED
+  CLEARED
+  CONFIRMED_FRAUD
+  CLOSED
+}
+
+enum FraudCaseResolution {
+  CLEARED
+  FALSE_POSITIVE
+  CONFIRMED_FRAUD
+}
+
+enum FraudAlertType {
+  DUPLICATE_PAN
+  DUPLICATE_AADHAAR
+  VELOCITY_BREACH
+  BLACKLIST_HIT
+  IP_RISK
+  DEVICE_RISK
+  SYNTHETIC_IDENTITY_SIGNAL
+  DOCUMENT_RISK
+  FACE_MATCH_FAILURE
+  LIVENESS_FAILURE
+  MANUAL_FLAG
+}
+
+enum FraudAlertStatus {
+  OPEN
+  REVIEWED
+  DISMISSED
+}
+
+enum FraudRuleType {
+  DUPLICATE_CHECK
+  VELOCITY
+  BLACKLIST
+  IP_RISK
+  DEVICE_RISK
+  SYNTHETIC_IDENTITY
+}
+
+enum FraudListType {
+  BLACKLIST
+  WHITELIST
+}
+
+enum FraudListEntryType {
+  PAN
+  AADHAAR_HASH
+  EMAIL
+  PHONE
+  DEVICE_FINGERPRINT
+  IP_ADDRESS
+}
+
+enum FraudProviderCheckType {
+  IP_INTELLIGENCE
+  FACE_MATCH
+  LIVENESS
+  DOCUMENT_FORENSICS
+}
+
+model FraudIdentityFingerprint {
+  id             String  @id @default(cuid())
+  organizationId String
+  applicationId  String?
+
+  subjectType FraudSubjectType
+  subjectId   String
+
+  pan               String?
+  aadhaarHash       String?
+  email             String?
+  phone             String?
+  deviceFingerprint String?
+  ipAddress         String?
+  ipCountry         String?
+  userAgent         String?
+
+  capturedAt DateTime @default(now())
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  application  LoanApplication? @relation(fields: [applicationId], references: [id])
+
+  @@index([organizationId, pan])
+  @@index([organizationId, aadhaarHash])
+  @@index([organizationId, deviceFingerprint])
+  @@index([organizationId, ipAddress])
+  @@index([applicationId])
+  @@map("fraud_identity_fingerprints")
+}
+
+model FraudRule {
+  id             String @id @default(cuid())
+  organizationId String
+
+  name     String
+  ruleType FraudRuleType
+  config   Json // thresholds etc., e.g. { "maxApplicationsPerPan": 3, "windowDays": 30 }
+  weight   Int           @default(10)
+  isActive Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isActive])
+  @@map("fraud_rules")
+}
+
+model FraudScore {
+  id             String @id @default(cuid())
+  organizationId String
+
+  subjectType   FraudSubjectType
+  subjectId     String
+  applicationId String?
+
+  score     Int // 0-100, higher = riskier
+  riskLevel RiskLevel
+  factors   Json
+
+  computedAt DateTime @default(now())
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  application  LoanApplication? @relation(fields: [applicationId], references: [id])
+
+  @@index([organizationId, subjectType, subjectId])
+  @@index([applicationId])
+  @@map("fraud_scores")
+}
+
+model FraudCase {
+  id             String @id @default(cuid())
+  organizationId String
+
+  subjectType   FraudSubjectType
+  subjectId     String
+  subjectName   String
+  applicationId String?
+  caseNumber    String
+
+  status     FraudCaseStatus @default(OPEN)
+  riskRating RiskLevel
+
+  assignedToId    String?
+  openedAt        DateTime             @default(now())
+  closedAt        DateTime?
+  resolution      FraudCaseResolution?
+  resolutionNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  application  LoanApplication? @relation(fields: [applicationId], references: [id])
+  assignedTo   User?            @relation("FraudCaseAssignedTo", fields: [assignedToId], references: [id])
+
+  alerts     FraudAlert[]
+  activities FraudCaseActivity[]
+
+  @@unique([organizationId, caseNumber])
+  @@index([organizationId, status])
+  @@index([applicationId])
+  @@map("fraud_cases")
+}
+
+model FraudAlert {
+  id             String @id @default(cuid())
+  caseId         String
+  organizationId String
+
+  alertType   FraudAlertType
+  severity    RiskLevel
+  description String
+  triggeredBy String?
+
+  status       FraudAlertStatus @default(OPEN)
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNotes  String?
+
+  createdAt DateTime @default(now())
+
+  case       FraudCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reviewedBy User?     @relation("FraudAlertReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([caseId])
+  @@index([organizationId, status])
+  @@map("fraud_alerts")
+}
+
+model FraudCaseActivity {
+  id     String @id @default(cuid())
+  caseId String
+
+  activityType  AMLCaseActivityType // reuses the same NOTE/STATUS_CHANGE/ESCALATION/APPROVAL vocabulary
+  notes         String?
+  performedById String?
+  performedAt   DateTime            @default(now())
+
+  case        FraudCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  performedBy User?     @relation("FraudCaseActivityPerformedBy", fields: [performedById], references: [id])
+
+  @@index([caseId])
+  @@map("fraud_case_activities")
+}
+
+model FraudListEntry {
+  id             String @id @default(cuid())
+  organizationId String
+
+  listType  FraudListType
+  entryType FraudListEntryType
+  value     String
+  reason    String?
+  addedById String?
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  addedBy      User?        @relation("FraudListEntryAddedBy", fields: [addedById], references: [id])
+
+  @@unique([organizationId, listType, entryType, value])
+  @@index([organizationId, entryType, value])
+  @@map("fraud_list_entries")
+}
+
+model FraudProviderCheck {
+  id             String  @id @default(cuid())
+  organizationId String
+  applicationId  String?
+
+  checkType     FraudProviderCheckType
+  provider      String
+  status        String // "SUCCESS" | "FAILED" | "NOT_CONFIGURED"
+  resultSummary Json?
+
+  createdAt DateTime @default(now())
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  application  LoanApplication? @relation(fields: [applicationId], references: [id])
+
+  @@index([organizationId])
+  @@index([applicationId])
+  @@map("fraud_provider_checks")
+}
+
+// ============================================================
+// PHASE 3 — MODULE 5: BACKGROUND VERIFICATION
+//
+// This module is primarily an ORCHESTRATION + CASE-MANAGEMENT layer,
+// not a new set of duplicate verification calls: PAN / GSTIN / CIN /
+// Aadhaar / bank-account (penny drop) / director-DIN / CKYC already
+// exist and work via lib/tbx/service.ts (Phase 1). Phone and email
+// verification reuse the EXISTING lib/notifications/whatsapp.ts
+// (Twilio) and lib/notifications/email.ts (Resend) senders for real
+// OTP/link delivery rather than adding new vendors. IFSC validation
+// is genuinely real (Razorpay's free, unauthenticated public IFSC
+// lookup API — no credentials needed, unlike every other "vendor"
+// integration in this codebase). Only Driving License / Passport /
+// Voter ID / Employment / Education / physical Address verification
+// need a new, currently-unconfirmed KYC-utility vendor — one
+// IdentityDocumentProvider (lib/verification/identity-document/),
+// following the same real-client + fail-loud-until-bound pattern as
+// everywhere else. Reference verification is modeled as manual case
+// work (a human contacts the reference), not an API — that's how it
+// works in practice even at large KYC vendors.
+//
+// status on VerificationCheck reuses the EXISTING TbxVerificationStatus
+// enum (NOT_STARTED/PENDING/IN_PROGRESS/VERIFIED/FAILED/EXPIRED) —
+// same lifecycle vocabulary TBX and OrgBankAccountVerification already
+// use, not a new duplicate. VerificationDocument.status reuses the
+// EXISTING LoanDocumentStatus enum for the same reason.
+// ============================================================
+
+enum VerificationSubjectType {
+  CUSTOMER
+  CO_APPLICANT
+  ORGANIZATION
+}
+
+enum VerificationCaseStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+  REJECTED
+}
+
+enum VerificationCheckType {
+  PAN
+  GSTIN
+  CIN
+  AADHAAR
+  DRIVING_LICENSE
+  PASSPORT
+  VOTER_ID
+  BANK_ACCOUNT
+  IFSC
+  DIRECTOR_DIN
+  CKYC
+  EMPLOYMENT
+  EDUCATION
+  ADDRESS
+  PHONE
+  EMAIL
+  REFERENCE
+}
+
+enum VerificationCheckSource {
+  TBX
+  IFSC_LOOKUP
+  WHATSAPP_OTP
+  EMAIL_OTP
+  ADDRESS_CROSS_CHECK
+  IDENTITY_DOCUMENT_PROVIDER
+  MANUAL
+}
+
+model VerificationCase {
+  id             String @id @default(cuid())
+  organizationId String
+
+  subjectType   VerificationSubjectType
+  subjectId     String
+  subjectName   String
+  applicationId String?
+  caseNumber    String
+
+  status          VerificationCaseStatus @default(OPEN)
+  assignedToId    String?
+  resolutionNotes String?
+
+  openedAt    DateTime  @default(now())
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  application  LoanApplication? @relation(fields: [applicationId], references: [id])
+  assignedTo   User?            @relation("VerificationCaseAssignedTo", fields: [assignedToId], references: [id])
+
+  checks     VerificationCheck[]
+  documents  VerificationDocument[]
+  activities VerificationCaseActivity[]
+
+  @@unique([organizationId, caseNumber])
+  @@index([organizationId, status])
+  @@index([applicationId])
+  @@map("verification_cases")
+}
+
+// Immutable per attempt (a re-check creates a new row) — mirrors
+// CreditReport's "store snapshots, allow re-fetch" pattern, giving a
+// real verification TIMELINE for free from query order.
+model VerificationCheck {
+  id             String @id @default(cuid())
+  caseId         String
+  organizationId String
+
+  checkType VerificationCheckType
+  source    VerificationCheckSource
+  status    TbxVerificationStatus   @default(NOT_STARTED)
+
+  referenceId   String?
+  resultSummary Json?
+  failureReason String?
+
+  performedAt   DateTime @default(now())
+  performedById String?
+
+  case        VerificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  performedBy User?            @relation("VerificationCheckPerformedBy", fields: [performedById], references: [id])
+
+  @@index([caseId])
+  @@index([organizationId, checkType])
+  @@map("verification_checks")
+}
+
+model VerificationDocument {
+  id             String @id @default(cuid())
+  caseId         String
+  organizationId String
+
+  docType  VerificationCheckType
+  fileName String
+  fileUrl  String
+  fileSize Int
+  mimeType String
+
+  status       LoanDocumentStatus @default(PENDING)
+  uploadedById String?
+  verifiedById String?
+  verifiedAt   DateTime?
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  case       VerificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  uploadedBy User?            @relation("VerificationDocumentUploadedBy", fields: [uploadedById], references: [id])
+  verifiedBy User?            @relation("VerificationDocumentVerifiedBy", fields: [verifiedById], references: [id])
+
+  @@index([caseId])
+  @@map("verification_documents")
+}
+
+// Case timeline — reuses AMLCaseActivityType (NOTE/STATUS_CHANGE/
+// ESCALATION/APPROVAL/SAR_FILED) for its NOTE/STATUS_CHANGE/APPROVAL
+// vocabulary rather than a third near-identical enum (Fraud already
+// reuses the same enum for the same reason).
+model VerificationCaseActivity {
+  id     String @id @default(cuid())
+  caseId String
+
+  activityType AMLCaseActivityType
+  notes        String?
+
+  performedAt   DateTime @default(now())
+  performedById String?
+
+  case        VerificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  performedBy User?            @relation("VerificationCaseActivityPerformedBy", fields: [performedById], references: [id])
+
+  @@index([caseId])
+  @@map("verification_case_activities")
+}
+
+// ============================================================
+// Phase 3, Module 6 — Continuous Monitoring
+//
+// Deliberately NOT a re-implementation of detection logic that
+// already exists elsewhere: DPD/NPA classification already happens
+// in lib/lending/collections.ts's syncCollectionCases(), bounce
+// status already lands on LoanRepayment.status, credit scores already
+// land in CreditScore, AML/Fraud hits already open AMLCase/FraudCase.
+// This module is the unified ALERT + CASE layer that reacts to those
+// existing signals (transaction-level detection over BankTransaction
+// is the one genuinely new detector — nothing alerts on it today).
+// MonitoringRule holds one org-tunable threshold config per rule
+// type (not a generic rule builder) — if an org has none, evaluators
+// fall back to built-in defaults documented in lib/monitoring/rules/.
+// ============================================================
+
+enum MonitoringSubjectType {
+  BANK_ACCOUNT
+  LOAN_ACCOUNT
+  CUSTOMER
+  AML_CASE
+  FRAUD_CASE
+}
+
+enum MonitoringRuleType {
+  HIGH_CASH_TRANSACTION
+  LARGE_TRANSACTION
+  DORMANT_ACCOUNT
+  REPAYMENT_OVERDUE
+  LOAN_DEFAULT
+  BOUNCE_DETECTION
+  CREDIT_SCORE_DROP
+  AML_CASE_OPENED
+  FRAUD_CASE_OPENED
+}
+
+enum MonitoringAlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum MonitoringAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  ESCALATED
+  RESOLVED
+  FALSE_POSITIVE
+}
+
+enum MonitoringCaseStatus {
+  OPEN
+  UNDER_REVIEW
+  ESCALATED
+  RESOLVED
+  CLOSED
+}
+
+model MonitoringRule {
+  id             String @id @default(cuid())
+  organizationId String
+
+  ruleType    MonitoringRuleType
+  name        String
+  description String?
+  enabled     Boolean                 @default(true)
+  severity    MonitoringAlertSeverity @default(MEDIUM)
+  config      Json // threshold config, e.g. {"amountThreshold": 200000, "lookbackDays": 90}
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?             @relation("MonitoringRuleCreatedBy", fields: [createdById], references: [id])
+  alerts       MonitoringAlert[]
+
+  @@unique([organizationId, ruleType])
+  @@index([organizationId, enabled])
+  @@map("monitoring_rules")
+}
+
+model MonitoringAlert {
+  id             String             @id @default(cuid())
+  organizationId String
+  ruleId         String?
+  // Denormalized so alerts survive rule reconfiguration, and so
+  // ungoverned system rules (AML/Fraud fan-out) can raise alerts
+  // without a MonitoringRule row existing at all.
+  ruleType       MonitoringRuleType
+
+  subjectType  MonitoringSubjectType
+  subjectId    String
+  subjectLabel String
+
+  severity MonitoringAlertSeverity
+  status   MonitoringAlertStatus   @default(OPEN)
+  title    String
+  details  Json
+
+  triggeredAt DateTime @default(now())
+  caseId      String?
+
+  acknowledgedById String?
+  acknowledgedAt   DateTime?
+  resolvedById     String?
+  resolvedAt       DateTime?
+  resolutionNotes  String?
+
+  createdAt DateTime @default(now())
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rule           MonitoringRule? @relation(fields: [ruleId], references: [id])
+  case           MonitoringCase? @relation(fields: [caseId], references: [id])
+  acknowledgedBy User?           @relation("MonitoringAlertAcknowledgedBy", fields: [acknowledgedById], references: [id])
+  resolvedBy     User?           @relation("MonitoringAlertResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([organizationId, status])
+  @@index([subjectType, subjectId])
+  @@index([caseId])
+  @@map("monitoring_alerts")
+}
+
+model MonitoringCase {
+  id             String @id @default(cuid())
+  organizationId String
+  caseNumber     String
+
+  subjectType  MonitoringSubjectType
+  subjectId    String
+  subjectLabel String
+
+  status       MonitoringCaseStatus @default(OPEN)
+  assignedToId String?
+
+  openedAt        DateTime  @default(now())
+  closedAt        DateTime?
+  resolutionNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedTo   User?                    @relation("MonitoringCaseAssignedTo", fields: [assignedToId], references: [id])
+  alerts       MonitoringAlert[]
+  activities   MonitoringCaseActivity[]
+
+  @@unique([organizationId, caseNumber])
+  @@index([organizationId, status])
+  @@map("monitoring_cases")
+}
+
+// Reuses AMLCaseActivityType for its NOTE/STATUS_CHANGE/ESCALATION/
+// APPROVAL vocabulary — 4th module to do so (Fraud, Verification did
+// the same) rather than minting a near-identical enum again.
+model MonitoringCaseActivity {
+  id     String @id @default(cuid())
+  caseId String
+
+  activityType AMLCaseActivityType
+  notes        String?
+
+  performedAt   DateTime @default(now())
+  performedById String?
+
+  case        MonitoringCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  performedBy User?          @relation("MonitoringCaseActivityPerformedBy", fields: [performedById], references: [id])
+
+  @@index([caseId])
+  @@map("monitoring_case_activities")
 }

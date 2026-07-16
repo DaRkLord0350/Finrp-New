@@ -31,6 +31,15 @@ import {
   analyticsNightly,
   stuckJobChecker,
 } from "./functions/scheduled";
+import {
+  lendingDisbursementPoll,
+  lendingCollectionPoll,
+  lendingDisbursementAutoPoll,
+  lendingCollectionAutoPoll,
+  lendingDailyScheduleSweep,
+} from "./functions/lending";
+import { amlWatchlistDailySync } from "./functions/aml";
+import { monitoringDailySweep } from "./functions/monitoring";
 
 export { inngest } from "./client";
 
@@ -49,6 +58,8 @@ export const functions = [
   tbxStatementSync,
   tbxBeneficiarySync,
   tbxPaymentSync,
+  lendingDisbursementPoll,
+  lendingCollectionPoll,
   // Scheduled (cron)
   recurringInvoiceScan,
   integrationScheduledSync,
@@ -60,4 +71,9 @@ export const functions = [
   tbxBeneficiaryVerificationPoll,
   tbxBeneficiaryRetryFailedSyncs,
   tbxPaymentAutoPoll,
+  lendingDisbursementAutoPoll,
+  lendingCollectionAutoPoll,
+  lendingDailyScheduleSweep,
+  amlWatchlistDailySync,
+  monitoringDailySweep,
 ];

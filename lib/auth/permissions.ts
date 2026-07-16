@@ -97,6 +97,36 @@ export const rolePermissions: Record<Role, string[]> = {
     "banking.write",
     "banking.manage",
     "banking.approve",
+    // Lending Platform (Phase 3, Module 1) — full control incl. product/
+    // approval-matrix configuration
+    "lending.read",
+    "lending.write",
+    "lending.manage",
+    "lending.approve",
+    "lending.sanction",
+    "lending.disburse",
+    "lending.collect",
+    // Credit Bureau (Phase 3, Module 2)
+    "credit.read",
+    "credit.pull",
+    // AML (Phase 3, Module 3)
+    "aml.read",
+    "aml.screen",
+    "aml.review",
+    "aml.approve",
+    // Fraud (Phase 3, Module 4)
+    "fraud.read",
+    "fraud.screen",
+    "fraud.review",
+    "fraud.approve",
+    "fraud.manage",
+    // Background Verification (Phase 3, Module 5)
+    "verification.read",
+    "verification.initiate",
+    "verification.review",
+    // Continuous Monitoring (Phase 3, Module 6)
+    "monitoring.read",
+    "monitoring.manage",
   ],
 
   // CRM, Billing, Finance, ERP, Compliance, Inventory.
@@ -142,6 +172,35 @@ export const rolePermissions: Record<Role, string[]> = {
     "banking.read",
     "banking.write",
     "banking.approve",
+    // Lending Platform (Phase 3, Module 1) — checker tier: approve/sanction/
+    // disburse, but no product-catalog or approval-matrix configuration
+    "lending.read",
+    "lending.write",
+    "lending.approve",
+    "lending.sanction",
+    "lending.disburse",
+    "lending.collect",
+    // Credit Bureau (Phase 3, Module 2)
+    "credit.read",
+    "credit.pull",
+    // AML (Phase 3, Module 3) — checker tier: can review/approve (resolve cases, file SAR)
+    "aml.read",
+    "aml.screen",
+    "aml.review",
+    "aml.approve",
+    // Fraud (Phase 3, Module 4) — checker tier: can review/approve/manage blacklist
+    "fraud.read",
+    "fraud.screen",
+    "fraud.review",
+    "fraud.approve",
+    "fraud.manage",
+    // Background Verification (Phase 3, Module 5) — checker tier: can complete/reject cases
+    "verification.read",
+    "verification.initiate",
+    "verification.review",
+    // Continuous Monitoring (Phase 3, Module 6) — checker tier: can configure rules, resolve alerts/cases
+    "monitoring.read",
+    "monitoring.manage",
     // Reporting
     "analytics.read",
   ],
@@ -175,6 +234,25 @@ export const rolePermissions: Record<Role, string[]> = {
     // TBX Banking (maker role only — approval reserved for ADMIN/MANAGER)
     "banking.read",
     "banking.write",
+    // Lending Platform (Phase 3, Module 1) — maker + day-to-day collections
+    // ops; approval/sanction/disbursement reserved for ADMIN/MANAGER
+    "lending.read",
+    "lending.write",
+    "lending.collect",
+    // Credit Bureau (Phase 3, Module 2)
+    "credit.read",
+    "credit.pull",
+    // AML (Phase 3, Module 3) — maker tier: can trigger screens, not resolve cases
+    "aml.read",
+    "aml.screen",
+    // Fraud (Phase 3, Module 4) — maker tier: can trigger screens, not resolve cases
+    "fraud.read",
+    "fraud.screen",
+    // Background Verification (Phase 3, Module 5) — maker tier: can run checks, not complete cases
+    "verification.read",
+    "verification.initiate",
+    // Continuous Monitoring (Phase 3, Module 6) — read-only; alerts are system-detected, not made by hand
+    "monitoring.read",
     // Payroll (if enabled for the org)
     "payroll.read",
     "payroll.write",
@@ -213,5 +291,11 @@ export const rolePermissions: Record<Role, string[]> = {
     "analytics.read",
     "tax.read",
     "banking.read",
+    "lending.read",
+    "credit.read",
+    "aml.read",
+    "fraud.read",
+    "verification.read",
+    "monitoring.read",
   ],
 };

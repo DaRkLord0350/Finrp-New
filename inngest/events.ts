@@ -20,6 +20,7 @@ import type {
   TbxBeneficiarySyncJobData,
   TbxPaymentSyncJobData,
 } from "@/inngest/functions/tbx-banking";
+import type { LoanDisbursementPollJobData, LoanCollectionPollJobData } from "@/lib/lending/queue";
 
 // ---------------------------------------------------------------------------
 // Email — self-contained so the notification layer can depend on inngest
@@ -77,6 +78,8 @@ export const EVENTS = {
   TBX_STATEMENT_SYNC_REQUESTED: "tbx/statement-sync.requested",
   TBX_BENEFICIARY_SYNC_REQUESTED: "tbx/beneficiary-sync.requested",
   TBX_PAYMENT_SYNC_REQUESTED: "tbx/payment-sync.requested",
+  LENDING_DISBURSEMENT_POLL_REQUESTED: "lending/disbursement-poll.requested",
+  LENDING_COLLECTION_POLL_REQUESTED: "lending/collection-poll.requested",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -107,4 +110,6 @@ export type Events = {
   [EVENTS.TBX_STATEMENT_SYNC_REQUESTED]: { data: TbxStatementSyncJobData };
   [EVENTS.TBX_BENEFICIARY_SYNC_REQUESTED]: { data: TbxBeneficiarySyncJobData };
   [EVENTS.TBX_PAYMENT_SYNC_REQUESTED]: { data: TbxPaymentSyncJobData };
+  [EVENTS.LENDING_DISBURSEMENT_POLL_REQUESTED]: { data: LoanDisbursementPollJobData };
+  [EVENTS.LENDING_COLLECTION_POLL_REQUESTED]: { data: LoanCollectionPollJobData };
 };

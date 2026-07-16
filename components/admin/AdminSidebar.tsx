@@ -15,6 +15,8 @@ import {
   FileText,
   Landmark,
   Activity,
+  HandCoins,
+  ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +35,16 @@ const kycNavItems = [
   { label: "Documents",          href: "/admin/documents",        icon: FileText },
   { label: "Bank Verification",  href: "/admin/bank-verification", icon: Landmark },
   { label: "TBX Logs",           href: "/admin/tbx-logs",         icon: Activity },
+];
+
+// Phase 3 — Module 1 Lending Platform admin (cross-tenant)
+const lendingNavItems = [
+  { label: "Lending Platform", href: "/admin/lending", icon: HandCoins },
+];
+
+// Phase 3 — Module 3 AML admin (cross-tenant, global watchlist data)
+const amlNavItems = [
+  { label: "AML Watchlist", href: "/admin/aml", icon: ShieldAlert },
 ];
 
 interface AdminSidebarProps {
@@ -138,6 +150,68 @@ export default function AdminSidebar({ open = false, onClose }: AdminSidebarProp
           </p>
 
           {kycNavItems.map((item) => {
+            const active = isActive(item);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn("sidebar-nav-item", active && "active")}
+                onClick={onClose}
+              >
+                <Icon size={16} strokeWidth={1.75} />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+
+          <p
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--text-muted)",
+              padding: "0 12px",
+              marginTop: 16,
+              marginBottom: 6,
+            }}
+          >
+            Lending
+          </p>
+
+          {lendingNavItems.map((item) => {
+            const active = isActive(item);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn("sidebar-nav-item", active && "active")}
+                onClick={onClose}
+              >
+                <Icon size={16} strokeWidth={1.75} />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+
+          <p
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--text-muted)",
+              padding: "0 12px",
+              marginTop: 16,
+              marginBottom: 6,
+            }}
+          >
+            AML
+          </p>
+
+          {amlNavItems.map((item) => {
             const active = isActive(item);
             const Icon = item.icon;
             return (

@@ -31,6 +31,11 @@ export type AppModule =
   | "tax"
   | "payroll"
   | "banking"
+  | "lending"
+  | "aml"
+  | "fraud"
+  | "verification"
+  | "monitoring"
   | "reports"
   | "settings"
   | "users";
@@ -58,6 +63,11 @@ const MODULE_RESOURCES: Record<AppModule, string[]> = {
   tax: ["tax"],
   payroll: ["payroll", "employees"],
   banking: ["banking"],
+  lending: ["lending", "credit"],
+  aml: ["aml"],
+  fraud: ["fraud"],
+  verification: ["verification"],
+  monitoring: ["monitoring"],
   reports: ["analytics"],
   settings: ["settings", "organization"],
   users: ["users"],
